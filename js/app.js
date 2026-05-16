@@ -340,50 +340,144 @@ function renderEmployeeList() {
   `;
 }
 
+// ดรอปดาวน์ / datalist สำหรับฟอร์มพนักงาน
+const EMP_OPTIONS = {
+  titles: ['นาย', 'นาง', 'นางสาว', 'เด็กชาย', 'เด็กหญิง', 'ดร.', 'นพ.', 'พญ.'],
+  genders: ['ชาย', 'หญิง'],
+  empTypes: ['พนักงานประจำ', 'พนักงานรายวัน', 'พนักงานสัญญาจ้าง', 'พนักงานทดลองงาน', 'ฝึกงาน', 'พาร์ทไทม์'],
+  educations: ['ประถมศึกษา', 'มัธยมศึกษาตอนต้น (ม.3)', 'มัธยมศึกษาตอนปลาย (ม.6)', 'ปวช.', 'ปวส. / อนุปริญญา', 'ปริญญาตรี', 'ปริญญาโท', 'ปริญญาเอก', 'อื่นๆ'],
+  religions: ['พุทธ', 'คริสต์', 'อิสลาม', 'ฮินดู', 'ซิกข์', 'ไม่ระบุ', 'อื่นๆ'],
+  nationalities: ['ไทย', 'พม่า', 'ลาว', 'กัมพูชา', 'เวียดนาม', 'จีน', 'ญี่ปุ่น', 'เกาหลีใต้', 'อินเดีย', 'อเมริกัน', 'อังกฤษ', 'อื่นๆ'],
+  banks: ['ธนาคารกสิกรไทย (KBANK)', 'ธนาคารกรุงเทพ (BBL)', 'ธนาคารไทยพาณิชย์ (SCB)', 'ธนาคารกรุงไทย (KTB)', 'ธนาคารกรุงศรีอยุธยา (BAY)', 'ธนาคารทหารไทยธนชาต (TTB)', 'ธนาคารออมสิน (GSB)', 'ธนาคารอาคารสงเคราะห์ (GHB)', 'ธ.ก.ส. (BAAC)', 'ธนาคารซีไอเอ็มบีไทย (CIMB)', 'ธนาคารยูโอบี (UOB)', 'ธนาคารเกียรตินาคินภัทร (KKP)', 'ธนาคารทิสโก้ (TISCO)', 'อื่นๆ']
+};
+
+// รายได้รวมต่อเดือน = เงินเดือน + ค่าตำแหน่ง + ค่าเดินทาง + ค่าอาหาร + ค่าเบี้ยเลี้ยง + ค่าภาษา + ค่าอื่นๆ
+const totalIncome = (e) => Number(e.salary || 0) + Number(e.allowancePosition || 0) +
+  Number(e.allowanceTravel || 0) + Number(e.allowanceFood || 0) +
+  Number(e.allowancePerDiem || 0) + Number(e.allowanceLanguage || 0) +
+  Number(e.allowanceOther || 0);
+
 function openEmployeeForm(id = null) {
   if (!requireAdmin()) return;
   const emp = id ? DB.getEmployee(id) : {
     id: DB.nextEmployeeId(), title: 'นาย', firstName: '', lastName: '', nickname: '',
-    nationalId: '', dob: '', gender: 'ชาย', phone: '', email: '', address: '',
-    department: DB.getDepartments()[0]?.id || '', position: DB.getPositions()[0]?.id || '',
-    positionTitle: '', hireDate: new Date().toISOString().slice(0, 10),
-    salary: 0, status: 'active', note: ''
+    nationalId: '', dob: '', gender: 'ชาย',
+    nationality: 'ไทย', religion: '', education: '',
+    phone: '', email: '', address: '',
+    department: DB.getDepartments()[0]?.id || '', branch: '',
+    position: DB.getPositions()[0]?.id || '', positionTitle: '',
+    employeeType: 'พนักงานประจำ',
+    hireDate: new Date().toISOString().slice(0, 10),
+    salary: 0,
+    allowancePosition: 0, allowanceTravel: 0, allowanceFood: 0,
+    allowancePerDiem: 0, allowanceLanguage: 0, allowanceOther: 0,
+    bank: '', bankAccount: '',
+    status: 'active', note: ''
   };
   const depts = DB.getDepartments();
   const positions = DB.getPositions();
+
+  const opt = (values, current) => values.map(v => `<option ${v === current ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('');
+  const dataListOpt = (values) => values.map(v => `<option value="${escapeHtml(v)}">`).join('');
+
   modal.open(id ? 'แก้ไขข้อมูลพนักงาน' : 'เพิ่มพนักงานใหม่', `
     <form id="empForm">
-      <div class="form-grid">
-        <div class="form-group"><label>รหัสพนักงาน *</label><input name="id" value="${escapeHtml(emp.id)}" required ${id ? 'readonly' : ''} /></div>
-        <div class="form-group"><label>คำนำหน้า</label><select name="title">${['นาย', 'นาง', 'นางสาว', 'เด็กชาย', 'เด็กหญิง'].map(t => `<option ${emp.title === t ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
-        <div class="form-group"><label>ชื่อ *</label><input name="firstName" value="${escapeHtml(emp.firstName)}" required /></div>
-        <div class="form-group"><label>นามสกุล *</label><input name="lastName" value="${escapeHtml(emp.lastName)}" required /></div>
-        <div class="form-group"><label>ชื่อเล่น</label><input name="nickname" value="${escapeHtml(emp.nickname)}" /></div>
-        <div class="form-group"><label>เลขบัตรประชาชน</label><input name="nationalId" value="${escapeHtml(emp.nationalId)}" maxlength="13" /></div>
-        <div class="form-group"><label>วันเกิด</label><input name="dob" type="date" value="${emp.dob || ''}" /></div>
-        <div class="form-group"><label>เพศ</label><select name="gender"><option ${emp.gender === 'ชาย' ? 'selected' : ''}>ชาย</option><option ${emp.gender === 'หญิง' ? 'selected' : ''}>หญิง</option></select></div>
-        <div class="form-group"><label>เบอร์โทร</label><input name="phone" value="${escapeHtml(emp.phone)}" /></div>
-        <div class="form-group"><label>อีเมล</label><input name="email" type="email" value="${escapeHtml(emp.email)}" /></div>
-        <div class="form-group span-2"><label>ที่อยู่</label><textarea name="address" rows="2">${escapeHtml(emp.address)}</textarea></div>
-        <div class="form-group"><label>ฝ่าย *</label><select name="department" required>${depts.map(d => `<option value="${d.id}" ${emp.department === d.id ? 'selected' : ''}>${escapeHtml(d.name)}</option>`).join('')}</select></div>
-        <div class="form-group"><label>ระดับตำแหน่ง *</label><select name="position" required>${positions.map(p => `<option value="${p.id}" ${emp.position === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}</select></div>
-        <div class="form-group"><label>ชื่อตำแหน่ง</label><input name="positionTitle" value="${escapeHtml(emp.positionTitle)}" placeholder="เช่น ผู้จัดการฝ่ายบุคคล" /></div>
-        <div class="form-group"><label>วันเริ่มงาน *</label><input name="hireDate" type="date" value="${emp.hireDate || ''}" required /></div>
-        <div class="form-group"><label>เงินเดือน *</label><input name="salary" type="number" min="0" step="100" value="${emp.salary || 0}" required /></div>
-        <div class="form-group"><label>สถานะ</label><select name="status"><option value="active" ${emp.status === 'active' ? 'selected' : ''}>ปฏิบัติงาน</option><option value="resigned" ${emp.status === 'resigned' ? 'selected' : ''}>ลาออก</option></select></div>
-        <div class="form-group span-2"><label>หมายเหตุ</label><textarea name="note" rows="2">${escapeHtml(emp.note)}</textarea></div>
+
+      <div class="form-section">
+        <h3>ข้อมูลพื้นฐาน</h3>
+        <div class="form-grid">
+          <div class="form-group"><label>รหัสพนักงาน *</label><input name="id" value="${escapeHtml(emp.id)}" required ${id ? 'readonly' : ''}/></div>
+          <div class="form-group"><label>คำนำหน้า</label><select name="title">${opt(EMP_OPTIONS.titles, emp.title)}</select></div>
+          <div class="form-group"><label>ชื่อ *</label><input name="firstName" value="${escapeHtml(emp.firstName)}" required/></div>
+          <div class="form-group"><label>นามสกุล *</label><input name="lastName" value="${escapeHtml(emp.lastName)}" required/></div>
+          <div class="form-group"><label>ชื่อเล่น</label><input name="nickname" value="${escapeHtml(emp.nickname)}"/></div>
+          <div class="form-group"><label>เพศ</label><select name="gender">${opt(EMP_OPTIONS.genders, emp.gender)}</select></div>
+          <div class="form-group"><label>วันเกิด</label><input name="dob" type="date" value="${emp.dob || ''}"/></div>
+          <div class="form-group"><label>เลขประชาชน</label><input name="nationalId" value="${escapeHtml(emp.nationalId)}" maxlength="13"/></div>
+          <div class="form-group"><label>สัญชาติ</label><input name="nationality" list="dl-nationalities" value="${escapeHtml(emp.nationality)}"/></div>
+          <div class="form-group"><label>ศาสนา</label><input name="religion" list="dl-religions" value="${escapeHtml(emp.religion)}"/></div>
+          <div class="form-group"><label>วุฒิการศึกษา</label><input name="education" list="dl-educations" value="${escapeHtml(emp.education)}"/></div>
+        </div>
       </div>
+
+      <div class="form-section">
+        <h3>การติดต่อ</h3>
+        <div class="form-grid">
+          <div class="form-group"><label>เบอร์โทร</label><input name="phone" value="${escapeHtml(emp.phone)}"/></div>
+          <div class="form-group"><label>อีเมล</label><input name="email" type="email" value="${escapeHtml(emp.email)}"/></div>
+          <div class="form-group span-2"><label>ที่อยู่</label><textarea name="address" rows="2">${escapeHtml(emp.address)}</textarea></div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>การทำงาน</h3>
+        <div class="form-grid">
+          <div class="form-group"><label>ฝ่าย *</label><select name="department" required>${depts.map(d => `<option value="${d.id}" ${emp.department === d.id ? 'selected' : ''}>${escapeHtml(d.name)}</option>`).join('')}</select></div>
+          <div class="form-group"><label>สาขา</label><input name="branch" value="${escapeHtml(emp.branch)}" placeholder="เช่น สำนักงานใหญ่"/></div>
+          <div class="form-group"><label>ระดับตำแหน่งงาน *</label><select name="position" required>${positions.map(p => `<option value="${p.id}" ${emp.position === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}</select></div>
+          <div class="form-group"><label>ตำแหน่ง</label><input name="positionTitle" value="${escapeHtml(emp.positionTitle)}" placeholder="เช่น ผู้จัดการฝ่ายบุคคล"/></div>
+          <div class="form-group"><label>ประเภทพนักงาน</label><select name="employeeType">${opt(EMP_OPTIONS.empTypes, emp.employeeType)}</select></div>
+          <div class="form-group"><label>วันเริ่มงาน *</label><input name="hireDate" type="date" value="${emp.hireDate || ''}" required/></div>
+          <div class="form-group"><label>สถานะ</label><select name="status"><option value="active" ${emp.status === 'active' ? 'selected' : ''}>ปฏิบัติงาน</option><option value="resigned" ${emp.status === 'resigned' ? 'selected' : ''}>ลาออก</option></select></div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>บัญชีธนาคาร</h3>
+        <div class="form-grid">
+          <div class="form-group"><label>ธนาคาร</label><input name="bank" list="dl-banks" value="${escapeHtml(emp.bank)}"/></div>
+          <div class="form-group"><label>เลขบัญชี</label><input name="bankAccount" value="${escapeHtml(emp.bankAccount)}" placeholder="000-0-00000-0"/></div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>เงินเดือนและสวัสดิการ</h3>
+        <div class="form-grid">
+          <div class="form-group"><label>เงินเดือน *</label><input name="salary" type="number" min="0" step="100" value="${emp.salary || 0}" required class="income-input"/></div>
+          <div class="form-group"><label>ค่าตำแหน่ง</label><input name="allowancePosition" type="number" min="0" step="100" value="${emp.allowancePosition || 0}" class="income-input"/></div>
+          <div class="form-group"><label>ค่าเดินทาง</label><input name="allowanceTravel" type="number" min="0" step="100" value="${emp.allowanceTravel || 0}" class="income-input"/></div>
+          <div class="form-group"><label>ค่าอาหาร</label><input name="allowanceFood" type="number" min="0" step="100" value="${emp.allowanceFood || 0}" class="income-input"/></div>
+          <div class="form-group"><label>ค่าเบี้ยเลี้ยง</label><input name="allowancePerDiem" type="number" min="0" step="100" value="${emp.allowancePerDiem || 0}" class="income-input"/></div>
+          <div class="form-group"><label>ค่าภาษา</label><input name="allowanceLanguage" type="number" min="0" step="100" value="${emp.allowanceLanguage || 0}" class="income-input"/></div>
+          <div class="form-group"><label>ค่าอื่นๆ</label><input name="allowanceOther" type="number" min="0" step="100" value="${emp.allowanceOther || 0}" class="income-input"/></div>
+          <div class="form-group"><label>รวมรายได้ต่อเดือน</label><input id="incomeTotal" type="text" readonly style="font-weight:600;color:var(--primary)"/></div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>หมายเหตุ</h3>
+        <div class="form-grid">
+          <div class="form-group span-2"><label>หมายเหตุ</label><textarea name="note" rows="2">${escapeHtml(emp.note)}</textarea></div>
+        </div>
+      </div>
+
+      <datalist id="dl-nationalities">${dataListOpt(EMP_OPTIONS.nationalities)}</datalist>
+      <datalist id="dl-religions">${dataListOpt(EMP_OPTIONS.religions)}</datalist>
+      <datalist id="dl-educations">${dataListOpt(EMP_OPTIONS.educations)}</datalist>
+      <datalist id="dl-banks">${dataListOpt(EMP_OPTIONS.banks)}</datalist>
+
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" data-close>ยกเลิก</button>
         <button type="submit" class="btn btn-primary" id="empSubmit">${id ? 'บันทึกการแก้ไข' : 'เพิ่มพนักงาน'}</button>
       </div>
     </form>`, { size: 'lg' });
+
+  // คำนวณรวมรายได้แบบ realtime
+  const updateTotal = () => {
+    const inputs = $$('.income-input', $('#empForm'));
+    const sum = inputs.reduce((s, i) => s + (Number(i.value) || 0), 0);
+    $('#incomeTotal').value = fmt.money(sum);
+  };
+  $$('.income-input').forEach(i => i.addEventListener('input', updateTotal));
+  updateTotal();
+
   $('#empForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = $('#empSubmit'); btn.disabled = true;
     try {
       const data = Object.fromEntries(new FormData(e.target).entries());
-      data.salary = Number(data.salary);
+      ['salary', 'allowancePosition', 'allowanceTravel', 'allowanceFood',
+       'allowancePerDiem', 'allowanceLanguage', 'allowanceOther'].forEach(k => data[k] = Number(data[k]));
       await DB.saveEmployee(data);
       modal.close();
       toast(id ? 'บันทึกการแก้ไขแล้ว' : 'เพิ่มพนักงานใหม่แล้ว', 'success');
@@ -428,22 +522,75 @@ function viewEmployee(id) {
         </div>
       </div>
       <div>
-        <h3 style="font-size:20px;margin-bottom:4px">${escapeHtml((e.title || '') + e.firstName + ' ' + e.lastName)}</h3>
-        <div class="muted mb-2">${escapeHtml(e.positionTitle || pos.name || '')} • ${escapeHtml(dept.name || '')}</div>
-        <div class="emp-info-grid mt-4">
-          <div class="emp-info-row"><div class="label">ชื่อเล่น</div><div class="value">${escapeHtml(e.nickname || '-')}</div></div>
-          <div class="emp-info-row"><div class="label">เพศ</div><div class="value">${escapeHtml(e.gender || '-')}</div></div>
-          <div class="emp-info-row"><div class="label">วันเกิด</div><div class="value">${fmt.date(e.dob)} (${fmt.age(e.dob)})</div></div>
-          <div class="emp-info-row"><div class="label">เลขบัตรประชาชน</div><div class="value">${escapeHtml(e.nationalId || '-')}</div></div>
-          <div class="emp-info-row"><div class="label">เบอร์โทร</div><div class="value">${escapeHtml(e.phone || '-')}</div></div>
-          <div class="emp-info-row"><div class="label">อีเมล</div><div class="value">${escapeHtml(e.email || '-')}</div></div>
-          <div class="emp-info-row"><div class="label">วันเริ่มงาน</div><div class="value">${fmt.date(e.hireDate)} (${fmt.serviceYears(e.hireDate)})</div></div>
-          <div class="emp-info-row"><div class="label">เงินเดือน</div><div class="value">${fmt.money(e.salary)}</div></div>
-          <div class="emp-info-row span-2"><div class="label">ที่อยู่</div><div class="value">${escapeHtml(e.address || '-')}</div></div>
-          <div class="emp-info-row span-2"><div class="label">หมายเหตุ</div><div class="value">${escapeHtml(e.note || '-')}</div></div>
-        </div>
+        <h3 style="font-size:22px;font-weight:600;letter-spacing:-0.02em;margin-bottom:6px">${escapeHtml((e.title || '') + e.firstName + ' ' + e.lastName)}</h3>
+        <div class="muted">${escapeHtml(e.positionTitle || pos.name || '-')} • ${escapeHtml(dept.name || '-')}${e.branch ? ' • สาขา ' + escapeHtml(e.branch) : ''}</div>
+        <div class="muted-2 mt-2" style="font-size:12px">${escapeHtml(e.employeeType || '')}${e.nickname ? ' • ชื่อเล่น "' + escapeHtml(e.nickname) + '"' : ''}</div>
       </div>
     </div>
+
+    <div class="form-section mt-4">
+      <h3>ข้อมูลส่วนตัว</h3>
+      <div class="emp-info-grid">
+        <div class="emp-info-row"><div class="label">เพศ</div><div class="value">${escapeHtml(e.gender || '-')}</div></div>
+        <div class="emp-info-row"><div class="label">วันเกิด</div><div class="value">${fmt.date(e.dob)}${e.dob ? ' (' + fmt.age(e.dob) + ')' : ''}</div></div>
+        <div class="emp-info-row"><div class="label">เลขประชาชน</div><div class="value">${escapeHtml(e.nationalId || '-')}</div></div>
+        <div class="emp-info-row"><div class="label">สัญชาติ</div><div class="value">${escapeHtml(e.nationality || '-')}</div></div>
+        <div class="emp-info-row"><div class="label">ศาสนา</div><div class="value">${escapeHtml(e.religion || '-')}</div></div>
+        <div class="emp-info-row"><div class="label">วุฒิการศึกษา</div><div class="value">${escapeHtml(e.education || '-')}</div></div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <h3>การติดต่อ</h3>
+      <div class="emp-info-grid">
+        <div class="emp-info-row"><div class="label">เบอร์โทร</div><div class="value">${escapeHtml(e.phone || '-')}</div></div>
+        <div class="emp-info-row"><div class="label">อีเมล</div><div class="value">${escapeHtml(e.email || '-')}</div></div>
+        <div class="emp-info-row span-2"><div class="label">ที่อยู่</div><div class="value">${escapeHtml(e.address || '-')}</div></div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <h3>การทำงาน</h3>
+      <div class="emp-info-grid">
+        <div class="emp-info-row"><div class="label">ฝ่าย</div><div class="value">${escapeHtml(dept.name || '-')}</div></div>
+        <div class="emp-info-row"><div class="label">สาขา</div><div class="value">${escapeHtml(e.branch || '-')}</div></div>
+        <div class="emp-info-row"><div class="label">ระดับตำแหน่งงาน</div><div class="value">${escapeHtml(pos.name || '-')}</div></div>
+        <div class="emp-info-row"><div class="label">ตำแหน่ง</div><div class="value">${escapeHtml(e.positionTitle || '-')}</div></div>
+        <div class="emp-info-row"><div class="label">ประเภทพนักงาน</div><div class="value">${escapeHtml(e.employeeType || '-')}</div></div>
+        <div class="emp-info-row"><div class="label">วันเริ่มงาน</div><div class="value">${fmt.date(e.hireDate)}${e.hireDate ? ' (' + fmt.serviceYears(e.hireDate) + ')' : ''}</div></div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <h3>บัญชีธนาคาร</h3>
+      <div class="emp-info-grid">
+        <div class="emp-info-row"><div class="label">ธนาคาร</div><div class="value">${escapeHtml(e.bank || '-')}</div></div>
+        <div class="emp-info-row"><div class="label">เลขบัญชี</div><div class="value">${escapeHtml(e.bankAccount || '-')}</div></div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <h3>เงินเดือนและสวัสดิการ</h3>
+      <div class="emp-info-grid">
+        <div class="emp-info-row"><div class="label">เงินเดือน</div><div class="value">${fmt.money(e.salary)}</div></div>
+        <div class="emp-info-row"><div class="label">ค่าตำแหน่ง</div><div class="value">${fmt.money(e.allowancePosition)}</div></div>
+        <div class="emp-info-row"><div class="label">ค่าเดินทาง</div><div class="value">${fmt.money(e.allowanceTravel)}</div></div>
+        <div class="emp-info-row"><div class="label">ค่าอาหาร</div><div class="value">${fmt.money(e.allowanceFood)}</div></div>
+        <div class="emp-info-row"><div class="label">ค่าเบี้ยเลี้ยง</div><div class="value">${fmt.money(e.allowancePerDiem)}</div></div>
+        <div class="emp-info-row"><div class="label">ค่าภาษา</div><div class="value">${fmt.money(e.allowanceLanguage)}</div></div>
+        <div class="emp-info-row"><div class="label">ค่าอื่นๆ</div><div class="value">${fmt.money(e.allowanceOther)}</div></div>
+      </div>
+      <div style="margin-top:14px;padding:14px 18px;background:var(--primary-soft);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center;border:1px solid var(--border)">
+        <div style="font-size:13px;color:var(--text-2);font-weight:500">รวมรายได้ต่อเดือน</div>
+        <div style="font-size:18px;font-weight:700;color:var(--primary)">${fmt.money(totalIncome(e))}</div>
+      </div>
+    </div>
+
+    ${e.note ? `
+    <div class="form-section">
+      <h3>หมายเหตุ</h3>
+      <div style="padding:4px 0;color:var(--text-2)">${escapeHtml(e.note)}</div>
+    </div>` : ''}
 
     <div class="tabs mt-4">
       <button class="tab active" data-tab="history">ประวัติเงินเดือน (${history.length})</button>
@@ -481,11 +628,24 @@ function exportEmployeesXLSX() {
   if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(exportEmployeesXLSX, 800); return; }
   const rows = DB.getEmployees().map(e => ({
     'รหัส': e.id, 'คำนำหน้า': e.title, 'ชื่อ': e.firstName, 'นามสกุล': e.lastName,
-    'ชื่อเล่น': e.nickname, 'เลขบัตรประชาชน': e.nationalId, 'วันเกิด': e.dob, 'เพศ': e.gender,
+    'ชื่อเล่น': e.nickname,
+    'เลขประชาชน': e.nationalId, 'วันเกิด': e.dob, 'เพศ': e.gender,
+    'สัญชาติ': e.nationality, 'ศาสนา': e.religion, 'วุฒิการศึกษา': e.education,
     'เบอร์โทร': e.phone, 'อีเมล': e.email, 'ที่อยู่': e.address,
     'ฝ่าย': (DB.getDepartment(e.department) || {}).name || '',
-    'ระดับตำแหน่ง': (DB.getPosition(e.position) || {}).name || '',
-    'ตำแหน่ง': e.positionTitle, 'วันเริ่มงาน': e.hireDate, 'เงินเดือน': e.salary, 'สถานะ': e.status
+    'สาขา': e.branch,
+    'ระดับตำแหน่งงาน': (DB.getPosition(e.position) || {}).name || '',
+    'ตำแหน่ง': e.positionTitle,
+    'ประเภทพนักงาน': e.employeeType,
+    'วันเริ่มงาน': e.hireDate,
+    'ธนาคาร': e.bank, 'เลขบัญชี': e.bankAccount,
+    'เงินเดือน': e.salary,
+    'ค่าตำแหน่ง': e.allowancePosition, 'ค่าเดินทาง': e.allowanceTravel,
+    'ค่าอาหาร': e.allowanceFood, 'ค่าเบี้ยเลี้ยง': e.allowancePerDiem,
+    'ค่าภาษา': e.allowanceLanguage, 'ค่าอื่นๆ': e.allowanceOther,
+    'รวมรายได้': totalIncome(e),
+    'สถานะ': e.status === 'active' ? 'ปฏิบัติงาน' : 'ลาออก',
+    'หมายเหตุ': e.note
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
@@ -1033,14 +1193,29 @@ function exportPayrollXLSX() {
   if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(exportPayrollXLSX, 800); return; }
   const month = new Date().toISOString().slice(0, 7);
   const rows = DB.getEmployees({ status: 'active' }).map(e => {
-    const allow = DB.getAllowances(e.id).filter(a => a.month === month).reduce((s, a) => s + (a.amount || 0), 0);
+    const extraAllow = DB.getAllowances(e.id).filter(a => a.month === month).reduce((s, a) => s + (a.amount || 0), 0);
     const adv = DB.getAdvances(e.id).filter(a => a.status === 'paid' && (a.date || '').startsWith(month)).reduce((s, a) => s + (a.amount || 0), 0);
     const loanDed = DB.getLoans(e.id).filter(l => l.status === 'active').reduce((s, l) => s + (l.monthlyPayment || 0), 0);
-    const net = (e.salary || 0) + allow - adv - loanDed;
+    const gross = totalIncome(e) + extraAllow;
+    const net = gross - adv - loanDed;
     return {
-      'รหัส': e.id, 'ชื่อ-นามสกุล': (e.title || '') + e.firstName + ' ' + e.lastName,
-      'ฝ่าย': (DB.getDepartment(e.department) || {}).name || '', 'ตำแหน่ง': e.positionTitle,
-      'เงินเดือน': e.salary || 0, 'เบี้ยเลี้ยง': allow, 'หักเบิกล่วงหน้า': adv, 'หักผ่อนกู้': loanDed, 'รับสุทธิ': net
+      'รหัส': e.id,
+      'ชื่อ-นามสกุล': (e.title || '') + e.firstName + ' ' + e.lastName,
+      'ฝ่าย': (DB.getDepartment(e.department) || {}).name || '',
+      'ตำแหน่ง': e.positionTitle,
+      'เลขบัญชี': (e.bank ? e.bank + ' ' : '') + (e.bankAccount || ''),
+      'เงินเดือน': e.salary || 0,
+      'ค่าตำแหน่ง': e.allowancePosition || 0,
+      'ค่าเดินทาง': e.allowanceTravel || 0,
+      'ค่าอาหาร': e.allowanceFood || 0,
+      'ค่าเบี้ยเลี้ยง': e.allowancePerDiem || 0,
+      'ค่าภาษา': e.allowanceLanguage || 0,
+      'ค่าอื่นๆ': e.allowanceOther || 0,
+      'เบี้ยเลี้ยงพิเศษ': extraAllow,
+      'รวมรายได้': gross,
+      'หักเบิกล่วงหน้า': adv,
+      'หักผ่อนกู้': loanDed,
+      'รับสุทธิ': net
     };
   });
   const ws = XLSX.utils.json_to_sheet(rows);

@@ -548,6 +548,30 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .form-group.span-full { grid-column: 1 / -1; }
 @media (max-width: 600px) { .form-group.span-2 { grid-column: span 1; } }
 
+.form-section {
+  margin-bottom: 24px;
+}
+.form-section + .form-section {
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+}
+.form-section h3 {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--primary-text);
+  margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.form-section h3::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border), transparent);
+}
+[data-theme="dark"] .form-section h3 { color: var(--navy-300); }
+
 .form-actions {
   display: flex; gap: 10px; justify-content: flex-end;
   margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border);
