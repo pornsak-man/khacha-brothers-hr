@@ -163,6 +163,7 @@ const DB = {
     allowanceLanguage: Number(r.allowance_language || 0),
     allowanceOther: Number(r.allowance_other || 0),
     bank: r.bank || '', bankAccount: r.bank_account || '',
+    photoUrl: r.photo_url || '',
     status: r.status || 'active', note: r.note || ''
   }),
   _empToDB: (e) => ({
@@ -183,6 +184,7 @@ const DB = {
     allowance_language: Number(e.allowanceLanguage || 0),
     allowance_other: Number(e.allowanceOther || 0),
     bank: e.bank || null, bank_account: e.bankAccount || null,
+    photo_url: e.photoUrl || null,
     status: e.status, note: e.note
   }),
   _depFromDB: (r) => ({ id: r.id, name: r.name, manager: r.manager_id || '', note: r.note || '' }),
@@ -240,6 +242,69 @@ const DB = {
     const nums = this.data.employees.map(e => parseInt(String(e.id).replace(/\D/g, ''), 10)).filter(n => !isNaN(n));
     const max = nums.length ? Math.max(...nums) : 0;
     return 'KB' + String(max + 1).padStart(4, '0');
+  },
+
+  // ─── PHOTOS ───
+  // Compress image client-side (max width 800px, JPEG 0.85 quality)
+  async compressImage(file, maxWidth = 800, quality = 0.85) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const ratio = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * ratio);
+        canvas.height = Math.round(img.height * ratio);
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(blob => {
+          URL.revokeObjectURL(img.src);
+          blob ? resolve(blob) : reject(new Error('Compression failed'));
+        }, 'image/jpeg', quality);
+      };
+      img.onerror = () => reject(new Error('Invalid image'));
+      img.src = URL.createObjectURL(file);
+    });
+  },
+
+  async uploadEmployeePhoto(blob, employeeId) {
+    const path = `${employeeId}-${Date.now()}.jpg`;
+    const { error: uploadError } = await this.client.storage
+      .from('employee-photos')
+      .upload(path, blob, { cacheControl: '3600', upsert: true, contentType: 'image/jpeg' });
+    if (uploadError) throw uploadError;
+    const { data } = this.client.storage.from('employee-photos').getPublicUrl(path);
+    return data.publicUrl;
+  },
+
+  // ─── BULK IMPORT ───
+  async bulkUpsertEmployees(rows, onProgress) {
+    const CHUNK_SIZE = 100;
+    const result = { inserted: 0, failed: 0, errors: [] };
+    for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+      const chunk = rows.slice(i, i + CHUNK_SIZE).map(r => this._empToDB(r));
+      const { data, error } = await this.client
+        .from('employees')
+        .upsert(chunk, { onConflict: 'id' })
+        .select();
+      if (error) {
+        result.failed += chunk.length;
+        result.errors.push({ chunk: i / CHUNK_SIZE + 1, message: error.message });
+      } else {
+        result.inserted += data.length;
+        // update local cache
+        for (const row of data) {
+          const mapped = this._empFromDB(row);
+          const idx = this.data.employees.findIndex(e => e.id === mapped.id);
+          if (idx >= 0) this.data.employees[idx] = mapped;
+          else this.data.employees.push(mapped);
+        }
+      }
+      if (onProgress) onProgress(Math.min(i + CHUNK_SIZE, rows.length), rows.length);
+      // ปล่อย event loop เพื่อให้ progress UI update ไหลลื่น
+      await new Promise(r => requestAnimationFrame(r));
+    }
+    return result;
   },
 
   // ─── DEPARTMENTS ───

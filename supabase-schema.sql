@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS public.employees (
   allowance_other     NUMERIC(12,2) DEFAULT 0,
   bank                TEXT,
   bank_account        TEXT,
+  photo_url           TEXT,
   status              TEXT DEFAULT 'active',
   note                TEXT,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),

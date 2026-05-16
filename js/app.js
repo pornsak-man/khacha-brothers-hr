@@ -50,6 +50,7 @@ const ICON = {
   clipboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>',
   chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
   download: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+  upload: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
   plus: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>'
 };
 
@@ -266,7 +267,8 @@ function renderDashboardCharts(s) {
 // ═══════════════════════════════════════════════════════
 //  PAGE: EMPLOYEES
 // ═══════════════════════════════════════════════════════
-const empState = { search: '', department: '', status: 'active' };
+const empState = { search: '', department: '', status: 'active', page: 1, pageSize: 50 };
+let _empSearchTimer = null;
 
 router.register('employees', () => {
   return `
@@ -274,7 +276,8 @@ router.register('employees', () => {
       <h2>ทะเบียนพนักงาน</h2>
       <div class="actions">
         <button class="btn btn-secondary" onclick="exportEmployeesXLSX()">${ICON.download}Export Excel</button>
-        ${DB.isAdmin ? '<button class="btn btn-primary" onclick="openEmployeeForm()">+ เพิ่มพนักงาน</button>' : ''}
+        ${DB.isAdmin ? `<button class="btn btn-secondary" onclick="openImportEmployees()">${ICON.upload}นำเข้า Excel</button>
+        <button class="btn btn-primary" onclick="openEmployeeForm()">+ เพิ่มพนักงาน</button>` : ''}
       </div>
     </div>
     <div class="card">
@@ -297,16 +300,37 @@ router.register('employees', () => {
 
 function wireEmployeePage() {
   renderEmployeeList();
-  $('#empSearch')?.addEventListener('input', (e) => { empState.search = e.target.value; renderEmployeeList(); });
-  $('#empDept')?.addEventListener('change', (e) => { empState.department = e.target.value; renderEmployeeList(); });
-  $('#empStatus')?.addEventListener('change', (e) => { empState.status = e.target.value; renderEmployeeList(); });
+  $('#empSearch')?.addEventListener('input', (e) => {
+    // debounce 200ms — ไม่ filter ทุก keystroke
+    clearTimeout(_empSearchTimer);
+    _empSearchTimer = setTimeout(() => {
+      empState.search = e.target.value;
+      empState.page = 1;
+      renderEmployeeList();
+    }, 200);
+  });
+  $('#empDept')?.addEventListener('change', (e) => { empState.department = e.target.value; empState.page = 1; renderEmployeeList(); });
+  $('#empStatus')?.addEventListener('change', (e) => { empState.status = e.target.value; empState.page = 1; renderEmployeeList(); });
+}
+
+function avatarThumb(e) {
+  if (e.photoUrl) return `<img src="${escapeHtml(e.photoUrl)}" class="avatar-thumb" alt="" loading="lazy">`;
+  const initial = escapeHtml((e.firstName || '?').charAt(0));
+  return `<div class="avatar-thumb avatar-thumb-text">${initial}</div>`;
 }
 
 function renderEmployeeList() {
-  const list = DB.getEmployees(empState);
+  const allList = DB.getEmployees(empState);
+  const total = allList.length;
+  const pageSize = empState.pageSize;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (empState.page > totalPages) empState.page = totalPages;
+  const start = (empState.page - 1) * pageSize;
+  const list = allList.slice(start, start + pageSize);
+
   const container = $('#empList');
   if (!container) return;
-  if (!list.length) {
+  if (!total) {
     container.innerHTML = `<div class="empty-state"><div class="icon">${ICON.users}</div><div class="title">ไม่พบพนักงาน</div><div class="hint">ลองเปลี่ยนตัวกรอง หรือเพิ่มพนักงานใหม่</div></div>`;
     return;
   }
@@ -314,17 +338,18 @@ function renderEmployeeList() {
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th>รหัส</th><th>ชื่อ-นามสกุล</th><th>ชื่อเล่น</th><th>ฝ่าย</th><th>ตำแหน่ง</th><th class="num">เงินเดือน</th><th>วันเริ่มงาน</th><th>สถานะ</th><th></th></tr>
+          <tr><th></th><th>รหัส</th><th>ชื่อ-นามสกุล</th><th>ชื่อเล่น</th><th>ฝ่าย</th><th>ตำแหน่ง</th><th class="num">รายได้รวม</th><th>เริ่มงาน</th><th>สถานะ</th><th></th></tr>
         </thead>
         <tbody>
           ${list.map(e => `
             <tr>
+              <td style="width:48px">${avatarThumb(e)}</td>
               <td><strong>${escapeHtml(e.id)}</strong></td>
               <td>${escapeHtml((e.title || '') + e.firstName + ' ' + e.lastName)}</td>
               <td>${escapeHtml(e.nickname || '-')}</td>
               <td>${escapeHtml((DB.getDepartment(e.department) || {}).name || '-')}</td>
               <td>${escapeHtml(e.positionTitle || '')}</td>
-              <td class="num">${fmt.money(e.salary)}</td>
+              <td class="num">${fmt.money(totalIncome(e))}</td>
               <td>${fmt.date(e.hireDate)}</td>
               <td>${e.status === 'active' ? '<span class="badge badge-success">ปฏิบัติงาน</span>' : '<span class="badge badge-neutral">ลาออก</span>'}</td>
               <td class="actions">
@@ -336,8 +361,42 @@ function renderEmployeeList() {
         </tbody>
       </table>
     </div>
-    <div class="muted-2 mt-2" style="font-size:12px">รวม ${list.length} คน</div>
+    ${renderPagination(total, empState.page, pageSize)}
   `;
+}
+
+function renderPagination(total, current, pageSize) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const start = (current - 1) * pageSize + 1;
+  const end = Math.min(current * pageSize, total);
+  // คำนวณหน้าที่จะแสดง (compact pagination)
+  const pages = [];
+  pages.push(1);
+  if (current - 2 > 2) pages.push('…');
+  for (let p = Math.max(2, current - 1); p <= Math.min(totalPages - 1, current + 1); p++) pages.push(p);
+  if (current + 2 < totalPages - 1) pages.push('…');
+  if (totalPages > 1) pages.push(totalPages);
+  const unique = [...new Set(pages)];
+
+  return `
+    <div class="pagination">
+      <div class="pagination-info">แสดง ${start.toLocaleString()}–${end.toLocaleString()} จาก ${total.toLocaleString()} คน</div>
+      <div class="pagination-controls">
+        <button class="btn-page" ${current === 1 ? 'disabled' : ''} onclick="gotoEmpPage(${current - 1})" aria-label="หน้าก่อนหน้า">‹</button>
+        ${unique.map(p => p === '…'
+          ? '<span class="page-ellipsis">…</span>'
+          : `<button class="btn-page ${p === current ? 'active' : ''}" onclick="gotoEmpPage(${p})">${p}</button>`).join('')}
+        <button class="btn-page" ${current === totalPages ? 'disabled' : ''} onclick="gotoEmpPage(${current + 1})" aria-label="หน้าถัดไป">›</button>
+      </div>
+    </div>
+  `;
+}
+
+function gotoEmpPage(p) {
+  empState.page = p;
+  renderEmployeeList();
+  // เลื่อนไปบนสุดของ table อย่างนุ่มนวล
+  $('.content')?.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // ดรอปดาวน์ / datalist สำหรับฟอร์มพนักงาน
@@ -382,6 +441,23 @@ function openEmployeeForm(id = null) {
 
   modal.open(id ? 'แก้ไขข้อมูลพนักงาน' : 'เพิ่มพนักงานใหม่', `
     <form id="empForm">
+
+      <div class="form-section">
+        <h3>รูปพนักงาน</h3>
+        <div class="photo-upload-row">
+          <div class="photo-preview-lg" id="photoPreview">
+            ${emp.photoUrl ? `<img src="${escapeHtml(emp.photoUrl)}" alt=""/>` : `<div class="photo-placeholder">${escapeHtml((emp.firstName || '?').charAt(0))}</div>`}
+          </div>
+          <div style="flex:1">
+            <input type="file" accept="image/*" id="photoFile" hidden>
+            <div class="flex gap-2" style="flex-wrap:wrap">
+              <button type="button" class="btn btn-secondary btn-sm" id="photoChoose">เลือกรูป</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="photoRemove" ${emp.photoUrl ? '' : 'style="display:none"'}>ลบรูป</button>
+            </div>
+            <div class="muted-2 mt-2" style="font-size:12px;line-height:1.5">รองรับ JPG, PNG, GIF — ระบบย่อขนาดอัตโนมัติให้ไม่เกิน 800px</div>
+          </div>
+        </div>
+      </div>
 
       <div class="form-section">
         <h3>ข้อมูลพื้นฐาน</h3>
@@ -471,20 +547,56 @@ function openEmployeeForm(id = null) {
   $$('.income-input').forEach(i => i.addEventListener('input', updateTotal));
   updateTotal();
 
+  // ─── PHOTO HANDLING ───
+  let pendingPhotoBlob = null;
+  let removePhoto = false;
+  $('#photoChoose').addEventListener('click', () => $('#photoFile').click());
+  $('#photoFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { toast('ไฟล์ใหญ่เกิน 10MB', 'error'); return; }
+    try {
+      pendingPhotoBlob = await DB.compressImage(file);
+      removePhoto = false;
+      const url = URL.createObjectURL(pendingPhotoBlob);
+      $('#photoPreview').innerHTML = `<img src="${url}" alt=""/>`;
+      $('#photoRemove').style.display = '';
+    } catch (ex) { toast('ไฟล์รูปไม่ถูกต้อง: ' + ex.message, 'error'); }
+  });
+  $('#photoRemove').addEventListener('click', () => {
+    pendingPhotoBlob = null;
+    removePhoto = true;
+    $('#photoPreview').innerHTML = `<div class="photo-placeholder">${escapeHtml((emp.firstName || '?').charAt(0))}</div>`;
+    $('#photoRemove').style.display = 'none';
+    $('#photoFile').value = '';
+  });
+
   $('#empForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const btn = $('#empSubmit'); btn.disabled = true;
+    const btn = $('#empSubmit'); btn.disabled = true; btn.textContent = 'กำลังบันทึก...';
     try {
       const data = Object.fromEntries(new FormData(e.target).entries());
       ['salary', 'allowancePosition', 'allowanceTravel', 'allowanceFood',
        'allowancePerDiem', 'allowanceLanguage', 'allowanceOther'].forEach(k => data[k] = Number(data[k]));
+
+      // upload photo if changed
+      if (pendingPhotoBlob) {
+        btn.textContent = 'กำลังอัปโหลดรูป...';
+        data.photoUrl = await DB.uploadEmployeePhoto(pendingPhotoBlob, data.id);
+      } else if (removePhoto) {
+        data.photoUrl = '';
+      } else {
+        data.photoUrl = emp.photoUrl;
+      }
+
+      btn.textContent = 'กำลังบันทึก...';
       await DB.saveEmployee(data);
       modal.close();
       toast(id ? 'บันทึกการแก้ไขแล้ว' : 'เพิ่มพนักงานใหม่แล้ว', 'success');
       renderEmployeeList();
     } catch (ex) {
       toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error');
-      btn.disabled = false;
+      btn.disabled = false; btn.textContent = id ? 'บันทึกการแก้ไข' : 'เพิ่มพนักงาน';
     }
   });
 }
@@ -515,7 +627,9 @@ function viewEmployee(id) {
   modal.open('ข้อมูลพนักงาน', `
     <div class="emp-profile">
       <div>
-        <div class="emp-avatar-lg">${escapeHtml(initials)}</div>
+        ${e.photoUrl
+          ? `<img src="${escapeHtml(e.photoUrl)}" class="emp-avatar-lg" alt="" loading="lazy"/>`
+          : `<div class="emp-avatar-lg">${escapeHtml(initials)}</div>`}
         <div class="text-center mt-4">
           <div style="font-size:13px;color:var(--text-2)">รหัสพนักงาน</div>
           <div style="font-size:18px;font-weight:600">${escapeHtml(e.id)}</div>
@@ -622,6 +736,287 @@ function viewEmployee(id) {
     t.classList.add('active');
     renderTab(t.dataset.tab);
   }));
+}
+
+// ─── EXCEL IMPORT ───
+const IMPORT_COLUMNS = [
+  'รหัสพนักงาน', 'คำนำหน้า', 'ชื่อ', 'นามสกุล', 'ชื่อเล่น', 'เพศ',
+  'วันเกิด', 'เลขประชาชน', 'สัญชาติ', 'ศาสนา', 'วุฒิการศึกษา',
+  'เบอร์โทร', 'อีเมล', 'ที่อยู่',
+  'รหัสฝ่าย', 'สาขา', 'รหัสระดับตำแหน่ง', 'ตำแหน่ง', 'ประเภทพนักงาน', 'วันเริ่มงาน',
+  'ธนาคาร', 'เลขบัญชี',
+  'เงินเดือน', 'ค่าตำแหน่ง', 'ค่าเดินทาง', 'ค่าอาหาร', 'ค่าเบี้ยเลี้ยง', 'ค่าภาษา', 'ค่าอื่นๆ',
+  'สถานะ', 'หมายเหตุ'
+];
+
+function downloadEmployeeTemplate() {
+  if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(downloadEmployeeTemplate, 800); return; }
+  const sample = [
+    {
+      'รหัสพนักงาน': 'KB1001', 'คำนำหน้า': 'นาย', 'ชื่อ': 'ตัวอย่าง', 'นามสกุล': 'นามสกุลตัวอย่าง',
+      'ชื่อเล่น': 'ตย.', 'เพศ': 'ชาย', 'วันเกิด': '1990-01-15', 'เลขประชาชน': '1234567890123',
+      'สัญชาติ': 'ไทย', 'ศาสนา': 'พุทธ', 'วุฒิการศึกษา': 'ปริญญาตรี',
+      'เบอร์โทร': '081-234-5678', 'อีเมล': 'sample@khacha.co.th', 'ที่อยู่': '123 ถ.สุขุมวิท กรุงเทพฯ',
+      'รหัสฝ่าย': 'D001', 'สาขา': 'สำนักงานใหญ่',
+      'รหัสระดับตำแหน่ง': 'P03', 'ตำแหน่ง': 'หัวหน้าทีม',
+      'ประเภทพนักงาน': 'พนักงานประจำ', 'วันเริ่มงาน': '2024-01-01',
+      'ธนาคาร': 'ธนาคารกสิกรไทย (KBANK)', 'เลขบัญชี': '123-4-56789-0',
+      'เงินเดือน': 30000, 'ค่าตำแหน่ง': 3000, 'ค่าเดินทาง': 2000, 'ค่าอาหาร': 1500,
+      'ค่าเบี้ยเลี้ยง': 0, 'ค่าภาษา': 0, 'ค่าอื่นๆ': 0,
+      'สถานะ': 'active', 'หมายเหตุ': ''
+    }
+  ];
+  const ws = XLSX.utils.json_to_sheet(sample, { header: IMPORT_COLUMNS });
+  ws['!cols'] = IMPORT_COLUMNS.map(k => ({ wch: Math.max(k.length + 2, 14) }));
+
+  const depts = DB.getDepartments().map(d => `${d.id} = ${d.name}`).join('\n');
+  const positions = DB.getPositions().map(p => `${p.id} = ${p.name}`).join('\n');
+  const notes = [
+    ['คำแนะนำการกรอกข้อมูลพนักงาน'],
+    [''],
+    ['ฟิลด์ที่จำเป็น (ต้องกรอก):'],
+    ['• รหัสพนักงาน — ห้ามซ้ำกับที่มีอยู่ในระบบ (ถ้าซ้ำจะอัปเดตข้อมูล)'],
+    ['• ชื่อ'],
+    ['• นามสกุล'],
+    [''],
+    ['รูปแบบข้อมูล:'],
+    ['• วันที่: YYYY-MM-DD เช่น 1990-01-15'],
+    ['• เลขประชาชน: 13 หลัก ไม่มีขีด'],
+    ['• เงินเดือน/ค่าต่างๆ: ตัวเลขเท่านั้น (ไม่ใส่ , หรือ บาท)'],
+    ['• สถานะ: active = ปฏิบัติงาน, resigned = ลาออก'],
+    [''],
+    ['รหัสฝ่ายที่มีในระบบ:'],
+    ...depts.split('\n').map(s => ['• ' + s]),
+    [''],
+    ['รหัสระดับตำแหน่งที่มีในระบบ:'],
+    ...positions.split('\n').map(s => ['• ' + s]),
+    [''],
+    ['การ Import:'],
+    ['• รหัสซ้ำกับที่มีอยู่ → อัปเดตข้อมูล (overwrite)'],
+    ['• รหัสใหม่ → สร้างพนักงานใหม่'],
+    ['• Import ทีเดียว 1000+ คนได้ — ใช้เวลา ~5-10 วินาที'],
+    ['• ไม่ใส่ข้อมูลใน sheet "คำแนะนำ" — กรอกแค่ sheet "พนักงาน"']
+  ];
+  const wsNotes = XLSX.utils.aoa_to_sheet(notes);
+  wsNotes['!cols'] = [{ wch: 80 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'พนักงาน');
+  XLSX.utils.book_append_sheet(wb, wsNotes, 'คำแนะนำ');
+  XLSX.writeFile(wb, 'template-คชา-นำเข้าพนักงาน.xlsx');
+  toast('ดาวน์โหลด template แล้ว', 'success');
+}
+
+function parseImportRow(row) {
+  const get = (k) => (row[k] == null ? '' : String(row[k])).trim();
+  const num = (k) => Number(row[k]) || 0;
+  // รองรับวันที่ทั้ง Date object (Excel) และ string
+  const parseDate = (k) => {
+    const v = row[k];
+    if (!v) return null;
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+    const s = String(v).trim();
+    // ลอง parse string
+    const m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+    return s;
+  };
+  return {
+    id: get('รหัสพนักงาน'),
+    title: get('คำนำหน้า') || 'นาย',
+    firstName: get('ชื่อ'),
+    lastName: get('นามสกุล'),
+    nickname: get('ชื่อเล่น'),
+    gender: get('เพศ') || 'ชาย',
+    dob: parseDate('วันเกิด'),
+    nationalId: get('เลขประชาชน'),
+    nationality: get('สัญชาติ') || 'ไทย',
+    religion: get('ศาสนา'),
+    education: get('วุฒิการศึกษา'),
+    phone: get('เบอร์โทร'),
+    email: get('อีเมล'),
+    address: get('ที่อยู่'),
+    department: get('รหัสฝ่าย'),
+    branch: get('สาขา'),
+    position: get('รหัสระดับตำแหน่ง'),
+    positionTitle: get('ตำแหน่ง'),
+    employeeType: get('ประเภทพนักงาน') || 'พนักงานประจำ',
+    hireDate: parseDate('วันเริ่มงาน') || new Date().toISOString().slice(0, 10),
+    bank: get('ธนาคาร'),
+    bankAccount: get('เลขบัญชี'),
+    salary: num('เงินเดือน'),
+    allowancePosition: num('ค่าตำแหน่ง'),
+    allowanceTravel: num('ค่าเดินทาง'),
+    allowanceFood: num('ค่าอาหาร'),
+    allowancePerDiem: num('ค่าเบี้ยเลี้ยง'),
+    allowanceLanguage: num('ค่าภาษา'),
+    allowanceOther: num('ค่าอื่นๆ'),
+    status: get('สถานะ') === 'resigned' ? 'resigned' : 'active',
+    note: get('หมายเหตุ'),
+    photoUrl: ''
+  };
+}
+
+function validateImportRows(rows) {
+  const errors = [];
+  const idsSeen = new Set();
+  const deptIds = new Set(DB.getDepartments().map(d => d.id));
+  const posIds = new Set(DB.getPositions().map(p => p.id));
+  rows.forEach((r, i) => {
+    const rowNum = i + 2; // header at row 1
+    if (!r.id) { errors.push({ row: rowNum, msg: 'รหัสพนักงานว่าง' }); return; }
+    if (idsSeen.has(r.id)) errors.push({ row: rowNum, msg: 'รหัสซ้ำในไฟล์: ' + r.id });
+    idsSeen.add(r.id);
+    if (!r.firstName) errors.push({ row: rowNum, msg: 'ชื่อว่าง' });
+    if (!r.lastName) errors.push({ row: rowNum, msg: 'นามสกุลว่าง' });
+    if (r.department && !deptIds.has(r.department))
+      errors.push({ row: rowNum, msg: `รหัสฝ่ายไม่มีในระบบ: ${r.department}` });
+    if (r.position && !posIds.has(r.position))
+      errors.push({ row: rowNum, msg: `รหัสระดับตำแหน่งไม่มีในระบบ: ${r.position}` });
+  });
+  return errors;
+}
+
+async function readExcelFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
+        // หา sheet "พนักงาน" หรือ sheet แรก
+        const sheetName = wb.SheetNames.find(n => n.includes('พนักงาน')) || wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        resolve(rows.map(parseImportRow));
+      } catch (ex) { reject(ex); }
+    };
+    reader.onerror = () => reject(new Error('อ่านไฟล์ไม่สำเร็จ'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function openImportEmployees() {
+  if (!requireAdmin()) return;
+  modal.open('นำเข้าทะเบียนพนักงาน (Excel)', `
+    <div class="import-flow">
+      <div class="import-step">
+        <div class="import-step-num">1</div>
+        <div class="import-step-body">
+          <div class="import-step-title">ดาวน์โหลด Template</div>
+          <div class="muted-2" style="font-size:13px;margin-bottom:8px">ใช้ template เพื่อให้ข้อมูลครบและถูกรูปแบบ มีคำแนะนำในไฟล์</div>
+          <button class="btn btn-secondary btn-sm" onclick="downloadEmployeeTemplate()">${ICON.download}ดาวน์โหลด Template</button>
+        </div>
+      </div>
+      <div class="import-step">
+        <div class="import-step-num">2</div>
+        <div class="import-step-body">
+          <div class="import-step-title">เลือกไฟล์ Excel ที่กรอกแล้ว</div>
+          <input type="file" accept=".xlsx,.xls,.csv" id="importFile" class="import-file">
+        </div>
+      </div>
+      <div id="importBody"></div>
+    </div>
+  `, {
+    size: 'lg',
+    footer: `<button class="btn btn-secondary" data-close>ปิด</button><button class="btn btn-primary" id="importStartBtn" disabled>เริ่มนำเข้า</button>`
+  });
+
+  let parsedRows = null;
+  let validationErrors = [];
+
+  $('#importFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    $('#importBody').innerHTML = '<div class="muted-2 mt-4">กำลังอ่านไฟล์...</div>';
+    try {
+      parsedRows = await readExcelFile(file);
+      validationErrors = validateImportRows(parsedRows);
+      $('#importBody').innerHTML = renderImportPreview(parsedRows, validationErrors);
+      $('#importStartBtn').disabled = validationErrors.length > 0 || parsedRows.length === 0;
+    } catch (ex) {
+      $('#importBody').innerHTML = `<div class="card mt-4" style="border-color:var(--danger);color:var(--danger)">อ่านไฟล์ไม่สำเร็จ: ${escapeHtml(ex.message)}</div>`;
+      $('#importStartBtn').disabled = true;
+    }
+  });
+
+  $('#importStartBtn').addEventListener('click', async () => {
+    if (!parsedRows || !parsedRows.length) return;
+    $('#importStartBtn').disabled = true;
+    $('#importBody').innerHTML = `
+      <div class="card mt-4">
+        <div style="margin-bottom:10px">กำลังนำเข้า <strong id="progressText">0</strong> / <strong>${parsedRows.length.toLocaleString()}</strong></div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+        <div class="muted-2 mt-2" style="font-size:12px">นำเข้าทีละ 100 รายการ — ห้ามปิดหน้าต่างนี้</div>
+      </div>
+    `;
+    const start = performance.now();
+    const result = await DB.bulkUpsertEmployees(parsedRows, (done, total) => {
+      const pct = (done / total) * 100;
+      const fill = $('#progressFill');
+      const text = $('#progressText');
+      if (fill) fill.style.width = pct + '%';
+      if (text) text.textContent = done.toLocaleString();
+    });
+    const elapsed = ((performance.now() - start) / 1000).toFixed(1);
+
+    $('#importBody').innerHTML = `
+      <div class="card mt-4">
+        <div style="font-size:16px;font-weight:600;color:var(--success);margin-bottom:8px">✓ นำเข้าสำเร็จ</div>
+        <div style="font-size:14px;line-height:1.8">
+          • นำเข้าสำเร็จ: <strong>${result.inserted.toLocaleString()}</strong> คน<br>
+          ${result.failed ? `• ผิดพลาด: <strong style="color:var(--danger)">${result.failed.toLocaleString()}</strong> คน<br>` : ''}
+          • ใช้เวลา: <strong>${elapsed}</strong> วินาที
+        </div>
+        ${result.errors.length ? `
+          <details class="mt-2" style="font-size:13px">
+            <summary style="cursor:pointer;color:var(--danger)">ดูข้อผิดพลาด ${result.errors.length} batch</summary>
+            <ul style="margin-top:6px;padding-left:20px">${result.errors.map(e => `<li>Batch ${e.chunk}: ${escapeHtml(e.message)}</li>`).join('')}</ul>
+          </details>
+        ` : ''}
+      </div>
+    `;
+    $('#importStartBtn').textContent = 'เสร็จสิ้น';
+    $('#importStartBtn').disabled = true;
+    renderEmployeeList();
+  });
+}
+
+function renderImportPreview(rows, errors) {
+  const sample = rows.slice(0, 5);
+  return `
+    <div class="card mt-4">
+      <div class="flex items-center gap-2" style="margin-bottom:10px;flex-wrap:wrap">
+        <strong>พบ ${rows.length.toLocaleString()} แถว</strong>
+        ${errors.length
+          ? `<span class="badge badge-danger">${errors.length} ข้อผิดพลาด</span>`
+          : '<span class="badge badge-success">พร้อมนำเข้า</span>'}
+      </div>
+      ${errors.length ? `
+        <div style="background:var(--danger-soft);border-radius:8px;padding:12px;max-height:180px;overflow-y:auto;font-size:12.5px;margin-bottom:12px">
+          <strong style="color:var(--danger-text)">ข้อผิดพลาดที่ต้องแก้ก่อน Import:</strong>
+          <ul style="margin-top:6px;padding-left:20px">
+            ${errors.slice(0, 30).map(e => `<li>แถวที่ ${e.row}: ${escapeHtml(e.msg)}</li>`).join('')}
+            ${errors.length > 30 ? `<li>... และอีก ${errors.length - 30} ข้อ</li>` : ''}
+          </ul>
+        </div>
+      ` : ''}
+      <div style="font-size:12.5px;margin-bottom:6px"><strong>ตัวอย่าง 5 แถวแรก:</strong></div>
+      <div class="table-wrap">
+        <table class="table" style="font-size:12.5px">
+          <thead><tr><th>รหัส</th><th>ชื่อ-นามสกุล</th><th>ฝ่าย</th><th>ตำแหน่ง</th><th class="num">เงินเดือน</th></tr></thead>
+          <tbody>
+            ${sample.map(r => `<tr>
+              <td>${escapeHtml(r.id || '-')}</td>
+              <td>${escapeHtml(r.firstName + ' ' + r.lastName)}</td>
+              <td>${escapeHtml(r.department || '-')}</td>
+              <td>${escapeHtml(r.positionTitle || '-')}</td>
+              <td class="num">${fmt.money(r.salary)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 function exportEmployeesXLSX() {
