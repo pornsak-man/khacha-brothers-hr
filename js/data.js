@@ -1,179 +1,187 @@
 /* ═══════════════════════════════════════════════════════════
-   KHACHA BROTHERS HR — DATA LAYER
-   เก็บข้อมูลใน localStorage (offline-first)
+   KHACHA BROTHERS HR — DATA LAYER (Supabase)
+   - ใช้ Supabase สำหรับ auth + storage + realtime
+   - cache ข้อมูลใน memory เพื่อให้ getter sync ได้
+   - มี realtime subscription คอยอัปเดต cache อัตโนมัติ
    ═══════════════════════════════════════════════════════════ */
 
-const STORAGE_KEY = 'kb_hr_data_v1';
-
-const DEFAULT_DATA = {
-  company: {
-    name: 'บริษัท คชา บราเธอร์ส จำกัด',
-    nameEn: 'Khacha Brothers Co., Ltd.',
-    taxId: '',
-    address: '',
-    phone: '',
-    email: ''
-  },
-  auth: {
-    users: [
-      { username: 'admin', password: 'admin123', name: 'ผู้ดูแลระบบ', role: 'admin' }
-    ]
-  },
-  departments: [
-    { id: 'D001', name: 'ฝ่ายบริหาร', manager: '', note: '' },
-    { id: 'D002', name: 'ฝ่ายบุคคล', manager: '', note: '' },
-    { id: 'D003', name: 'ฝ่ายบัญชี-การเงิน', manager: '', note: '' },
-    { id: 'D004', name: 'ฝ่ายขาย-การตลาด', manager: '', note: '' },
-    { id: 'D005', name: 'ฝ่ายปฏิบัติการ', manager: '', note: '' }
-  ],
-  positionLevels: [
-    { id: 'P01', name: 'พนักงาน', minSalary: 12000, maxSalary: 20000 },
-    { id: 'P02', name: 'พนักงานอาวุโส', minSalary: 18000, maxSalary: 28000 },
-    { id: 'P03', name: 'หัวหน้าทีม', minSalary: 25000, maxSalary: 40000 },
-    { id: 'P04', name: 'ผู้จัดการ', minSalary: 35000, maxSalary: 60000 },
-    { id: 'P05', name: 'ผู้อำนวยการ', minSalary: 55000, maxSalary: 120000 }
-  ],
-  employees: [
-    {
-      id: 'KB0001',
-      title: 'นาย', firstName: 'สมชาย', lastName: 'ใจดี', nickname: 'ชาย',
-      nationalId: '1234567890123', dob: '1990-05-15', gender: 'ชาย',
-      phone: '081-234-5678', email: 'somchai@khacha.co.th',
-      address: '123 ถ.สุขุมวิท กรุงเทพฯ 10110',
-      department: 'D001', position: 'P05', positionTitle: 'ประธานเจ้าหน้าที่บริหาร',
-      hireDate: '2020-01-15', salary: 80000,
-      status: 'active', note: ''
-    },
-    {
-      id: 'KB0002',
-      title: 'นางสาว', firstName: 'สุดา', lastName: 'รักงาน', nickname: 'ดา',
-      nationalId: '1234567890124', dob: '1992-08-22', gender: 'หญิง',
-      phone: '082-345-6789', email: 'suda@khacha.co.th',
-      address: '456 ถ.พระราม 9 กรุงเทพฯ 10310',
-      department: 'D002', position: 'P04', positionTitle: 'ผู้จัดการฝ่ายบุคคล',
-      hireDate: '2021-03-01', salary: 45000,
-      status: 'active', note: ''
-    },
-    {
-      id: 'KB0003',
-      title: 'นาย', firstName: 'วิชัย', lastName: 'มั่นคง', nickname: 'ชัย',
-      nationalId: '1234567890125', dob: '1988-11-10', gender: 'ชาย',
-      phone: '083-456-7890', email: 'wichai@khacha.co.th',
-      address: '789 ถ.รัชดาภิเษก กรุงเทพฯ 10400',
-      department: 'D003', position: 'P04', positionTitle: 'ผู้จัดการฝ่ายบัญชี',
-      hireDate: '2020-06-15', salary: 48000,
-      status: 'active', note: ''
-    },
-    {
-      id: 'KB0004',
-      title: 'นางสาว', firstName: 'พิมพ์ใจ', lastName: 'อ่อนหวาน', nickname: 'พิม',
-      nationalId: '1234567890126', dob: '1995-02-18', gender: 'หญิง',
-      phone: '084-567-8901', email: 'pim@khacha.co.th',
-      address: '321 ถ.ลาดพร้าว กรุงเทพฯ 10230',
-      department: 'D004', position: 'P03', positionTitle: 'หัวหน้าทีมการตลาด',
-      hireDate: '2022-04-10', salary: 32000,
-      status: 'active', note: ''
-    },
-    {
-      id: 'KB0005',
-      title: 'นาย', firstName: 'ประยุทธ', lastName: 'ขยัน', nickname: 'ยุทธ',
-      nationalId: '1234567890127', dob: '1993-07-05', gender: 'ชาย',
-      phone: '085-678-9012', email: 'prayut@khacha.co.th',
-      address: '654 ถ.พหลโยธิน กรุงเทพฯ 10900',
-      department: 'D005', position: 'P02', positionTitle: 'ช่างเทคนิคอาวุโส',
-      hireDate: '2021-09-20', salary: 25000,
-      status: 'active', note: ''
-    },
-    {
-      id: 'KB0006',
-      title: 'นางสาว', firstName: 'มาลี', lastName: 'สดใส', nickname: 'มา',
-      nationalId: '1234567890128', dob: '1997-12-30', gender: 'หญิง',
-      phone: '086-789-0123', email: 'malee@khacha.co.th',
-      address: '987 ถ.วิภาวดี กรุงเทพฯ 10900',
-      department: 'D002', position: 'P01', positionTitle: 'เจ้าหน้าที่บุคคล',
-      hireDate: '2023-06-01', salary: 18000,
-      status: 'active', note: ''
-    },
-    {
-      id: 'KB0007',
-      title: 'นาย', firstName: 'อนุชา', lastName: 'สู้ชีวิต', nickname: 'อนุ',
-      nationalId: '1234567890129', dob: '1991-04-12', gender: 'ชาย',
-      phone: '087-890-1234', email: 'anucha@khacha.co.th',
-      address: '147 ถ.รามคำแหง กรุงเทพฯ 10240',
-      department: 'D004', position: 'P02', positionTitle: 'พนักงานขายอาวุโส',
-      hireDate: '2022-01-15', salary: 24000,
-      status: 'active', note: ''
-    },
-    {
-      id: 'KB0008',
-      title: 'นางสาว', firstName: 'รัตนา', lastName: 'งดงาม', nickname: 'รัตน์',
-      nationalId: '1234567890130', dob: '1996-09-25', gender: 'หญิง',
-      phone: '088-901-2345', email: 'rattana@khacha.co.th',
-      address: '258 ถ.บางนา กรุงเทพฯ 10260',
-      department: 'D003', position: 'P01', positionTitle: 'เจ้าหน้าที่บัญชี',
-      hireDate: '2023-10-01', salary: 17500,
-      status: 'active', note: ''
-    }
-  ],
-  salaryHistory: [],
-  loans: [],
-  advances: [],
-  allowances: [],
-  evaluations: [],
-  calendar: [
-    { id: 'C1', date: '2026-01-01', title: 'วันขึ้นปีใหม่', type: 'holiday' },
-    { id: 'C2', date: '2026-04-13', title: 'วันสงกรานต์', type: 'holiday' },
-    { id: 'C3', date: '2026-04-14', title: 'วันสงกรานต์', type: 'holiday' },
-    { id: 'C4', date: '2026-04-15', title: 'วันสงกรานต์', type: 'holiday' },
-    { id: 'C5', date: '2026-05-01', title: 'วันแรงงานแห่งชาติ', type: 'holiday' },
-    { id: 'C6', date: '2026-12-05', title: 'วันคล้ายวันพระบรมราชสมภพ ร.๙', type: 'holiday' },
-    { id: 'C7', date: '2026-12-10', title: 'วันรัฐธรรมนูญ', type: 'holiday' },
-    { id: 'C8', date: '2026-12-31', title: 'วันสิ้นปี', type: 'holiday' }
-  ],
-  settings: {
-    theme: 'light',
-    employeeIdPrefix: 'KB',
-    employeeIdStart: 1
-  }
-};
-
 const DB = {
-  data: null,
-  load() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        this.data = JSON.parse(raw);
-        // Merge with defaults to ensure all keys exist
-        for (const key of Object.keys(DEFAULT_DATA)) {
-          if (!(key in this.data)) this.data[key] = DEFAULT_DATA[key];
-        }
-      } else {
-        this.data = JSON.parse(JSON.stringify(DEFAULT_DATA));
-        this.save();
-      }
-    } catch (e) {
-      console.error('Failed to load data:', e);
-      this.data = JSON.parse(JSON.stringify(DEFAULT_DATA));
-    }
-  },
-  save() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
-  },
-  reset() {
-    this.data = JSON.parse(JSON.stringify(DEFAULT_DATA));
-    this.save();
-  },
-  export() {
-    return JSON.stringify(this.data, null, 2);
-  },
-  import(json) {
-    const parsed = JSON.parse(json);
-    this.data = parsed;
-    this.save();
+  client: null,
+  user: null,
+  profile: null,
+  isAdmin: false,
+  ready: false,
+
+  data: {
+    company: { name: 'บริษัท คชา บราเธอร์ส จำกัด', nameEn: 'Khacha Brothers Co., Ltd.', taxId: '', address: '', phone: '', email: '' },
+    departments: [],
+    positionLevels: [],
+    employees: [],
+    salaryHistory: [],
+    loans: [],
+    advances: [],
+    allowances: [],
+    evaluations: [],
+    calendar: []
   },
 
-  // ─── Employees ───
+  // ─── INIT / AUTH ───
+  async init() {
+    if (typeof supabase === 'undefined') throw new Error('Supabase SDK not loaded');
+    const { SUPABASE_URL, SUPABASE_KEY } = window.KB_CONFIG;
+    this.client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true }
+    });
+
+    const { data: { session } } = await this.client.auth.getSession();
+    if (session?.user) {
+      this.user = session.user;
+      await this.loadProfile();
+      await this.loadAll();
+      this.subscribeRealtime();
+      this.ready = true;
+    }
+
+    this.client.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        this.user = null;
+        this.profile = null;
+        this.isAdmin = false;
+        this.ready = false;
+      }
+    });
+  },
+
+  async signIn(email, password) {
+    const { data, error } = await this.client.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    this.user = data.user;
+    await this.loadProfile();
+    await this.loadAll();
+    this.subscribeRealtime();
+    this.ready = true;
+    return data.user;
+  },
+
+  async signOut() {
+    await this.client.auth.signOut();
+    this.user = null;
+    this.profile = null;
+    this.isAdmin = false;
+    this.ready = false;
+  },
+
+  async loadProfile() {
+    if (!this.user) return;
+    const { data } = await this.client.from('user_profiles').select('*').eq('user_id', this.user.id).maybeSingle();
+    this.profile = data;
+    this.isAdmin = data?.role === 'admin';
+  },
+
+  // ─── DATA LOAD ───
+  async loadAll() {
+    const [deps, pos, emps, loans, advs, allow, evals, sal, cal, comp] = await Promise.all([
+      this.client.from('departments').select('*').order('id'),
+      this.client.from('position_levels').select('*').order('id'),
+      this.client.from('employees').select('*').order('id'),
+      this.client.from('loans').select('*').order('date', { ascending: false }),
+      this.client.from('advances').select('*').order('date', { ascending: false }),
+      this.client.from('allowances').select('*').order('month', { ascending: false }),
+      this.client.from('evaluations').select('*').order('date', { ascending: false }),
+      this.client.from('salary_history').select('*').order('date', { ascending: false }),
+      this.client.from('calendar_items').select('*').order('date'),
+      this.client.from('company_settings').select('*').eq('id', 1).maybeSingle()
+    ]);
+    this.data.departments = (deps.data || []).map(this._depFromDB);
+    this.data.positionLevels = (pos.data || []).map(this._posFromDB);
+    this.data.employees = (emps.data || []).map(this._empFromDB);
+    this.data.loans = (loans.data || []).map(this._loanFromDB);
+    this.data.advances = (advs.data || []).map(this._advFromDB);
+    this.data.allowances = (allow.data || []).map(this._allowFromDB);
+    this.data.evaluations = (evals.data || []).map(this._evalFromDB);
+    this.data.salaryHistory = (sal.data || []).map(this._salFromDB);
+    this.data.calendar = (cal.data || []).map(this._calFromDB);
+    if (comp.data) this.data.company = this._compFromDB(comp.data);
+  },
+
+  // ─── REALTIME ───
+  subscribeRealtime() {
+    if (this._channel) this._channel.unsubscribe();
+    this._channel = this.client
+      .channel('kb-hr-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
+        this._applyChange(payload);
+        if (window.onRealtimeChange) window.onRealtimeChange(payload);
+      })
+      .subscribe();
+  },
+
+  _applyChange(payload) {
+    const { table, eventType, new: newRow, old: oldRow } = payload;
+    const map = {
+      employees: { list: 'employees', from: this._empFromDB },
+      departments: { list: 'departments', from: this._depFromDB },
+      position_levels: { list: 'positionLevels', from: this._posFromDB },
+      loans: { list: 'loans', from: this._loanFromDB },
+      advances: { list: 'advances', from: this._advFromDB },
+      allowances: { list: 'allowances', from: this._allowFromDB },
+      evaluations: { list: 'evaluations', from: this._evalFromDB },
+      salary_history: { list: 'salaryHistory', from: this._salFromDB },
+      calendar_items: { list: 'calendar', from: this._calFromDB }
+    };
+    const m = map[table];
+    if (!m) return;
+    const list = this.data[m.list];
+    const idKey = newRow?.id ? 'id' : null;
+    if (eventType === 'INSERT' && newRow) {
+      if (!list.find(x => x.id === newRow.id)) list.unshift(m.from(newRow));
+    } else if (eventType === 'UPDATE' && newRow) {
+      const idx = list.findIndex(x => x.id === newRow.id);
+      if (idx >= 0) list[idx] = m.from(newRow);
+      else list.unshift(m.from(newRow));
+    } else if (eventType === 'DELETE' && oldRow) {
+      this.data[m.list] = list.filter(x => x.id !== oldRow.id);
+    }
+  },
+
+  // ─── ROW MAPPERS (DB ↔ JS) ───
+  _empFromDB: (r) => ({
+    id: r.id, title: r.title || '', firstName: r.first_name, lastName: r.last_name,
+    nickname: r.nickname || '', nationalId: r.national_id || '',
+    dob: r.dob || '', gender: r.gender || '', phone: r.phone || '',
+    email: r.email || '', address: r.address || '',
+    department: r.department || '', position: r.position || '',
+    positionTitle: r.position_title || '', hireDate: r.hire_date || '',
+    salary: Number(r.salary || 0), status: r.status || 'active', note: r.note || ''
+  }),
+  _empToDB: (e) => ({
+    id: e.id, title: e.title, first_name: e.firstName, last_name: e.lastName,
+    nickname: e.nickname, national_id: e.nationalId,
+    dob: e.dob || null, gender: e.gender, phone: e.phone, email: e.email,
+    address: e.address, department: e.department || null,
+    position: e.position || null, position_title: e.positionTitle,
+    hire_date: e.hireDate || null, salary: Number(e.salary || 0),
+    status: e.status, note: e.note
+  }),
+  _depFromDB: (r) => ({ id: r.id, name: r.name, manager: r.manager_id || '', note: r.note || '' }),
+  _depToDB: (d) => ({ id: d.id, name: d.name, manager_id: d.manager || null, note: d.note }),
+  _posFromDB: (r) => ({ id: r.id, name: r.name, minSalary: Number(r.min_salary || 0), maxSalary: Number(r.max_salary || 0) }),
+  _posToDB: (p) => ({ id: p.id, name: p.name, min_salary: Number(p.minSalary || 0), max_salary: Number(p.maxSalary || 0) }),
+  _loanFromDB: (r) => ({ id: r.id, employeeId: r.employee_id, date: r.date, amount: Number(r.amount), monthlyPayment: Number(r.monthly_payment || 0), remaining: Number(r.remaining || 0), status: r.status, reason: r.reason || '' }),
+  _loanToDB: (l) => ({ employee_id: l.employeeId, date: l.date, amount: Number(l.amount), monthly_payment: Number(l.monthlyPayment || 0), remaining: Number(l.remaining || 0), status: l.status, reason: l.reason }),
+  _advFromDB: (r) => ({ id: r.id, employeeId: r.employee_id, date: r.date, amount: Number(r.amount), reason: r.reason || '', status: r.status }),
+  _advToDB: (a) => ({ employee_id: a.employeeId, date: a.date, amount: Number(a.amount), reason: a.reason, status: a.status }),
+  _allowFromDB: (r) => ({ id: r.id, employeeId: r.employee_id, month: r.month, type: r.type || '', amount: Number(r.amount), note: r.note || '' }),
+  _allowToDB: (a) => ({ employee_id: a.employeeId, month: a.month, type: a.type, amount: Number(a.amount), note: a.note }),
+  _evalFromDB: (r) => ({ id: r.id, employeeId: r.employee_id, date: r.date, period: r.period || '', score: r.score, grade: r.grade || '', note: r.note || '' }),
+  _evalToDB: (e) => ({ employee_id: e.employeeId, date: e.date, period: e.period, score: Number(e.score), grade: e.grade, note: e.note }),
+  _salFromDB: (r) => ({ id: r.id, employeeId: r.employee_id, date: r.date, oldSalary: Number(r.old_salary), newSalary: Number(r.new_salary), newPosition: r.new_position || '', newPositionTitle: r.new_position_title || '', reason: r.reason || '' }),
+  _salToDB: (s) => ({ employee_id: s.employeeId, date: s.date, old_salary: Number(s.oldSalary), new_salary: Number(s.newSalary), new_position: s.newPosition || null, new_position_title: s.newPositionTitle, reason: s.reason }),
+  _calFromDB: (r) => ({ id: r.id, date: r.date, title: r.title, type: r.type || 'holiday' }),
+  _calToDB: (c) => ({ date: c.date, title: c.title, type: c.type }),
+  _compFromDB: (r) => ({ name: r.name || '', nameEn: r.name_en || '', taxId: r.tax_id || '', address: r.address || '', phone: r.phone || '', email: r.email || '' }),
+
+  // ─── EMPLOYEES ───
   getEmployees(filter = {}) {
     let list = this.data.employees.slice();
     if (filter.search) {
@@ -189,41 +197,46 @@ const DB = {
     if (filter.status) list = list.filter(e => e.status === filter.status);
     return list;
   },
-  getEmployee(id) {
-    return this.data.employees.find(e => e.id === id);
+  getEmployee(id) { return this.data.employees.find(e => e.id === id); },
+
+  async saveEmployee(emp) {
+    const row = this._empToDB(emp);
+    const { data, error } = await this.client.from('employees').upsert(row).select().single();
+    if (error) throw error;
+    const mapped = this._empFromDB(data);
+    const idx = this.data.employees.findIndex(e => e.id === mapped.id);
+    if (idx >= 0) this.data.employees[idx] = mapped;
+    else this.data.employees.unshift(mapped);
+    return mapped;
   },
-  saveEmployee(emp) {
-    const idx = this.data.employees.findIndex(e => e.id === emp.id);
-    if (idx >= 0) this.data.employees[idx] = emp;
-    else this.data.employees.push(emp);
-    this.save();
-  },
-  deleteEmployee(id) {
+  async deleteEmployee(id) {
+    const { error } = await this.client.from('employees').delete().eq('id', id);
+    if (error) throw error;
     this.data.employees = this.data.employees.filter(e => e.id !== id);
-    this.save();
   },
   nextEmployeeId() {
-    const prefix = this.data.settings.employeeIdPrefix || 'KB';
-    const nums = this.data.employees
-      .map(e => parseInt(String(e.id).replace(/[^\d]/g, ''), 10))
-      .filter(n => !isNaN(n));
-    const max = nums.length ? Math.max(...nums) : (this.data.settings.employeeIdStart || 1) - 1;
-    return prefix + String(max + 1).padStart(4, '0');
+    const nums = this.data.employees.map(e => parseInt(String(e.id).replace(/\D/g, ''), 10)).filter(n => !isNaN(n));
+    const max = nums.length ? Math.max(...nums) : 0;
+    return 'KB' + String(max + 1).padStart(4, '0');
   },
 
-  // ─── Departments ───
+  // ─── DEPARTMENTS ───
   getDepartments() { return this.data.departments.slice(); },
   getDepartment(id) { return this.data.departments.find(d => d.id === id); },
-  saveDepartment(dept) {
-    const idx = this.data.departments.findIndex(d => d.id === dept.id);
-    if (idx >= 0) this.data.departments[idx] = dept;
-    else this.data.departments.push(dept);
-    this.save();
+  async saveDepartment(dept) {
+    const { data, error } = await this.client.from('departments').upsert(this._depToDB(dept)).select().single();
+    if (error) throw error;
+    const mapped = this._depFromDB(data);
+    const idx = this.data.departments.findIndex(d => d.id === mapped.id);
+    if (idx >= 0) this.data.departments[idx] = mapped;
+    else this.data.departments.push(mapped);
+    return mapped;
   },
-  deleteDepartment(id) {
+  async deleteDepartment(id) {
     if (this.data.employees.some(e => e.department === id)) return false;
+    const { error } = await this.client.from('departments').delete().eq('id', id);
+    if (error) throw error;
     this.data.departments = this.data.departments.filter(d => d.id !== id);
-    this.save();
     return true;
   },
   nextDepartmentId() {
@@ -232,19 +245,23 @@ const DB = {
     return 'D' + String(max + 1).padStart(3, '0');
   },
 
-  // ─── Position Levels ───
+  // ─── POSITIONS ───
   getPositions() { return this.data.positionLevels.slice(); },
   getPosition(id) { return this.data.positionLevels.find(p => p.id === id); },
-  savePosition(pos) {
-    const idx = this.data.positionLevels.findIndex(p => p.id === pos.id);
-    if (idx >= 0) this.data.positionLevels[idx] = pos;
-    else this.data.positionLevels.push(pos);
-    this.save();
+  async savePosition(pos) {
+    const { data, error } = await this.client.from('position_levels').upsert(this._posToDB(pos)).select().single();
+    if (error) throw error;
+    const mapped = this._posFromDB(data);
+    const idx = this.data.positionLevels.findIndex(p => p.id === mapped.id);
+    if (idx >= 0) this.data.positionLevels[idx] = mapped;
+    else this.data.positionLevels.push(mapped);
+    return mapped;
   },
-  deletePosition(id) {
+  async deletePosition(id) {
     if (this.data.employees.some(e => e.position === id)) return false;
+    const { error } = await this.client.from('position_levels').delete().eq('id', id);
+    if (error) throw error;
     this.data.positionLevels = this.data.positionLevels.filter(p => p.id !== id);
-    this.save();
     return true;
   },
   nextPositionId() {
@@ -253,112 +270,158 @@ const DB = {
     return 'P' + String(max + 1).padStart(2, '0');
   },
 
-  // ─── Salary History ───
-  addSalaryAdjustment(rec) {
-    rec.id = rec.id || ('SA' + Date.now());
-    this.data.salaryHistory.push(rec);
-    const emp = this.getEmployee(rec.employeeId);
-    if (emp) {
-      emp.salary = rec.newSalary;
-      if (rec.newPosition) emp.position = rec.newPosition;
-      if (rec.newPositionTitle) emp.positionTitle = rec.newPositionTitle;
-      this.saveEmployee(emp);
-    }
-    this.save();
-  },
+  // ─── SALARY HISTORY ───
   getSalaryHistory(employeeId = null) {
     let list = this.data.salaryHistory.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     if (employeeId) list = list.filter(s => s.employeeId === employeeId);
     return list;
   },
+  async addSalaryAdjustment(rec) {
+    const { data, error } = await this.client.from('salary_history').insert(this._salToDB(rec)).select().single();
+    if (error) throw error;
+    const mapped = this._salFromDB(data);
+    this.data.salaryHistory.unshift(mapped);
 
-  // ─── Loans ───
+    const emp = this.getEmployee(rec.employeeId);
+    if (emp) {
+      emp.salary = Number(rec.newSalary);
+      if (rec.newPosition) emp.position = rec.newPosition;
+      if (rec.newPositionTitle) emp.positionTitle = rec.newPositionTitle;
+      await this.saveEmployee(emp);
+    }
+    return mapped;
+  },
+
+  // ─── LOANS ───
   getLoans(employeeId = null) {
     let list = this.data.loans.slice();
     if (employeeId) list = list.filter(l => l.employeeId === employeeId);
     return list;
   },
-  saveLoan(loan) {
-    loan.id = loan.id || ('L' + Date.now());
-    const idx = this.data.loans.findIndex(l => l.id === loan.id);
-    if (idx >= 0) this.data.loans[idx] = loan;
-    else this.data.loans.push(loan);
-    this.save();
+  async saveLoan(loan) {
+    const row = this._loanToDB(loan);
+    if (loan.id) row.id = loan.id;
+    const { data, error } = await this.client.from('loans').upsert(row).select().single();
+    if (error) throw error;
+    const mapped = this._loanFromDB(data);
+    const idx = this.data.loans.findIndex(l => l.id === mapped.id);
+    if (idx >= 0) this.data.loans[idx] = mapped;
+    else this.data.loans.unshift(mapped);
+    return mapped;
   },
-  deleteLoan(id) {
+  async deleteLoan(id) {
+    const { error } = await this.client.from('loans').delete().eq('id', id);
+    if (error) throw error;
     this.data.loans = this.data.loans.filter(l => l.id !== id);
-    this.save();
   },
 
-  // ─── Advances ───
+  // ─── ADVANCES ───
   getAdvances(employeeId = null) {
     let list = this.data.advances.slice();
     if (employeeId) list = list.filter(a => a.employeeId === employeeId);
     return list;
   },
-  saveAdvance(adv) {
-    adv.id = adv.id || ('AD' + Date.now());
-    const idx = this.data.advances.findIndex(a => a.id === adv.id);
-    if (idx >= 0) this.data.advances[idx] = adv;
-    else this.data.advances.push(adv);
-    this.save();
+  async saveAdvance(adv) {
+    const row = this._advToDB(adv);
+    if (adv.id) row.id = adv.id;
+    const { data, error } = await this.client.from('advances').upsert(row).select().single();
+    if (error) throw error;
+    const mapped = this._advFromDB(data);
+    const idx = this.data.advances.findIndex(a => a.id === mapped.id);
+    if (idx >= 0) this.data.advances[idx] = mapped;
+    else this.data.advances.unshift(mapped);
+    return mapped;
   },
-  deleteAdvance(id) {
+  async deleteAdvance(id) {
+    const { error } = await this.client.from('advances').delete().eq('id', id);
+    if (error) throw error;
     this.data.advances = this.data.advances.filter(a => a.id !== id);
-    this.save();
   },
 
-  // ─── Allowances ───
+  // ─── ALLOWANCES ───
   getAllowances(employeeId = null) {
     let list = this.data.allowances.slice();
     if (employeeId) list = list.filter(a => a.employeeId === employeeId);
     return list;
   },
-  saveAllowance(rec) {
-    rec.id = rec.id || ('AL' + Date.now());
-    const idx = this.data.allowances.findIndex(a => a.id === rec.id);
-    if (idx >= 0) this.data.allowances[idx] = rec;
-    else this.data.allowances.push(rec);
-    this.save();
+  async saveAllowance(rec) {
+    const row = this._allowToDB(rec);
+    if (rec.id) row.id = rec.id;
+    const { data, error } = await this.client.from('allowances').upsert(row).select().single();
+    if (error) throw error;
+    const mapped = this._allowFromDB(data);
+    const idx = this.data.allowances.findIndex(a => a.id === mapped.id);
+    if (idx >= 0) this.data.allowances[idx] = mapped;
+    else this.data.allowances.unshift(mapped);
+    return mapped;
   },
-  deleteAllowance(id) {
+  async deleteAllowance(id) {
+    const { error } = await this.client.from('allowances').delete().eq('id', id);
+    if (error) throw error;
     this.data.allowances = this.data.allowances.filter(a => a.id !== id);
-    this.save();
   },
 
-  // ─── Evaluations ───
+  // ─── EVALUATIONS ───
   getEvaluations(employeeId = null) {
     let list = this.data.evaluations.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     if (employeeId) list = list.filter(e => e.employeeId === employeeId);
     return list;
   },
-  saveEvaluation(ev) {
-    ev.id = ev.id || ('EV' + Date.now());
-    const idx = this.data.evaluations.findIndex(e => e.id === ev.id);
-    if (idx >= 0) this.data.evaluations[idx] = ev;
-    else this.data.evaluations.push(ev);
-    this.save();
+  async saveEvaluation(ev) {
+    const row = this._evalToDB(ev);
+    if (ev.id) row.id = ev.id;
+    const { data, error } = await this.client.from('evaluations').upsert(row).select().single();
+    if (error) throw error;
+    const mapped = this._evalFromDB(data);
+    const idx = this.data.evaluations.findIndex(e => e.id === mapped.id);
+    if (idx >= 0) this.data.evaluations[idx] = mapped;
+    else this.data.evaluations.unshift(mapped);
+    return mapped;
   },
-  deleteEvaluation(id) {
+  async deleteEvaluation(id) {
+    const { error } = await this.client.from('evaluations').delete().eq('id', id);
+    if (error) throw error;
     this.data.evaluations = this.data.evaluations.filter(e => e.id !== id);
-    this.save();
   },
 
-  // ─── Calendar ───
+  // ─── CALENDAR ───
   getCalendar() { return this.data.calendar.slice().sort((a, b) => a.date.localeCompare(b.date)); },
-  saveCalendarItem(item) {
-    item.id = item.id || ('C' + Date.now());
-    const idx = this.data.calendar.findIndex(c => c.id === item.id);
-    if (idx >= 0) this.data.calendar[idx] = item;
-    else this.data.calendar.push(item);
-    this.save();
+  async saveCalendarItem(item) {
+    const row = this._calToDB(item);
+    if (item.id) row.id = item.id;
+    const { data, error } = await this.client.from('calendar_items').upsert(row).select().single();
+    if (error) throw error;
+    const mapped = this._calFromDB(data);
+    const idx = this.data.calendar.findIndex(c => c.id === mapped.id);
+    if (idx >= 0) this.data.calendar[idx] = mapped;
+    else this.data.calendar.push(mapped);
+    return mapped;
   },
-  deleteCalendarItem(id) {
+  async deleteCalendarItem(id) {
+    const { error } = await this.client.from('calendar_items').delete().eq('id', id);
+    if (error) throw error;
     this.data.calendar = this.data.calendar.filter(c => c.id !== id);
-    this.save();
   },
 
-  // ─── Stats ───
+  // ─── COMPANY SETTINGS ───
+  async saveCompany(data) {
+    const row = {
+      id: 1,
+      name: data.name, name_en: data.nameEn, tax_id: data.taxId,
+      address: data.address, phone: data.phone, email: data.email
+    };
+    const { error } = await this.client.from('company_settings').upsert(row);
+    if (error) throw error;
+    this.data.company = { ...data };
+  },
+
+  // ─── PASSWORD ───
+  async changePassword(newPassword) {
+    const { error } = await this.client.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+  },
+
+  // ─── STATS ───
   getStats() {
     const emps = this.data.employees;
     const active = emps.filter(e => e.status === 'active');
@@ -387,6 +450,3 @@ const DB = {
     };
   }
 };
-
-// Initialize on load
-DB.load();
