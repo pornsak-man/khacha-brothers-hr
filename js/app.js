@@ -1096,8 +1096,17 @@ function openBulkPhotoUpload() {
       <div class="import-step">
         <div class="import-step-num">2</div>
         <div class="import-step-body">
-          <div class="import-step-title">เลือกไฟล์รูปทั้งหมด (เลือกหลายไฟล์พร้อมกันด้วย Ctrl+A)</div>
-          <input type="file" accept="image/*" multiple id="bulkPhotoFiles" class="import-file">
+          <div class="import-step-title">เลือกแหล่งรูป</div>
+          <div class="flex gap-2 mb-2" style="flex-wrap:wrap">
+            <button type="button" class="btn btn-secondary btn-sm" id="pickFilesBtn">📄 เลือกไฟล์ (หลายไฟล์)</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="pickFolderBtn">📁 เลือกทั้งโฟลเดอ</button>
+          </div>
+          <input type="file" accept="image/*" multiple id="bulkPhotoFiles" hidden>
+          <input type="file" accept="image/*" multiple webkitdirectory id="bulkPhotoFolder" hidden>
+          <div class="muted-2" style="font-size:12px">
+            <strong>เลือกไฟล์:</strong> เปิด file dialog แล้วกด Ctrl+A เลือกทั้งหมด<br>
+            <strong>เลือกโฟลเดอ:</strong> ชี้ไปที่โฟลเดอที่เก็บรูป — ระบบดึงทุกไฟล์ในโฟลเดอ (รวม subfolder) ให้อัตโนมัติ
+          </div>
         </div>
       </div>
       <div id="bulkPhotoBody"></div>
@@ -1110,9 +1119,13 @@ function openBulkPhotoUpload() {
   let matches = [];
   let unmatched = [];
 
-  $('#bulkPhotoFiles').addEventListener('change', (e) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
+  const handleFiles = (rawFiles) => {
+    // กรองเฉพาะไฟล์รูป
+    const files = rawFiles.filter(f => f.type.startsWith('image/'));
+    if (!files.length) {
+      $('#bulkPhotoBody').innerHTML = `<div class="card mt-4" style="color:var(--warning-text);background:var(--warning-soft)">ไม่พบไฟล์รูปในที่เลือก</div>`;
+      return;
+    }
     $('#bulkPhotoBody').innerHTML = `<div class="muted-2 mt-4">กำลังจับคู่ ${files.length.toLocaleString()} ไฟล์...</div>`;
     // ทำ matching ใน rAF เพื่อไม่บล็อก UI
     requestAnimationFrame(() => {
@@ -1127,7 +1140,12 @@ function openBulkPhotoUpload() {
       $('#bulkPhotoBody').innerHTML = renderBulkPhotoPreview(files.length, matches, unmatched);
       $('#bulkUploadStart').disabled = matches.length === 0;
     });
-  });
+  };
+
+  $('#pickFilesBtn').addEventListener('click', () => $('#bulkPhotoFiles').click());
+  $('#pickFolderBtn').addEventListener('click', () => $('#bulkPhotoFolder').click());
+  $('#bulkPhotoFiles').addEventListener('change', (e) => handleFiles(Array.from(e.target.files || [])));
+  $('#bulkPhotoFolder').addEventListener('change', (e) => handleFiles(Array.from(e.target.files || [])));
 
   $('#bulkUploadStart').addEventListener('click', async () => {
     if (!matches.length) return;
