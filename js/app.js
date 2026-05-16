@@ -38,6 +38,21 @@ const fmt = {
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// ─── SVG ICONS (Lucide-style stroke icons) ───
+const ICON = {
+  users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  building: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M14 8h3"/><path d="M14 12h3"/><path d="M14 16h3"/></svg>',
+  money: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v12"/><path d="M15 9.5C15 8.12 13.66 7 12 7s-3 1.12-3 2.5S10.34 12 12 12s3 1.12 3 2.5-1.34 2.5-3 2.5-3-1.12-3-2.5"/></svg>',
+  trendUp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>',
+  bank: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>',
+  cash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01"/><path d="M18 12h.01"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+  clipboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+  download: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+  plus: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>'
+};
+
 // ─────────────── TOAST ───────────────
 const toast = (msg, type = 'info') => {
   const root = $('#toastRoot');
@@ -194,12 +209,12 @@ router.register('dashboard', () => {
       </div>
     </div>
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-icon bg-primary">👥</div><div><div class="stat-label">พนักงานทั้งหมด</div><div class="stat-value">${fmt.num(s.totalEmployees)}</div><div class="stat-trend up">ปฏิบัติงาน ${s.activeEmployees} คน</div></div></div>
-      <div class="stat-card"><div class="stat-icon bg-blue">🏢</div><div><div class="stat-label">จำนวนฝ่าย</div><div class="stat-value">${fmt.num(s.departments)}</div></div></div>
-      <div class="stat-card"><div class="stat-icon bg-green">💰</div><div><div class="stat-label">เงินเดือนรวมต่อเดือน</div><div class="stat-value">${fmt.money(s.totalMonthlySalary)}</div></div></div>
-      <div class="stat-card"><div class="stat-icon bg-orange">🏦</div><div><div class="stat-label">การกู้ที่ยังไม่ปิด</div><div class="stat-value">${fmt.num(s.activeLoans)}</div></div></div>
-      <div class="stat-card"><div class="stat-icon bg-purple">💵</div><div><div class="stat-label">เบิกล่วงหน้ารอจ่าย</div><div class="stat-value">${fmt.num(s.pendingAdvances)}</div></div></div>
-      <div class="stat-card"><div class="stat-icon bg-red">📅</div><div><div class="stat-label">วันหยุดในปฏิทิน</div><div class="stat-value">${fmt.num(DB.getCalendar().length)}</div></div></div>
+      <div class="stat-card"><div class="stat-icon bg-primary">${ICON.users}</div><div class="stat-content"><div class="stat-label">พนักงานทั้งหมด</div><div class="stat-value">${fmt.num(s.totalEmployees)}</div><div class="stat-trend up">ปฏิบัติงาน ${s.activeEmployees} คน</div></div></div>
+      <div class="stat-card"><div class="stat-icon bg-blue">${ICON.building}</div><div class="stat-content"><div class="stat-label">จำนวนฝ่าย</div><div class="stat-value">${fmt.num(s.departments)}</div></div></div>
+      <div class="stat-card"><div class="stat-icon bg-green">${ICON.money}</div><div class="stat-content"><div class="stat-label">เงินเดือนรวมต่อเดือน</div><div class="stat-value">${fmt.money(s.totalMonthlySalary)}</div></div></div>
+      <div class="stat-card"><div class="stat-icon bg-orange">${ICON.bank}</div><div class="stat-content"><div class="stat-label">การกู้ที่ยังไม่ปิด</div><div class="stat-value">${fmt.num(s.activeLoans)}</div></div></div>
+      <div class="stat-card"><div class="stat-icon bg-purple">${ICON.cash}</div><div class="stat-content"><div class="stat-label">เบิกล่วงหน้ารอจ่าย</div><div class="stat-value">${fmt.num(s.pendingAdvances)}</div></div></div>
+      <div class="stat-card"><div class="stat-icon bg-red">${ICON.calendar}</div><div class="stat-content"><div class="stat-label">วันหยุดในปฏิทิน</div><div class="stat-value">${fmt.num(DB.getCalendar().length)}</div></div></div>
     </div>
 
     <div class="chart-row">
@@ -237,14 +252,14 @@ function renderDashboardCharts(s) {
   const ctx1 = $('#chartByDept');
   if (ctx1) new Chart(ctx1, {
     type: 'bar',
-    data: { labels: s.byDepartment.map(d => d.name), datasets: [{ label: 'จำนวน', data: s.byDepartment.map(d => d.count), backgroundColor: '#b8860b', borderRadius: 6 }] },
+    data: { labels: s.byDepartment.map(d => d.name), datasets: [{ label: 'จำนวน', data: s.byDepartment.map(d => d.count), backgroundColor: '#c9a961', borderRadius: 8, borderSkipped: false }] },
     options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
   });
   const ctx2 = $('#chartByGender');
   if (ctx2) new Chart(ctx2, {
     type: 'doughnut',
-    data: { labels: ['ชาย', 'หญิง'], datasets: [{ data: [s.byGender.male, s.byGender.female], backgroundColor: ['#2563eb', '#ec4899'] }] },
-    options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+    data: { labels: ['ชาย', 'หญิง'], datasets: [{ data: [s.byGender.male, s.byGender.female], backgroundColor: ['#3b82f6', '#f472b6'], borderWidth: 0, hoverOffset: 6 }] },
+    options: { responsive: true, cutout: '65%', plugins: { legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true, pointStyle: 'circle' } } } }
   });
 }
 
@@ -258,7 +273,7 @@ router.register('employees', () => {
     <div class="page-header">
       <h2>ทะเบียนพนักงาน</h2>
       <div class="actions">
-        <button class="btn btn-secondary" onclick="exportEmployeesXLSX()">📥 Export Excel</button>
+        <button class="btn btn-secondary" onclick="exportEmployeesXLSX()">${ICON.download}Export Excel</button>
         ${DB.isAdmin ? '<button class="btn btn-primary" onclick="openEmployeeForm()">+ เพิ่มพนักงาน</button>' : ''}
       </div>
     </div>
@@ -292,7 +307,7 @@ function renderEmployeeList() {
   const container = $('#empList');
   if (!container) return;
   if (!list.length) {
-    container.innerHTML = `<div class="empty-state"><div class="icon">👥</div><div class="title">ไม่พบพนักงาน</div><div class="hint">ลองเปลี่ยนตัวกรอง หรือเพิ่มพนักงานใหม่</div></div>`;
+    container.innerHTML = `<div class="empty-state"><div class="icon">${ICON.users}</div><div class="title">ไม่พบพนักงาน</div><div class="hint">ลองเปลี่ยนตัวกรอง หรือเพิ่มพนักงานใหม่</div></div>`;
     return;
   }
   container.innerHTML = `
@@ -651,7 +666,7 @@ router.register('salary-adjust', () => {
               </tr>`; }).join('')}
           </tbody>
         </table>
-      </div>` : '<div class="empty-state"><div class="icon">💰</div><div class="title">ยังไม่มีการปรับเงินเดือน</div></div>'}
+      </div>` : `<div class="empty-state"><div class="icon">${ICON.money}</div><div class="title">ยังไม่มีการปรับเงินเดือน</div></div>`}
     </div>`;
 });
 
@@ -723,7 +738,7 @@ router.register('loans', () => {
               </tr>`; }).join('')}
           </tbody>
         </table>
-      </div>` : '<div class="empty-state"><div class="icon">🏦</div><div class="title">ยังไม่มีรายการกู้</div></div>'}
+      </div>` : `<div class="empty-state"><div class="icon">${ICON.bank}</div><div class="title">ยังไม่มีรายการกู้</div></div>`}
     </div>`;
 });
 
@@ -791,7 +806,7 @@ router.register('advances', () => {
               </tr>`; }).join('')}
           </tbody>
         </table>
-      </div>` : '<div class="empty-state"><div class="icon">💵</div><div class="title">ยังไม่มีรายการเบิก</div></div>'}
+      </div>` : `<div class="empty-state"><div class="icon">${ICON.cash}</div><div class="title">ยังไม่มีรายการเบิก</div></div>`}
     </div>`;
 });
 
@@ -857,7 +872,7 @@ router.register('allowance', () => {
               </tr>`; }).join('')}
           </tbody>
         </table>
-      </div>` : '<div class="empty-state"><div class="icon">📋</div><div class="title">ยังไม่มีรายการ</div></div>'}
+      </div>` : `<div class="empty-state"><div class="icon">${ICON.clipboard}</div><div class="title">ยังไม่มีรายการ</div></div>`}
     </div>`;
 });
 
@@ -924,7 +939,7 @@ router.register('evaluations', () => {
               </tr>`; }).join('')}
           </tbody>
         </table>
-      </div>` : '<div class="empty-state"><div class="icon">📊</div><div class="title">ยังไม่มีการประเมิน</div></div>'}
+      </div>` : `<div class="empty-state"><div class="icon">${ICON.chart}</div><div class="title">ยังไม่มีการประเมิน</div></div>`}
     </div>`;
 });
 
@@ -984,17 +999,17 @@ router.register('reports', () => {
   return `
     <div class="page-header"><h2>รายงาน / Export</h2></div>
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-icon bg-primary">👥</div><div><div class="stat-label">พนักงานปฏิบัติงาน</div><div class="stat-value">${fmt.num(s.activeEmployees)}</div></div></div>
-      <div class="stat-card"><div class="stat-icon bg-green">💰</div><div><div class="stat-label">ค่าใช้จ่ายต่อเดือน</div><div class="stat-value">${fmt.money(s.totalMonthlySalary)}</div></div></div>
-      <div class="stat-card"><div class="stat-icon bg-blue">💰</div><div><div class="stat-label">ค่าใช้จ่ายต่อปี</div><div class="stat-value">${fmt.money(s.totalMonthlySalary * 12)}</div></div></div>
+      <div class="stat-card"><div class="stat-icon bg-primary">${ICON.users}</div><div class="stat-content"><div class="stat-label">พนักงานปฏิบัติงาน</div><div class="stat-value">${fmt.num(s.activeEmployees)}</div></div></div>
+      <div class="stat-card"><div class="stat-icon bg-green">${ICON.money}</div><div class="stat-content"><div class="stat-label">ค่าใช้จ่ายต่อเดือน</div><div class="stat-value">${fmt.money(s.totalMonthlySalary)}</div></div></div>
+      <div class="stat-card"><div class="stat-icon bg-blue">${ICON.trendUp}</div><div class="stat-content"><div class="stat-label">ค่าใช้จ่ายต่อปี</div><div class="stat-value">${fmt.money(s.totalMonthlySalary * 12)}</div></div></div>
     </div>
     <div class="card">
       <div class="card-header"><div class="card-title">ส่งออกข้อมูล</div></div>
       <div class="flex gap-2" style="flex-wrap:wrap">
-        <button class="btn btn-secondary" onclick="exportEmployeesXLSX()">📥 พนักงาน (Excel)</button>
-        <button class="btn btn-secondary" onclick="exportPayrollXLSX()">📥 บัญชีเงินเดือน (Excel)</button>
-        <button class="btn btn-secondary" onclick="exportLoansXLSX()">📥 รายการกู้ (Excel)</button>
-        <button class="btn btn-secondary" onclick="exportDataJSON()">📥 สำรองข้อมูลทั้งหมด (JSON)</button>
+        <button class="btn btn-secondary" onclick="exportEmployeesXLSX()">${ICON.download}พนักงาน (Excel)</button>
+        <button class="btn btn-secondary" onclick="exportPayrollXLSX()">${ICON.download}บัญชีเงินเดือน (Excel)</button>
+        <button class="btn btn-secondary" onclick="exportLoansXLSX()">${ICON.download}รายการกู้ (Excel)</button>
+        <button class="btn btn-secondary" onclick="exportDataJSON()">${ICON.download}สำรองข้อมูลทั้งหมด (JSON)</button>
       </div>
     </div>
     <div class="card">
@@ -1172,7 +1187,7 @@ router.register('settings', () => {
     <div class="card">
       <div class="card-header"><div class="card-title">ข้อมูลและการสำรอง</div></div>
       <div class="flex gap-2" style="flex-wrap:wrap">
-        <button class="btn btn-secondary" onclick="exportDataJSON()">📥 ดาวน์โหลดข้อมูลสำรอง (snapshot)</button>
+        <button class="btn btn-secondary" onclick="exportDataJSON()">${ICON.download}ดาวน์โหลดข้อมูลสำรอง (snapshot)</button>
       </div>
       <div class="muted-2 mt-2" style="font-size:12px">ข้อมูลจริงเก็บใน Supabase (cloud) — มี backup อัตโนมัติของ Supabase + ดาวน์โหลด snapshot สำรองเพิ่มได้ที่นี่</div>
     </div>
