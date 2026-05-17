@@ -673,6 +673,52 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .sw-bal-warn { background: rgba(217,119,6,0.12); color: var(--warning); }
 .sw-bal-low  { background: rgba(220,38,38,0.10); color: var(--danger); }
 
+/* Filter bar — flexible, wraps on small screens */
+.sw-filter-bar {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  padding: 14px 16px; margin-bottom: 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.sw-filter-input {
+  padding: 8px 12px; font-size: 13px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text);
+  flex: 1; min-width: 200px;
+  transition: border-color var(--transition);
+}
+.sw-filter-input:focus {
+  outline: 0; border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(46,116,255,0.12);
+}
+.sw-filter-select {
+  padding: 8px 12px; font-size: 13px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text);
+  cursor: pointer; min-width: 160px;
+  transition: border-color var(--transition);
+}
+.sw-filter-select:hover { border-color: var(--border-strong); }
+.sw-filter-date-group {
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.sw-filter-date {
+  flex: 0 1 auto; min-width: 130px;
+  padding: 8px 10px;
+}
+.sw-filter-clear {
+  margin-left: auto;
+  color: var(--danger);
+  font-size: 12px;
+}
+.sw-filter-clear:hover { background: rgba(220,38,38,0.08); }
+
+@media (max-width: 720px) {
+  .sw-filter-bar { padding: 12px; }
+  .sw-filter-input, .sw-filter-select { width: 100%; flex: 1 1 100%; }
+}
+
 /* Branch bar (Safari style — slim 4px gradient) */
 .sw-bar-bg {
   height: 4px;

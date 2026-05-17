@@ -5611,6 +5611,46 @@ function auditGoPage(p) {
 //  PAGE: LEAVE MANAGEMENT (การลางาน)
 // ═══════════════════════════════════════════════════════
 const _leaveState = { tab: 'pending', filterYear: new Date().getFullYear() };
+const _leaveFilters = { search: '', leaveType: '', status: '', branch: '', from: '', to: '' };
+
+function setLeaveFilter(field, value) {
+  _leaveFilters[field] = value;
+  // ถ้า field เป็น search → focus กลับหลัง render
+  const wasFocused = field === 'search';
+  router.go('leave');
+  if (wasFocused) {
+    const el = document.getElementById('leaveSearchInput');
+    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  }
+}
+function clearLeaveFilters() {
+  Object.keys(_leaveFilters).forEach(k => _leaveFilters[k] = '');
+  router.go('leave');
+}
+function hasActiveLeaveFilters() {
+  return Object.values(_leaveFilters).some(v => v && String(v).length);
+}
+function applyLeaveFilters(list) {
+  const f = _leaveFilters;
+  const search = f.search.trim().toLowerCase();
+  return list.filter(r => {
+    if (f.leaveType && r.leaveType !== f.leaveType) return false;
+    if (f.status && r.status !== f.status) return false;
+    if (f.from && (r.startDate || '') < f.from) return false;
+    if (f.to && (r.startDate || '') > f.to) return false;
+    if (f.branch) {
+      const e = DB.getEmployee(r.employeeId);
+      if (!e || e.branch !== f.branch) return false;
+    }
+    if (search) {
+      const e = DB.getEmployee(r.employeeId);
+      const name = ((e?.firstName || '') + ' ' + (e?.lastName || '')).toLowerCase();
+      if (!name.includes(search) && !String(r.employeeId).toLowerCase().includes(search)) return false;
+    }
+    return true;
+  });
+}
+
 const LEAVE_STATUS_BADGE = {
   pending:   { label: 'รออนุมัติ', cls: 'badge-warning' },
   approved:  { label: 'อนุมัติแล้ว', cls: 'badge-success' },
@@ -5686,11 +5726,45 @@ router.register('leave', () => {
   `;
 });
 
+function renderLeaveFilterBar(scope = 'requests') {
+  const branches = [...new Set(DB.data.employees.filter(e => DB.empStatus(e) !== 'resigned').map(e => e.branch).filter(Boolean))].sort();
+  const types = DB.getLeaveTypesList();
+  const showStatus = scope === 'requests' && _leaveState.tab === 'all';
+  const showDates = scope === 'requests';
+  const showType = scope === 'requests';
+  return `<div class="sw-filter-bar">
+    <input id="leaveSearchInput" type="text" class="sw-filter-input"
+      placeholder="🔍 ${scope === 'balance' ? 'ค้นชื่อ/รหัสพนักงาน' : 'ค้นชื่อ/รหัสพนักงาน'}"
+      value="${escapeHtml(_leaveFilters.search)}"
+      onchange="setLeaveFilter('search', this.value)"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();setLeaveFilter('search', this.value);}"/>
+    ${showType ? `<select class="sw-filter-select" onchange="setLeaveFilter('leaveType', this.value)">
+      <option value="">— ทุกประเภทการลา —</option>
+      ${types.map(t => `<option value="${t.id}" ${_leaveFilters.leaveType === t.id ? 'selected' : ''}>${escapeHtml(t.label)}</option>`).join('')}
+    </select>` : ''}
+    ${showStatus ? `<select class="sw-filter-select" onchange="setLeaveFilter('status', this.value)">
+      <option value="">— ทุกสถานะ —</option>
+      ${Object.entries(LEAVE_STATUS_BADGE).map(([k, v]) => `<option value="${k}" ${_leaveFilters.status === k ? 'selected' : ''}>${escapeHtml(v.label)}</option>`).join('')}
+    </select>` : ''}
+    <select class="sw-filter-select" onchange="setLeaveFilter('branch', this.value)">
+      <option value="">— ทุกสาขา —</option>
+      ${branches.map(b => `<option value="${escapeHtml(b)}" ${_leaveFilters.branch === b ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
+    </select>
+    ${showDates ? `<div class="sw-filter-date-group">
+      <input type="date" class="sw-filter-input sw-filter-date" title="ตั้งแต่วันที่" value="${_leaveFilters.from || ''}" onchange="setLeaveFilter('from', this.value)"/>
+      <span class="muted-2" style="font-size:12px">→</span>
+      <input type="date" class="sw-filter-input sw-filter-date" title="ถึงวันที่" value="${_leaveFilters.to || ''}" onchange="setLeaveFilter('to', this.value)"/>
+    </div>` : ''}
+    ${hasActiveLeaveFilters() ? `<button class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearLeaveFilters()" title="ล้างตัวกรอง">✕ ล้างตัวกรอง</button>` : ''}
+  </div>`;
+}
+
 function renderLeaveTab() {
   if (_leaveState.tab === 'balance') return renderLeaveBalanceTable();
   if (_leaveState.tab === 'types') return renderLeaveTypesTable();
   const status = _leaveState.tab === 'pending' ? 'pending' : null;
-  const list = DB.getLeaveRequests({ status, year: _leaveState.tab === 'all' ? _leaveState.filterYear : null });
+  const rawList = DB.getLeaveRequests({ status, year: _leaveState.tab === 'all' ? _leaveState.filterYear : null });
+  const list = applyLeaveFilters(rawList);
 
   const titleMap = { pending: 'คำขอที่รออนุมัติ', all: `ประวัติคำขอลา · ปี ${_leaveState.filterYear + 543}` };
   const subMap = {
@@ -5703,7 +5777,12 @@ function renderLeaveTab() {
       ${[0, 1, 2].map(off => { const y = new Date().getFullYear() - off; return `<option value="${y}" ${_leaveState.filterYear === y ? 'selected' : ''}>ปี ${y + 543}</option>`; }).join('')}
     </select>` : '';
 
-  if (!list.length) {
+  const filtered = hasActiveLeaveFilters();
+  const countLabel = filtered
+    ? `<span class="sw-chart-count">${fmt.num(list.length)} / ${fmt.num(rawList.length)}</span>`
+    : `<span class="sw-chart-count">${fmt.num(rawList.length)}</span>`;
+
+  if (!rawList.length) {
     return `<div class="sw-chart-card">
       <div class="sw-chart-header">
         <div>
@@ -5723,12 +5802,17 @@ function renderLeaveTab() {
   return `<div class="sw-chart-card">
     <div class="sw-chart-header">
       <div>
-        <div class="sw-chart-title">${escapeHtml(titleMap[_leaveState.tab] || '')} <span class="sw-chart-count">${fmt.num(list.length)}</span></div>
+        <div class="sw-chart-title">${escapeHtml(titleMap[_leaveState.tab] || '')} ${countLabel}</div>
         <div class="sw-chart-sub">${escapeHtml(subMap[_leaveState.tab] || '')}</div>
       </div>
       ${yearSelector}
     </div>
-    <div class="table-wrap"><table class="table table-compact sw-leave-table">
+    ${renderLeaveFilterBar('requests')}
+    ${list.length === 0 ? `<div class="empty-state" style="padding:40px 20px">
+      <div style="font-size:32px;margin-bottom:8px;opacity:0.3">🔍</div>
+      <div class="title" style="font-size:14px;font-weight:600">ไม่พบรายการที่ตรงกับตัวกรอง</div>
+      <div class="hint" style="margin-top:4px">ลองล้างตัวกรองเพื่อดูทั้งหมด</div>
+    </div>` : `<div class="table-wrap"><table class="table table-compact sw-leave-table">
       <thead><tr>
         <th>วันที่ขอ</th><th>พนักงาน</th><th>ประเภทการลา</th><th>ช่วงวันที่ลา</th><th class="num">วัน</th>
         <th>เหตุผล</th><th>สถานะ</th><th>ผู้อนุมัติ (หัวสาขา)</th><th></th>
@@ -5780,28 +5864,48 @@ function renderLeaveTab() {
           </tr>`;
         }).join('')}
       </tbody>
-    </table></div>
+    </table></div>`}
   </div>`;
 }
 
 function renderLeaveBalanceTable() {
   const year = _leaveState.filterYear;
-  const emps = DB.data.employees.filter(e => DB.empStatus(e) !== 'resigned');
-  if (!emps.length) {
+  const allEmps = DB.data.employees.filter(e => DB.empStatus(e) !== 'resigned');
+  if (!allEmps.length) {
     return `<div class="sw-chart-card"><div class="empty-state"><div class="title">ไม่มีพนักงาน</div></div></div>`;
   }
+  // apply filter (search by name/id + branch)
+  const f = _leaveFilters;
+  const search = (f.search || '').trim().toLowerCase();
+  const emps = allEmps.filter(e => {
+    if (f.branch && e.branch !== f.branch) return false;
+    if (search) {
+      const name = ((e.firstName || '') + ' ' + (e.lastName || '')).toLowerCase();
+      if (!name.includes(search) && !String(e.id).toLowerCase().includes(search)) return false;
+    }
+    return true;
+  });
   const types = Object.entries(DB.LEAVE_TYPES);
+  const filtered = hasActiveLeaveFilters();
+  const countLabel = filtered
+    ? `<span class="sw-chart-count">${fmt.num(emps.length)} / ${fmt.num(allEmps.length)}</span>`
+    : `<span class="sw-chart-count">${fmt.num(allEmps.length)}</span>`;
   return `<div class="sw-chart-card">
     <div class="sw-chart-header">
       <div>
-        <div class="sw-chart-title">ยอดวันลาคงเหลือ · ปี ${year + 543}</div>
+        <div class="sw-chart-title">ยอดวันลาคงเหลือ · ปี ${year + 543} ${countLabel}</div>
         <div class="sw-chart-sub">แสดง "คงเหลือ / โควต้า" — นับจากคำขอที่อนุมัติแล้ว · เปลี่ยนปีเพื่อดูย้อนหลัง</div>
       </div>
       <select class="sw-inline-select" onchange="_leaveState.filterYear = Number(this.value); router.go('leave')">
         ${[0, 1, 2].map(off => { const y = new Date().getFullYear() - off; return `<option value="${y}" ${_leaveState.filterYear === y ? 'selected' : ''}>ปี ${y + 543}</option>`; }).join('')}
       </select>
     </div>
-    <div class="table-wrap"><table class="table table-compact sw-balance-table">
+    ${renderLeaveFilterBar('balance')}
+    ${emps.length === 0 ? `<div class="empty-state" style="padding:40px 20px">
+      <div style="font-size:32px;margin-bottom:8px;opacity:0.3">🔍</div>
+      <div class="title" style="font-size:14px;font-weight:600">ไม่พบพนักงานที่ตรงกับตัวกรอง</div>
+      <div class="hint" style="margin-top:4px">ลองล้างตัวกรองเพื่อดูทั้งหมด</div>
+    </div>` : `<div class="table-wrap"><table class="table table-compact sw-balance-table">
       <thead><tr>
         <th>พนักงาน</th>
         ${types.map(([k, v]) => `<th class="num" title="${escapeHtml(v.label)}">${escapeHtml(v.label)}</th>`).join('')}
@@ -5827,7 +5931,7 @@ function renderLeaveBalanceTable() {
           </tr>`;
         }).join('')}
       </tbody>
-    </table></div>
+    </table></div>`}
   </div>`;
 }
 
