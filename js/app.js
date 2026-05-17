@@ -3003,11 +3003,16 @@ function openSalaryAdjustForm() {
       <div class="form-section">
         <h3>เลือกพนักงาน</h3>
         <div class="form-grid">
-          <div class="form-group span-2"><label>พนักงาน *</label>
-            <select name="employeeId" id="adjEmp" required>
-              <option value="">— เลือกพนักงาน —</option>
-              ${emps.map(e => `<option value="${e.id}">${escapeHtml(e.id + ' — ' + e.firstName + ' ' + e.lastName)}</option>`).join('')}
-            </select>
+          <div class="form-group span-2"><label>พนักงาน * <span class="muted-2" style="font-weight:normal;font-size:11px">— พิมพ์ ชื่อ / นามสกุล / ชื่อเล่น / รหัส (${fmt.num(emps.length)} คน)</span></label>
+            <input type="text" id="adjEmpSearch" list="dl-adj-emps" autocomplete="off" required placeholder="พิมพ์เพื่อค้นหา หรือเลือกจากรายการ"/>
+            <input type="hidden" name="employeeId" id="adjEmp"/>
+            <datalist id="dl-adj-emps">
+              ${emps.map(e => {
+                const display = `${e.id} — ${(e.title || '') + e.firstName} ${e.lastName || ''}${e.nickname ? ' (' + e.nickname + ')' : ''}`;
+                return `<option value="${escapeHtml(display)}"></option>`;
+              }).join('')}
+            </datalist>
+            <small class="muted-2" id="adjEmpHint" style="font-size:11.5px;color:var(--text-3)"></small>
           </div>
           <div class="form-group"><label>วันที่มีผล *</label><input name="date" type="date" value="${tz.today()}" required/></div>
         </div>
@@ -3074,8 +3079,19 @@ function openSalaryAdjustForm() {
       </div>
     </form>`, { size: 'lg' });
 
-  // helper: คำนวณรายได้รวม (ใช้ค่าใหม่ถ้ามี, ไม่งั้นใช้ค่าเก่า)
+  // helper: ดึง employee ปัจจุบันจาก hidden input
   const currentEmp = () => DB.getEmployee($('#adjEmp').value);
+  // parse ID จาก search input value — รูปแบบ "ID — ชื่อ นามสกุล (เล่น)"
+  const parseEmpIdFromSearch = (val) => {
+    if (!val) return '';
+    // ลองดู exact ID ก่อน (ถ้า user พิมพ์รหัสล้วน)
+    const direct = val.trim();
+    if (DB.getEmployee(direct)) return direct;
+    // ดึง token แรกก่อน " — "
+    const m = val.split(/\s*—\s*/);
+    const id = (m[0] || '').trim();
+    return DB.getEmployee(id) ? id : '';
+  };
   const numOr = (v, fallback) => {
     const s = (v ?? '').toString().trim();
     if (s === '') return Number(fallback) || 0;
@@ -3096,15 +3112,20 @@ function openSalaryAdjustForm() {
     $('#adjNewTotal').value = fmt.money(total) + ' บาท';
   };
 
-  // เมื่อเลือกพนักงาน → เติม current state ลงในช่องอ่านอย่างเดียว
-  $('#adjEmp').addEventListener('change', () => {
-    const emp = currentEmp();
+  // เมื่อเปลี่ยนช่องค้นหา → parse ID, อัปเดต hidden input, เติม current state
+  const onEmpPicked = () => {
+    const id = parseEmpIdFromSearch($('#adjEmpSearch').value);
+    $('#adjEmp').value = id;
+    const emp = id ? DB.getEmployee(id) : null;
+    const hint = $('#adjEmpHint');
     if (!emp) {
       ['#adjOldSalary','#adjOldPosition','#adjOldBranch','#adjOldDept',
        '#adjOldAlPos','#adjOldAlTrv','#adjOldAlFood','#adjOldAlPd','#adjOldAlLang','#adjOldAlOther',
        '#adjOldTotal','#adjNewTotal'].forEach(s => { const el = $(s); if (el) el.value = ''; });
+      if (hint) hint.innerHTML = $('#adjEmpSearch').value ? '<span style="color:var(--danger)">ไม่พบพนักงาน — เลือกจากรายการ</span>' : '';
       return;
     }
+    if (hint) hint.innerHTML = `<span style="color:var(--success)">✓ ${escapeHtml(emp.id)} — ${escapeHtml(emp.firstName + ' ' + (emp.lastName || ''))}</span>`;
     $('#adjOldSalary').value = fmt.money(emp.salary) + ' บาท';
     $('#adjOldPosition').value = (DB.getPosition(emp.position)?.name || '') + (emp.positionTitle ? ' · ' + emp.positionTitle : '');
     $('#adjOldBranch').value = emp.branch || '';
@@ -3117,7 +3138,9 @@ function openSalaryAdjustForm() {
     $('#adjOldAlOther').value = fmt.money(emp.allowanceOther);
     $('#adjOldTotal').value   = fmt.money(totalIncome(emp)) + ' บาท';
     calcNewTotal();
-  });
+  };
+  $('#adjEmpSearch').addEventListener('input', onEmpPicked);
+  $('#adjEmpSearch').addEventListener('change', onEmpPicked);
 
   // recalculate รายได้รวมใหม่ทุกครั้งที่กรอก
   $$('#adjForm .adj-money').forEach(el => el.addEventListener('input', calcNewTotal));
