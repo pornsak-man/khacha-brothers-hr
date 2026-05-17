@@ -1292,20 +1292,61 @@ const DB = {
     return this._userProfiles;
   },
 
+  // สร้างบัญชี 1 คนด้วย Supabase signUp — เก็บ admin session ไว้ก่อน, signUp, แล้ว restore กลับ
+  // handle_new_user trigger จะ auto-link employee_id จาก raw_user_meta_data
   async createEmployeeAccount(employeeId) {
     if (!this.isAdmin) throw new Error('ต้องเป็น admin');
-    const { data, error } = await this.client.rpc('create_employee_account', { p_employee_id: employeeId });
-    if (error) throw error;
-    await this.refetchUserProfiles();
-    return data;
+    const emp = this.getEmployee(employeeId);
+    if (!emp) throw new Error('ไม่พบพนักงาน ' + employeeId);
+
+    const email = `${String(employeeId).toLowerCase()}@kacha.local`;
+    const password = String(employeeId);
+    const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
+
+    // เก็บ session admin ไว้ก่อน — เพราะ signUp จะ auto-login เป็น user ใหม่
+    const { data: { session: adminSession } } = await this.client.auth.getSession();
+    if (!adminSession) throw new Error('ไม่มี admin session');
+
+    try {
+      const { data, error } = await this.client.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { employee_id: employeeId, name: fullName }
+        }
+      });
+      if (error) throw error;
+
+      // restore admin session ทันที (กัน UI สลับเป็น user ใหม่)
+      await this.client.auth.setSession({
+        access_token: adminSession.access_token,
+        refresh_token: adminSession.refresh_token
+      });
+
+      return { user_id: data.user?.id, email, created: true, message: 'สร้างบัญชีสำเร็จ' };
+    } catch (ex) {
+      // ถ้าล้มเหลว — กู้ admin session กลับ
+      try { await this.client.auth.setSession({ access_token: adminSession.access_token, refresh_token: adminSession.refresh_token }); } catch {}
+      throw ex;
+    }
   },
 
   async bulkCreateEmployeeAccounts() {
     if (!this.isAdmin) throw new Error('ต้องเป็น admin');
-    const { data, error } = await this.client.rpc('bulk_create_employee_accounts');
-    if (error) throw error;
+    const profiles = await this.refetchUserProfiles();
+    const linked = new Set((profiles || []).filter(p => p.employee_id).map(p => p.employee_id));
+    const todo = this.data.employees.filter(e => this.empStatus(e) !== 'resigned' && !linked.has(e.id));
+    const results = [];
+    for (const emp of todo) {
+      try {
+        const res = await this.createEmployeeAccount(emp.id);
+        results.push({ employee_id: emp.id, email: res.email, created: !!res.created, message: res.message });
+      } catch (ex) {
+        results.push({ employee_id: emp.id, email: `${emp.id.toLowerCase()}@kacha.local`, created: false, message: 'ERROR: ' + (ex.message || String(ex)) });
+      }
+    }
     await this.refetchUserProfiles();
-    return data || [];
+    return results;
   },
 
   async resetEmployeePassword(employeeId, newPassword = null) {
