@@ -31,6 +31,15 @@ function excelDate(s) {
   return new Date(Date.UTC(ymd[0], ymd[1] - 1, ymd[2]));
 }
 
+// แปลง string ตัวเลขล้วน → number — ทำให้ Excel เก็บเป็น number cell (รองรับ SUM, VLOOKUP เลข)
+function excelNum(s) {
+  if (s == null || s === '') return '';
+  if (typeof s === 'number') return s;
+  const str = String(s).trim();
+  if (/^\d+$/.test(str)) return Number(str);
+  return str;
+}
+
 const fmt = {
   money: (n) => (Number(n) || 0).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 }),
   num: (n) => (Number(n) || 0).toLocaleString('th-TH'),
@@ -846,8 +855,8 @@ function downloadEmployeeTemplate() {
   if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(downloadEmployeeTemplate, 800); return; }
   const sample = [
     {
-      'รหัสพนักงาน': '01001', 'คำนำหน้า': 'นาย', 'ชื่อ': 'ตัวอย่าง', 'นามสกุล': 'นามสกุลตัวอย่าง',
-      'ชื่อเล่น': 'ตย.', 'เพศ': 'ชาย', 'วันเกิด': '1990-01-15', 'เลขประชาชน': '1234567890123',
+      'รหัสพนักงาน': 1001, 'คำนำหน้า': 'นาย', 'ชื่อ': 'ตัวอย่าง', 'นามสกุล': 'นามสกุลตัวอย่าง',
+      'ชื่อเล่น': 'ตย.', 'เพศ': 'ชาย', 'วันเกิด': '1990-01-15', 'เลขประชาชน': 1234567890123,
       'สัญชาติ': 'ไทย', 'ศาสนา': 'พุทธ', 'วุฒิการศึกษา': 'ปริญญาตรี',
       'เบอร์โทร': '081-234-5678', 'อีเมล': 'sample@khacha.co.th',
       'ที่อยู่': '123 หมู่ 4 ซอยสุขุมวิท 21 ถ.สุขุมวิท',
@@ -1303,9 +1312,9 @@ function renderBulkPhotoPreview(total, matches, unmatched) {
 function exportEmployeesXLSX() {
   if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(exportEmployeesXLSX, 800); return; }
   const rows = DB.getEmployees().map(e => ({
-    'รหัส': e.id, 'คำนำหน้า': e.title, 'ชื่อ': e.firstName, 'นามสกุล': e.lastName,
+    'รหัส': excelNum(e.id), 'คำนำหน้า': e.title, 'ชื่อ': e.firstName, 'นามสกุล': e.lastName,
     'ชื่อเล่น': e.nickname,
-    'เลขประชาชน': e.nationalId, 'วันเกิด': excelDate(e.dob), 'เพศ': e.gender,
+    'เลขประชาชน': excelNum(e.nationalId), 'วันเกิด': excelDate(e.dob), 'เพศ': e.gender,
     'สัญชาติ': e.nationality, 'ศาสนา': e.religion, 'วุฒิการศึกษา': e.education,
     'เบอร์โทร': e.phone, 'อีเมล': e.email,
     'ที่อยู่': e.address, 'แขวง/ตำบล': e.subDistrict, 'เขต/อำเภอ': e.district,
@@ -1881,7 +1890,7 @@ function exportPayrollXLSX() {
     const gross = totalIncome(e) + extraAllow;
     const net = gross - adv - loanDed;
     return {
-      'รหัส': e.id,
+      'รหัส': excelNum(e.id),
       'ชื่อ-นามสกุล': (e.title || '') + e.firstName + ' ' + e.lastName,
       'ฝ่าย': (DB.getDepartment(e.department) || {}).name || '',
       'ตำแหน่ง': e.positionTitle,
@@ -1911,7 +1920,7 @@ function exportLoansXLSX() {
   if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(exportLoansXLSX, 800); return; }
   const rows = DB.getLoans().map(l => {
     const e = DB.getEmployee(l.employeeId) || {};
-    return { 'วันที่': excelDate(l.date), 'รหัสพนักงาน': l.employeeId, 'ชื่อ-นามสกุล': (e.firstName || '') + ' ' + (e.lastName || ''),
+    return { 'วันที่': excelDate(l.date), 'รหัสพนักงาน': excelNum(l.employeeId), 'ชื่อ-นามสกุล': (e.firstName || '') + ' ' + (e.lastName || ''),
       'จำนวนกู้': Number(l.amount || 0), 'ผ่อน/เดือน': Number(l.monthlyPayment || 0), 'คงเหลือ': Number(l.remaining || 0),
       'สถานะ': l.status === 'completed' ? 'ปิดยอด' : 'ผ่อนอยู่', 'เหตุผล': l.reason };
   });
