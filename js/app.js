@@ -279,7 +279,8 @@ router.register('dashboard', () => {
   const s = DB.getStats();
   const yearly = DB.getYearlyHireExit();
   const monthly = yearly.months;
-  window.afterRender = () => renderDashboardCharts(s, monthly);
+  const branchStats = DB.getBranchStats();
+  window.afterRender = () => renderDashboardCharts(s, monthly, branchStats);
 
   const totalEmps = s.totalEmployees;
   const activeEmps = s.activeEmployees;
@@ -332,6 +333,19 @@ router.register('dashboard', () => {
       <canvas id="chartMonthly" style="max-height:280px"></canvas>
     </div>
 
+    <div class="card">
+      <div class="card-header" style="flex-direction:column;align-items:flex-start;gap:4px;margin-bottom:20px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;width:100%;gap:16px;flex-wrap:wrap">
+          <div>
+            <div style="font-size:18px;font-weight:700;letter-spacing:-0.02em;color:var(--text)">พนักงานตามสาขา</div>
+            <div class="muted-2" style="font-size:13px;margin-top:4px">จำนวนพนักงานปฏิบัติงานในแต่ละสาขา (เรียงจากมาก → น้อย)</div>
+          </div>
+          <div class="muted-2" style="font-size:12.5px">รวม <strong style="color:var(--text)">${branchStats.length}</strong> สาขา · <strong style="color:var(--text)">${fmt.num(branchStats.reduce((sum, b) => sum + b.count, 0))}</strong> คน</div>
+        </div>
+      </div>
+      <canvas id="chartByBranch" style="max-height:${Math.max(280, branchStats.length * 24 + 40)}px"></canvas>
+    </div>
+
     <div class="chart-row">
       <div class="chart-box"><div class="card-header"><div class="card-title">พนักงานตามฝ่าย</div></div><canvas id="chartByDept"></canvas></div>
       <div class="chart-box"><div class="card-header"><div class="card-title">สัดส่วนเพศ</div></div><canvas id="chartByGender"></canvas></div>
@@ -358,8 +372,8 @@ router.register('dashboard', () => {
   `;
 });
 
-function renderDashboardCharts(s, monthly) {
-  if (typeof Chart === 'undefined') { setTimeout(() => renderDashboardCharts(s, monthly), 200); return; }
+function renderDashboardCharts(s, monthly, branchStats) {
+  if (typeof Chart === 'undefined') { setTimeout(() => renderDashboardCharts(s, monthly, branchStats), 200); return; }
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   Chart.defaults.color = isDark ? '#c9cfd6' : '#525249';
   Chart.defaults.font.family = 'Prompt, sans-serif';
@@ -413,6 +427,38 @@ function renderDashboardCharts(s, monthly) {
         scales: {
           x: { grid: { display: false }, ticks: { font: { size: 12 } } },
           y: { beginAtZero: true, ticks: { stepSize: 2, precision: 0, font: { size: 12 } }, grid: { color: gridColor } }
+        }
+      }
+    });
+  }
+
+  // ── Branch distribution chart (horizontal bar) ──
+  const ctxB = $('#chartByBranch');
+  if (ctxB && branchStats && branchStats.length) {
+    new Chart(ctxB, {
+      type: 'bar',
+      data: {
+        labels: branchStats.map(b => b.branch),
+        datasets: [{
+          label: 'จำนวนพนักงาน',
+          data: branchStats.map(b => b.count),
+          backgroundColor: 'rgba(30, 58, 138, 0.85)',
+          borderRadius: 6,
+          borderSkipped: false,
+          barPercentage: 0.75,
+          categoryPercentage: 0.85
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (ctx) => 'จำนวน ' + ctx.parsed.x.toLocaleString('th-TH') + ' คน' } }
+        },
+        scales: {
+          x: { beginAtZero: true, ticks: { precision: 0, font: { size: 12 } }, grid: { color: gridColor } },
+          y: { grid: { display: false }, ticks: { font: { size: 12, weight: '600' } } }
         }
       }
     });

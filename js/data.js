@@ -618,6 +618,19 @@ const DB = {
     if (error) throw error;
   },
 
+  // ─── BRANCH STATS (จำนวนพนักงานต่อสาขา — เฉพาะที่ยังปฏิบัติงาน) ───
+  getBranchStats() {
+    const counts = new Map();
+    for (const e of this.data.employees) {
+      if (this.empStatus(e) === 'resigned') continue;
+      const b = (e.branch || 'ไม่ระบุ').trim() || 'ไม่ระบุ';
+      counts.set(b, (counts.get(b) || 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([branch, count]) => ({ branch, count }))
+      .sort((a, b) => b.count - a.count);
+  },
+
   // ─── YEARLY HIRE / EXIT (ปฏิทินทั้งปี ม.ค.-ธ.ค.) ───
   getYearlyHireExit(year = null) {
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
