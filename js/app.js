@@ -277,111 +277,101 @@ window.onRealtimeChange = () => {
 // ═══════════════════════════════════════════════════════
 router.register('dashboard', () => {
   const s = DB.getStats();
+  const kpi = DB.getDashboardKPI();
   const yearly = DB.getYearlyHireExit();
   const monthly = yearly.months;
   const branchStats = DB.getBranchStats();
-  window.afterRender = () => renderDashboardCharts(s, monthly, branchStats);
+  const recentEmps = DB.getEmployees()
+    .filter(e => DB.empStatus(e) !== 'resigned')
+    .sort((a, b) => (b.hireDate || '').localeCompare(a.hireDate || ''))
+    .slice(0, 10);
 
-  const totalEmps = s.totalEmployees;
-  const activeEmps = s.activeEmployees;
-  const resignedEmps = totalEmps - activeEmps;
-  const branchCount = DB.getBranches().length;
-  const thisMonth = monthly[monthly.length - 1] || { hires: 0, exits: 0 };
-  const pendingTerm = DB.data.employees.filter(e => DB.empStatus(e) === 'pending').length;
+  window.afterRender = () => renderDashboardCharts(s, monthly, null);
+
+  const todayStr = new Date().toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' });
+  const tvColor = kpi.turnoverAnnualized <= 5 ? 'var(--success)' : kpi.turnoverAnnualized <= 10 ? 'var(--warning)' : 'var(--danger)';
+  const tvLabel = kpi.turnoverAnnualized <= 5 ? '🟢 ดีมาก' : kpi.turnoverAnnualized <= 10 ? '🟡 ปานกลาง' : '🔴 สูง';
+  const maxBranch = branchStats[0]?.count || 1;
 
   return `
-    <div class="dashboard-hero">
-      <div class="hero-content">
-        <div class="hero-label">พนักงานทั้งหมดในระบบ</div>
-        <div class="hero-value">${fmt.num(totalEmps)}</div>
-        <div class="hero-stats">
-          <div class="hero-stat-item"><span class="dot dot-green"></span>ปฏิบัติงาน <strong>${fmt.num(activeEmps)}</strong></div>
-          ${pendingTerm ? `<div class="hero-stat-item"><span class="dot dot-yellow"></span>นัดพ้นสภาพ <strong>${fmt.num(pendingTerm)}</strong></div>` : ''}
-          <div class="hero-stat-item"><span class="dot dot-red"></span>พ้นสภาพ <strong>${fmt.num(resignedEmps)}</strong></div>
-          <div class="hero-stat-item">ฝ่าย <strong>${fmt.num(s.departments)}</strong></div>
-          <div class="hero-stat-item">สาขา <strong>${fmt.num(branchCount)}</strong></div>
-        </div>
+    <div class="sw-page-header">
+      <div>
+        <div class="sw-page-title">ภาพรวมองค์กร</div>
+        <div class="sw-page-subtitle">บริษัท คชา บราเธอร์ส จำกัด — ข้อมูล ณ ${todayStr}</div>
       </div>
-      <div class="hero-mini">
-        <div class="hero-mini-label">เดือนนี้</div>
-        <div class="hero-mini-row">
-          <div class="hero-mini-stat green">
-            <div class="hero-mini-num">+${fmt.num(thisMonth.hires)}</div>
-            <div class="hero-mini-cap">เข้างาน</div>
-          </div>
-          <div class="hero-mini-stat red">
-            <div class="hero-mini-num">−${fmt.num(thisMonth.exits)}</div>
-            <div class="hero-mini-cap">พ้นสภาพ</div>
-          </div>
-        </div>
+      <div class="sw-page-actions">
+        ${DB.isAdmin ? `<button class="btn btn-primary" onclick="openEmployeeForm()">+ เพิ่มพนักงาน</button>` : ''}
       </div>
-      ${DB.isAdmin ? `<button class="btn btn-primary hero-cta" onclick="openEmployeeForm()">+ เพิ่มพนักงาน</button>` : ''}
     </div>
 
-    <div class="stats-grid">
-      <div class="stat-card"><div class="stat-icon bg-green">${ICON.money}</div><div class="stat-content"><div class="stat-label">เงินเดือนรวม / เดือน</div><div class="stat-value">${fmt.money(s.totalMonthlySalary)}</div></div></div>
-      <div class="stat-card"><div class="stat-icon bg-orange">${ICON.bank}</div><div class="stat-content"><div class="stat-label">การกู้ที่ยังไม่ปิด</div><div class="stat-value">${fmt.num(s.activeLoans)}</div></div></div>
-      <div class="stat-card"><div class="stat-icon bg-purple">${ICON.cash}</div><div class="stat-content"><div class="stat-label">เบิกล่วงหน้ารอจ่าย</div><div class="stat-value">${fmt.num(s.pendingAdvances)}</div></div></div>
-      <div class="stat-card"><div class="stat-icon bg-red">${ICON.calendar}</div><div class="stat-content"><div class="stat-label">วันหยุดในปฏิทิน</div><div class="stat-value">${fmt.num(DB.getCalendar().length)}</div></div></div>
+    <div class="sw-stats-grid">
+      <div class="sw-stat-card sw-accent-primary">
+        <div class="sw-stat-icon">${ICON.users}</div>
+        <div class="sw-stat-label">พนักงานปัจจุบัน</div>
+        <div class="sw-stat-value">${fmt.num(kpi.headcount)}</div>
+        <div class="sw-stat-change">ที่ยังไม่พ้นสภาพ · รวมทั้งระบบ ${fmt.num(kpi.total)}</div>
+      </div>
+      <div class="sw-stat-card sw-accent-green">
+        <div class="sw-stat-icon">${ICON.trendUp}</div>
+        <div class="sw-stat-label">เข้าใหม่ เดือนนี้</div>
+        <div class="sw-stat-value" style="color:var(--success)">${fmt.num(kpi.newThisMonth)}</div>
+        <div class="sw-stat-change">รวมปี ${kpi.year}: ${fmt.num(kpi.hireYTD)} คน</div>
+      </div>
+      <div class="sw-stat-card sw-accent-red">
+        <div class="sw-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 13 12 18 17 13"/><polyline points="7 7 12 12 17 7"/></svg></div>
+        <div class="sw-stat-label">พ้นสภาพ เดือนนี้</div>
+        <div class="sw-stat-value" style="color:var(--danger)">${fmt.num(kpi.exitThisMonth)}</div>
+        <div class="sw-stat-change">รวมปี ${kpi.year}: ${fmt.num(kpi.exitYTD)} คน</div>
+      </div>
+      <div class="sw-stat-card sw-accent-amber" style="border-left:4px solid ${tvColor}">
+        <div class="sw-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg></div>
+        <div class="sw-stat-label">Turnover Rate (คาดทั้งปี)</div>
+        <div class="sw-stat-value" style="color:${tvColor}">${kpi.turnoverAnnualized.toFixed(2)}%</div>
+        <div class="sw-stat-change">${tvLabel} · YTD ${kpi.turnoverYTD.toFixed(2)}%</div>
+      </div>
     </div>
 
-    <div class="card">
-      <div class="card-header" style="flex-direction:column;align-items:flex-start;gap:4px;margin-bottom:20px">
-        <div style="font-size:18px;font-weight:700;letter-spacing:-0.02em;color:var(--text)">พนักงานเข้า / ออก ประจำปี ${yearly.year}</div>
-        <div class="muted-2" style="font-size:13px">เปรียบเทียบจำนวนเข้าใหม่ (เขียว) กับพ้นสภาพ (แดง) แต่ละเดือน</div>
+    <div class="sw-charts-grid">
+      <div class="sw-chart-card">
+        <div class="sw-chart-title">พนักงานที่เพิ่งเพิ่มเข้าระบบ</div>
+        <div class="sw-chart-sub">10 รายล่าสุด · ที่ยังปฏิบัติงาน</div>
+        <div>${recentEmps.map(e => `
+          <div class="sw-recent-item" onclick="viewEmployee('${escapeHtml(e.id)}')">
+            ${e.photoUrl ? `<img src="${escapeHtml(e.photoUrl)}" class="avatar-thumb" alt=""/>` : `<div class="avatar-thumb avatar-thumb-text">${escapeHtml((e.firstName || '?').charAt(0))}</div>`}
+            <div class="sw-recent-info">
+              <div class="sw-recent-name">${escapeHtml((e.title || '') + e.firstName + ' ' + e.lastName)}</div>
+              <div class="sw-recent-sub">${escapeHtml(e.positionTitle || '-')} · ${escapeHtml(e.branch || '-')}</div>
+            </div>
+            <div class="sw-recent-date">${fmt.date(e.hireDate)}</div>
+          </div>`).join('')}</div>
       </div>
+      <div class="sw-chart-card">
+        <div class="sw-chart-title">สาขาตามจำนวนพนักงาน</div>
+        <div class="sw-chart-sub">${branchStats.length} สาขา · ${fmt.num(branchStats.reduce((s, b) => s + b.count, 0))} คน</div>
+        <div style="max-height:540px;overflow-y:auto;padding-right:6px">
+          ${branchStats.map(b => {
+            const pct = (b.count / maxBranch * 100).toFixed(1);
+            return `<div style="margin-bottom:14px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
+                <div style="font-size:13.5px;font-weight:600;color:var(--text)">${escapeHtml(b.branch)}</div>
+                <div style="font-size:13.5px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">${fmt.num(b.count)} <span style="font-size:11px;font-weight:500;color:var(--text-3)">คน</span></div>
+              </div>
+              <div class="sw-bar-bg"><div class="sw-bar-fill" style="width:${pct}%"></div></div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+
+    <div class="sw-chart-card">
+      <div class="sw-chart-title">พนักงานเข้า / ออก ประจำปี ${yearly.year}</div>
+      <div class="sw-chart-sub">เปรียบเทียบจำนวนเข้าใหม่ (เขียว) กับพ้นสภาพ (แดง) แต่ละเดือน</div>
       <canvas id="chartMonthly" style="max-height:280px"></canvas>
     </div>
 
-    <div class="card">
-      <div class="card-header" style="flex-direction:column;align-items:flex-start;gap:4px;margin-bottom:20px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-end;width:100%;gap:16px;flex-wrap:wrap">
-          <div>
-            <div style="font-size:18px;font-weight:700;letter-spacing:-0.02em;color:var(--text)">พนักงานตามสาขา</div>
-            <div class="muted-2" style="font-size:13px;margin-top:4px">เรียงจำนวนพนักงานจากมาก → น้อย</div>
-          </div>
-          <div class="muted-2" style="font-size:12.5px">รวม <strong style="color:var(--text)">${branchStats.length}</strong> สาขา · <strong style="color:var(--text)">${fmt.num(branchStats.reduce((sum, b) => sum + b.count, 0))}</strong> คน</div>
-        </div>
-      </div>
-      ${(() => {
-        if (!branchStats.length) return '<div class="muted-2 text-center" style="padding:24px">ไม่มีข้อมูลสาขา</div>';
-        const maxCount = Math.max(...branchStats.map(b => b.count));
-        return `<div class="rank-list">${branchStats.map((b, i) => `
-          <div class="rank-item">
-            <div class="rank-row">
-              <div class="rank-info">
-                <span class="rank-num">${i + 1}</span>
-                <span class="rank-name">${escapeHtml(b.branch)}</span>
-              </div>
-              <div class="rank-count">${fmt.num(b.count)} <span class="rank-unit">คน</span></div>
-            </div>
-            <div class="rank-bar"><div class="rank-bar-fill" style="width:${(b.count / maxCount * 100).toFixed(1)}%"></div></div>
-          </div>`).join('')}</div>`;
-      })()}
-    </div>
-
     <div class="chart-row">
-      <div class="chart-box"><div class="card-header"><div class="card-title">พนักงานตามฝ่าย</div></div><canvas id="chartByDept"></canvas></div>
-      <div class="chart-box"><div class="card-header"><div class="card-title">สัดส่วนเพศ</div></div><canvas id="chartByGender"></canvas></div>
-    </div>
-
-    <div class="card">
-      <div class="card-header"><div class="card-title">พนักงานเข้างานล่าสุด</div></div>
-      <div class="table-wrap">
-        <table class="table">
-          <thead><tr><th>รหัส</th><th>ชื่อ-นามสกุล</th><th>ตำแหน่ง</th><th>สาขา</th><th>วันเริ่มงาน</th></tr></thead>
-          <tbody>
-            ${DB.getEmployees().sort((a, b) => (b.hireDate || '').localeCompare(a.hireDate || '')).slice(0, 8).map(e => `
-              <tr>
-                <td><strong>${escapeHtml(e.id)}</strong></td>
-                <td>${escapeHtml((e.title || '') + e.firstName + ' ' + e.lastName)}</td>
-                <td>${escapeHtml(e.positionTitle || '-')}</td>
-                <td>${escapeHtml(e.branch || '-')}</td>
-                <td>${fmt.date(e.hireDate)}</td>
-              </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
+      <div class="chart-box"><div class="sw-chart-title">พนักงานตามฝ่าย</div><div class="sw-chart-sub">นับเฉพาะที่ยังปฏิบัติงาน</div><canvas id="chartByDept"></canvas></div>
+      <div class="chart-box"><div class="sw-chart-title">สัดส่วนเพศ</div><div class="sw-chart-sub">${fmt.num(s.activeEmployees)} คนทำงานอยู่</div><canvas id="chartByGender"></canvas></div>
     </div>
   `;
 });

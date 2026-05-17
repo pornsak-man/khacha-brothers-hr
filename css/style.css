@@ -400,6 +400,146 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .page-header:not(:has(.actions > *)) { display: none; }
 
 /* ═════════════ CARDS / STATS ═════════════ */
+/* ═════════════ SAFARI-STYLE DASHBOARD ═════════════ */
+/* Page header (compact title + subtitle) */
+.sw-page-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
+}
+.sw-page-title {
+  font-size: 22px; font-weight: 700; color: var(--text);
+  line-height: 1.2; letter-spacing: -0.02em;
+}
+.sw-page-subtitle {
+  font-size: 13px; color: var(--text-3); margin-top: 4px; font-weight: 400;
+}
+.sw-page-actions { display: flex; gap: 10px; align-items: center; }
+
+/* 4 KPI cards in grid */
+.sw-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 22px;
+}
+@media (max-width: 1100px) { .sw-stats-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px)  { .sw-stats-grid { grid-template-columns: 1fr; } }
+
+.sw-stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px 24px;
+  position: relative;
+  overflow: hidden;
+  transition: all var(--transition);
+}
+.sw-stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.sw-stat-card::after {
+  content: ''; position: absolute; top: 0; right: 0;
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  transform: translate(20px, -30px);
+  opacity: 0.08;
+}
+.sw-accent-primary::after { background: var(--primary); }
+.sw-accent-green::after { background: var(--success); }
+.sw-accent-red::after { background: var(--danger); }
+.sw-accent-amber::after { background: var(--warning); }
+
+.sw-stat-icon {
+  position: absolute; top: 20px; right: 20px;
+  width: 42px; height: 42px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+}
+.sw-stat-icon svg { width: 22px; height: 22px; stroke-width: 1.75; }
+.sw-accent-primary .sw-stat-icon { background: var(--primary-soft); color: var(--primary-text); }
+.sw-accent-green .sw-stat-icon { background: rgba(22,163,74,.12); color: var(--success); }
+.sw-accent-red .sw-stat-icon { background: rgba(220,38,38,.12); color: var(--danger); }
+.sw-accent-amber .sw-stat-icon { background: rgba(217,119,6,.12); color: var(--warning); }
+[data-theme="dark"] .sw-accent-primary .sw-stat-icon { color: var(--navy-300); }
+
+.sw-stat-label {
+  font-size: 11.5px; color: var(--text-3); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.6px;
+}
+.sw-stat-value {
+  font-size: 32px; font-weight: 700;
+  margin: 10px 0 6px;
+  color: var(--text); line-height: 1;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.025em;
+}
+.sw-stat-change {
+  font-size: 12px; color: var(--text-3);
+  line-height: 1.4;
+}
+
+/* Charts grid — 2 column (main + sidebar) */
+.sw-charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 400px;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+@media (max-width: 1100px) { .sw-charts-grid { grid-template-columns: 1fr; } }
+
+.sw-chart-card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: 22px 24px;
+  box-shadow: var(--shadow-xs);
+  margin-bottom: 18px;
+}
+.sw-chart-title {
+  font-size: 15px; font-weight: 700; color: var(--text);
+  letter-spacing: -0.01em;
+}
+.sw-chart-sub {
+  font-size: 12px; color: var(--text-3);
+  margin-top: 4px; margin-bottom: 18px;
+}
+
+/* Branch bar (Safari style — slim 4px gradient) */
+.sw-bar-bg {
+  height: 4px;
+  background: var(--surface-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.sw-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--navy-400), var(--navy-600));
+  border-radius: 2px;
+  transition: width 0.6s ease;
+  min-width: 2px;
+}
+
+/* Recent item (list with avatar + name + sub + date) */
+.sw-recent-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 4px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.sw-recent-item:last-child { border-bottom: none; }
+.sw-recent-item:hover { background: var(--surface-2); }
+.sw-recent-info { flex: 1; min-width: 0; }
+.sw-recent-name {
+  font-size: 13.5px; font-weight: 500; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sw-recent-sub {
+  font-size: 12px; color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sw-recent-date {
+  font-size: 12px; color: var(--text-3);
+  white-space: nowrap; flex-shrink: 0;
+}
+
 /* ═════════════ RANK LIST (Dashboard widget) ═════════════ */
 .rank-list {
   display: grid;

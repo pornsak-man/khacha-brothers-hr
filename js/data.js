@@ -618,6 +618,30 @@ const DB = {
     if (error) throw error;
   },
 
+  // ─── DASHBOARD KPI (Safari-style) ───
+  getDashboardKPI() {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+    const [ty, tm] = today.split('-').map(Number);
+    const thisYM = `${ty}-${String(tm).padStart(2, '0')}`;
+    const yearStart = `${ty}-01-01`;
+    const emps = this.data.employees;
+    const active = emps.filter(e => this.empStatus(e) !== 'resigned');
+    const newThisMonth = emps.filter(e => e.hireDate && String(e.hireDate).startsWith(thisYM)).length;
+    const exitThisMonth = emps.filter(e => e.terminationDate && String(e.terminationDate).startsWith(thisYM)).length;
+    const exitYTD = emps.filter(e => e.terminationDate && e.terminationDate >= yearStart && e.terminationDate <= today).length;
+    const hireYTD = emps.filter(e => e.hireDate && e.hireDate >= yearStart && e.hireDate <= today).length;
+    const headcount = active.length;
+    const turnoverMonth = headcount ? (exitThisMonth / headcount * 100) : 0;
+    const turnoverYTD = headcount ? (exitYTD / headcount * 100) : 0;
+    const turnoverAnnualized = tm ? (turnoverYTD * 12 / tm) : 0;
+    return {
+      headcount, total: emps.length,
+      newThisMonth, exitThisMonth, hireYTD, exitYTD,
+      turnoverMonth, turnoverYTD, turnoverAnnualized,
+      year: ty, monthsElapsed: tm
+    };
+  },
+
   // ─── BRANCH STATS (จำนวนพนักงานต่อสาขา — เฉพาะที่ยังปฏิบัติงาน) ───
   getBranchStats() {
     const counts = new Map();
