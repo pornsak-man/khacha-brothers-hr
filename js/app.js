@@ -3924,8 +3924,6 @@ async function issueAllFromRecruit(requestId) {
     toast('ไม่พบรายการที่ match กับ stock — เพิ่ม master หรือลงรายการ manual แทน', 'warning');
     return;
   }
-  const summary = matched.map(m => `• ${m.parsed.name}${m.parsed.size ? ' ' + m.parsed.size : ''} × ${m.parsed.qty} (${fmt.money(m.item.unitCost)} ฿/ชิ้น)`).join('\n');
-  if (!await modal.confirm('ยืนยันส่งทั้งหมด', `จะสร้าง ${matched.length} รายการ + ตัด stock + เปลี่ยนสถานะเป็น "จัดส่งแล้ว":\n\n${summary}`)) return;
 
   const issuedBy = DB.profile?.name || DB.user?.email || '';
   const issuedDate = document.getElementById('recruitIssueDate')?.value || tz.today();
