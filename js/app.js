@@ -5599,6 +5599,8 @@ function auditGoPage(p) {
 //  PAGE: LEAVE MANAGEMENT (การลางาน)
 // ═══════════════════════════════════════════════════════
 const _leaveState = { tab: 'pending', filterYear: new Date().getFullYear() };
+// ประเภทการลาที่ยอมรับ start_date ย้อนหลังได้ — ตามนโยบาย (ลาป่วยฉุกเฉิน + ลาคลอดเริ่มก่อนแจ้ง)
+const LEAVE_BACKDATE_ALLOWED = new Set(['sick', 'maternity', 'paternity']);
 const LEAVE_STATUS_BADGE = {
   pending:   { label: 'รออนุมัติ', cls: 'badge-warning' },
   approved:  { label: 'อนุมัติแล้ว', cls: 'badge-success' },
@@ -5759,7 +5761,9 @@ function openLeaveRequestForm(id = null) {
           </select>
           <div id="leaveBalanceHint" class="muted-2" style="font-size:12px;margin-top:6px"></div>
         </div>
-        <div class="form-group"><label>วันที่เริ่ม *</label><input name="startDate" id="leaveStart" type="date" required value="${editing?.startDate || today}"/></div>
+        <div class="form-group"><label>วันที่เริ่ม *</label><input name="startDate" id="leaveStart" type="date" required value="${editing?.startDate || today}"/>
+          <div id="leaveBackdateHint" class="muted-2" style="font-size:11.5px;margin-top:4px"></div>
+        </div>
         <div class="form-group"><label>วันที่สิ้นสุด *</label><input name="endDate" id="leaveEnd" type="date" required value="${editing?.endDate || today}"/></div>
         <div class="form-group"><label>จำนวนวัน *<span class="muted-2" style="font-size:11px">(แก้ได้ — รองรับครึ่งวัน)</span></label><input name="days" id="leaveDays" type="number" min="0.5" step="0.5" required value="${editing?.days || 1}"/></div>
         <div class="form-group span-2"><label>เหตุผล</label><textarea name="reason" rows="2" placeholder="ระบุเหตุผลโดยย่อ">${escapeHtml(editing?.reason || '')}</textarea></div>
@@ -5777,6 +5781,20 @@ function openLeaveRequestForm(id = null) {
     if (s && e && e >= s) {
       const days = Math.round((new Date(e) - new Date(s)) / 86400000) + 1;
       if (days > 0) $('#leaveDays').value = days;
+    }
+  };
+  const updateBackdate = () => {
+    const start = $('#leaveStart').value;
+    const type = $('#leaveType').value;
+    const box = $('#leaveBackdateHint');
+    if (!start || !type) { box.textContent = ''; return; }
+    const isPast = start < today;
+    if (!isPast) { box.innerHTML = ''; return; }
+    if (LEAVE_BACKDATE_ALLOWED.has(type)) {
+      const typeLabel = DB.LEAVE_TYPES[type]?.label || type;
+      box.innerHTML = `<span style="color:var(--warning)">ℹ️ ลาย้อนหลัง — อนุญาตเฉพาะ "${escapeHtml(typeLabel)}"</span>`;
+    } else {
+      box.innerHTML = `<span style="color:var(--danger)">⛔ ห้ามลาย้อนหลังสำหรับประเภทนี้ — อนุญาตเฉพาะลาป่วย/ลาคลอด</span>`;
     }
   };
   const updateApprover = () => {
@@ -5803,13 +5821,14 @@ function openLeaveRequestForm(id = null) {
       hint.innerHTML = `โควต้า: <strong>${b.quota}</strong> วัน · ใช้ไป <strong>${b.used}</strong> · คงเหลือ <strong style="color:${willExceed ? 'var(--danger)' : 'var(--success)'}">${b.remaining}</strong> วัน${willExceed ? ` <span style="color:var(--danger)">⚠️ เกินโควต้า ${days - b.remaining} วัน</span>` : ''}`;
     }
   };
-  $('#leaveStart').addEventListener('change', () => { recalc(); updateHint(); });
+  $('#leaveStart').addEventListener('change', () => { recalc(); updateHint(); updateBackdate(); });
   $('#leaveEnd').addEventListener('change', () => { recalc(); updateHint(); });
   $('#leaveDays').addEventListener('input', updateHint);
   $('#leaveEmp').addEventListener('change', () => { updateHint(); updateApprover(); });
-  $('#leaveType').addEventListener('change', updateHint);
+  $('#leaveType').addEventListener('change', () => { updateHint(); updateBackdate(); });
   updateHint();
   updateApprover();
+  updateBackdate();
 
   $('#leaveForm').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -5818,6 +5837,10 @@ function openLeaveRequestForm(id = null) {
       return toast('สามารถส่งคำขอของตัวเองเท่านั้น', 'error');
     }
     if (new Date(data.endDate) < new Date(data.startDate)) return toast('วันสิ้นสุดต้องไม่ก่อนวันเริ่ม', 'error');
+    // กฎ: ห้ามลาย้อนหลัง ยกเว้น ลาป่วย / ลาคลอด
+    if (data.startDate < today && !LEAVE_BACKDATE_ALLOWED.has(data.leaveType)) {
+      return toast('ห้ามลาย้อนหลังสำหรับประเภทนี้ — อนุญาตเฉพาะลาป่วย/ลาคลอด', 'error');
+    }
     try {
       const payload = { ...data, days: Number(data.days) };
       if (id) payload.id = id;
