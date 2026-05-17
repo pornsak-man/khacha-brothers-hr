@@ -26,9 +26,19 @@ function parseYMD(s) {
 // แปลง "YYYY-MM-DD" → Excel Date — ทำให้สูตรวันที่ใน Excel ทำงานได้ตรงๆ
 function excelDate(s) {
   const ymd = parseYMD(s);
-  if (!ymd) return s || '';  // ถ้าไม่ใช่วันที่ คืนเป็น string เดิม
-  // ใช้ UTC เพื่อไม่ให้ TZ shift ตอน XLSX แปลงเป็น Excel serial
-  return new Date(Date.UTC(ymd[0], ymd[1] - 1, ymd[2]));
+  if (!ymd) return s || '';
+  // ใช้ local-time midnight — XLSX ใช้ local TZ คำนวณ Excel serial = วันที่ถูกต้องไม่มีเศษเวลา
+  return new Date(ymd[0], ymd[1] - 1, ymd[2]);
+}
+
+// Helper: ใส่ format code ให้ทุก cell ในคอลัมน์ (สำหรับ เลขประชาชน "0", หรืออื่นๆ)
+function setColumnFormat(ws, colIndex, formatCode) {
+  if (!ws['!ref']) return;
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let r = range.s.r + 1; r <= range.e.r; r++) {
+    const ref = XLSX.utils.encode_cell({ r, c: colIndex });
+    if (ws[ref]) ws[ref].z = formatCode;
+  }
 }
 
 // แปลง string ตัวเลขล้วน → number — ทำให้ Excel เก็บเป็น number cell (รองรับ SUM, VLOOKUP เลข)
@@ -1365,7 +1375,21 @@ function exportEmployeesXLSX() {
     'สถานะ': e.status === 'active' ? 'ปฏิบัติงาน' : 'ลาออก',
     'หมายเหตุ': e.note
   }));
-  const ws = XLSX.utils.json_to_sheet(rows, { cellDates: true, dateNF: 'yyyy-mm-dd' });
+  const ws = XLSX.utils.json_to_sheet(rows, { cellDates: true, dateNF: 'dd mmm yyyy' });
+  // เลขประชาชน (column index 5 — ลำดับใน rows: รหัส,คำนำหน้า,ชื่อ,นามสกุล,ชื่อเล่น,เลขประชาชน,...)
+  const headerKeys = Object.keys(rows[0] || {});
+  const nidIdx = headerKeys.indexOf('เลขประชาชน');
+  if (nidIdx >= 0) setColumnFormat(ws, nidIdx, '0');
+  // กำหนดความกว้างคอลัมน์ — เลขประชาชน 16 ตัวอักษรเพื่อให้เห็น 13 หลักเต็ม
+  ws['!cols'] = headerKeys.map(k => {
+    if (k === 'เลขประชาชน') return { wch: 16 };
+    if (k === 'วันเกิด' || k === 'วันเริ่มงาน' || k === 'วันพ้นสภาพ') return { wch: 13 };
+    if (k === 'รหัส') return { wch: 8 };
+    if (k === 'ชื่อ' || k === 'นามสกุล') return { wch: 14 };
+    if (k === 'ตำแหน่ง' || k === 'ฝ่าย') return { wch: 22 };
+    if (k === 'ที่อยู่') return { wch: 30 };
+    return { wch: 12 };
+  });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'พนักงาน');
   XLSX.writeFile(wb, `คชา-บราเธอร์ส-พนักงาน-${tz.today()}.xlsx`);
@@ -1936,7 +1960,7 @@ function exportPayrollXLSX() {
       'รับสุทธิ': net
     };
   });
-  const ws = XLSX.utils.json_to_sheet(rows, { cellDates: true, dateNF: 'yyyy-mm-dd' });
+  const ws = XLSX.utils.json_to_sheet(rows, { cellDates: true, dateNF: 'dd mmm yyyy' });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'เงินเดือน ' + month);
   XLSX.writeFile(wb, `คชา-เงินเดือน-${month}.xlsx`);
@@ -1951,7 +1975,7 @@ function exportLoansXLSX() {
       'จำนวนกู้': Number(l.amount || 0), 'ผ่อน/เดือน': Number(l.monthlyPayment || 0), 'คงเหลือ': Number(l.remaining || 0),
       'สถานะ': l.status === 'completed' ? 'ปิดยอด' : 'ผ่อนอยู่', 'เหตุผล': l.reason };
   });
-  const ws = XLSX.utils.json_to_sheet(rows, { cellDates: true, dateNF: 'yyyy-mm-dd' });
+  const ws = XLSX.utils.json_to_sheet(rows, { cellDates: true, dateNF: 'dd mmm yyyy' });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'การกู้');
   XLSX.writeFile(wb, `คชา-รายการกู้-${tz.today()}.xlsx`);
