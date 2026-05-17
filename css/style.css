@@ -1865,3 +1865,184 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   pointer-events: none;
   border-radius: var(--radius-lg);
 }
+
+/* ═══════════════════════════════════════════════════════════
+   FORM POLISH — modal & inline forms (Phase 3)
+   ═══════════════════════════════════════════════════════════ */
+
+/* Refined labels — small-caps for clearer hierarchy */
+.form-group label {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+  margin-bottom: 8px;
+  display: block;
+  line-height: 1.4;
+}
+.form-group label .muted-2 {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-3);
+  margin-left: 4px;
+}
+
+/* Inputs / selects / textarea — consistent refined style */
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group input[type="email"],
+.form-group input[type="password"],
+.form-group input[type="tel"],
+.form-group input[type="date"],
+.form-group input[type="month"],
+.form-group input[type="search"],
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.form-group input:disabled,
+.form-group select:disabled,
+.form-group textarea:disabled {
+  background: var(--surface-2);
+  color: var(--text-3);
+  cursor: not-allowed;
+}
+.form-group textarea { resize: vertical; min-height: 60px; }
+
+/* Form grid spacing more breathable */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px 16px;
+  margin-bottom: 18px;
+}
+.form-grid .span-2 { grid-column: span 2; }
+.form-grid .span-3 { grid-column: span 3; }
+
+/* Form section divider */
+.form-section {
+  padding: 18px 0;
+  border-top: 1px solid var(--border);
+  margin-top: 18px;
+}
+.form-section:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+.form-section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+  margin-bottom: 14px;
+}
+
+/* Form actions — bottom button row */
+.form-actions {
+  display: flex; gap: 10px; justify-content: flex-end;
+  margin-top: 22px; padding-top: 18px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+/* Modal sizing tweaks — larger feels premium */
+.modal { border-radius: var(--radius-lg); }
+.modal-header { padding: 22px 28px 16px; border-bottom: 1px solid var(--border); }
+.modal-title  { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.modal-body   { padding: 22px 28px 26px; }
+.modal-footer { padding: 16px 28px 20px; border-top: 1px solid var(--border); }
+
+/* Account summary — settings page bulk-create panel */
+.sw-account-summary {
+  display: flex; flex-wrap: wrap; gap: 18px; align-items: center;
+  padding: 14px 18px; margin-bottom: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.sw-account-stat { display: flex; flex-direction: column; gap: 2px; }
+.sw-account-stat-label {
+  font-size: 10.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+.sw-account-stat-value {
+  font-size: 18px; font-weight: 700;
+  font-feature-settings: "tnum";
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE — tables, layouts, spacing
+   ═══════════════════════════════════════════════════════════ */
+
+@media (max-width: 900px) {
+  .sw-page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .sw-page-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .sw-page-title { font-size: 24px; }
+  .sw-chart-card { padding: 22px 18px; }
+  .sw-chart-header { flex-direction: column; align-items: stretch; gap: 12px; }
+  .sw-stat-card { padding: 22px 22px 20px; }
+  .sw-stat-value { font-size: 28px; }
+  .form-grid { grid-template-columns: 1fr; gap: 14px; }
+  .form-grid .span-2, .form-grid .span-3 { grid-column: span 1; }
+  .modal-header, .modal-body, .modal-footer { padding-left: 18px; padding-right: 18px; }
+}
+
+@media (max-width: 600px) {
+  /* Tables: bigger touch targets, smaller font */
+  .table th, .table td { padding: 10px 8px; font-size: 12.5px; }
+  /* Hide low-priority columns on tiny screens — opt-in via .sw-hide-mobile */
+  .sw-hide-mobile { display: none !important; }
+  .sw-stats-grid { gap: 12px; }
+  .sw-stat-value { font-size: 24px; }
+  .sw-chart-card { padding: 18px 14px; border-radius: 12px; }
+  .sw-page-title { font-size: 22px; letter-spacing: -0.02em; }
+  .sw-page-subtitle { font-size: 12.5px; }
+  .badge { font-size: 10.5px; padding: 3px 8px; }
+  .btn-sm { padding: 6px 10px; font-size: 12px; }
+  .modal { width: calc(100% - 24px); max-width: 100%; max-height: 88vh; }
+  .modal-header { padding: 16px 18px 12px; }
+  .modal-title { font-size: 15px; }
+  .modal-body { padding: 18px; max-height: calc(88vh - 130px); overflow-y: auto; }
+  .modal-footer { padding: 14px 18px 16px; flex-wrap: wrap; }
+  .form-actions { justify-content: stretch; }
+  .form-actions .btn { flex: 1 1 auto; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DARK MODE FINE-TUNING
+   ═══════════════════════════════════════════════════════════ */
+
+[data-theme="dark"] body {
+  background-image: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(30, 58, 138, 0.10), transparent 60%);
+}
+[data-theme="dark"] ::selection { background: rgba(124, 156, 196, 0.30); color: var(--text); }
+[data-theme="dark"] .modal-backdrop { background: rgba(0, 0, 0, 0.65) !important; }
+[data-theme="dark"] .sw-clickable:hover { box-shadow: var(--shadow); }
+
+/* Dark mode: refined balance pill backgrounds (more visible on dark bg) */
+[data-theme="dark"] .sw-bal-ok   { background: rgba(22,163,74,0.18); }
+[data-theme="dark"] .sw-bal-warn { background: rgba(217,119,6,0.20); }
+[data-theme="dark"] .sw-bal-low  { background: rgba(220,38,38,0.18); }
+[data-theme="dark"] .sw-tab-pill { background: rgba(217,119,6,0.20); color: #fbbf24; }
+[data-theme="dark"] .sw-tab.active .sw-tab-pill { background: rgba(124,156,196,0.20); color: #93c5fd; }
+
+/* Dark mode: code chips */
+[data-theme="dark"] .sw-emp-table code { background: rgba(255,255,255,0.06); color: var(--text-2); }
+
+/* Dark mode: account summary stat cards */
+[data-theme="dark"] .sw-account-summary { background: rgba(255,255,255,0.03); }
