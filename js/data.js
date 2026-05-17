@@ -1292,6 +1292,18 @@ const DB = {
     return this._userProfiles;
   },
 
+  // คำนวณรหัสผ่านเริ่มต้นจากข้อมูลพนักงาน (hybrid logic)
+  //  1) เลข ปชช (>= 6 หลัก, strip non-digit) → ใช้
+  //  2) Passport number (>= 6 ตัว) → ใช้
+  //  3) Fallback → "kacha{employee_id}"
+  _computeInitialPassword(emp) {
+    const nat = String(emp.nationalId || '').replace(/\D/g, '');
+    if (nat.length >= 6) return { password: nat, source: 'เลขประชาชน' };
+    const pp = String(emp.passportNumber || '').trim();
+    if (pp.length >= 6) return { password: pp, source: 'passport' };
+    return { password: `kacha${emp.id}`, source: 'kacha+รหัส' };
+  },
+
   // สร้างบัญชี 1 คนด้วย Supabase signUp — เก็บ admin session ไว้ก่อน, signUp, แล้ว restore กลับ
   // handle_new_user trigger จะ auto-link employee_id จาก raw_user_meta_data
   async createEmployeeAccount(employeeId) {
@@ -1300,7 +1312,7 @@ const DB = {
     if (!emp) throw new Error('ไม่พบพนักงาน ' + employeeId);
 
     const email = `${String(employeeId).toLowerCase()}@kacha.local`;
-    const password = String(employeeId);
+    const { password, source } = this._computeInitialPassword(emp);
     const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
 
     // เก็บ session admin ไว้ก่อน — เพราะ signUp จะ auto-login เป็น user ใหม่
@@ -1323,7 +1335,7 @@ const DB = {
         refresh_token: adminSession.refresh_token
       });
 
-      return { user_id: data.user?.id, email, created: true, message: 'สร้างบัญชีสำเร็จ' };
+      return { user_id: data.user?.id, email, password, source, created: true, message: 'สร้างบัญชีสำเร็จ' };
     } catch (ex) {
       // ถ้าล้มเหลว — กู้ admin session กลับ
       try { await this.client.auth.setSession({ access_token: adminSession.access_token, refresh_token: adminSession.refresh_token }); } catch {}
@@ -1340,7 +1352,7 @@ const DB = {
     for (const emp of todo) {
       try {
         const res = await this.createEmployeeAccount(emp.id);
-        results.push({ employee_id: emp.id, email: res.email, created: !!res.created, message: res.message });
+        results.push({ employee_id: emp.id, email: res.email, password: res.password, source: res.source, created: !!res.created, message: res.message });
       } catch (ex) {
         results.push({ employee_id: emp.id, email: `${emp.id.toLowerCase()}@kacha.local`, created: false, message: 'ERROR: ' + (ex.message || String(ex)) });
       }

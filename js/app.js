@@ -6143,20 +6143,26 @@ async function createOneAccount(empId) {
   if (!requireAdmin()) return;
   try {
     const res = await DB.createEmployeeAccount(empId);
-    toast(`✓ ${res.message || 'สำเร็จ'} · email: ${res.email} · รหัส: ${empId}`, 'success');
+    toast(`✓ สำเร็จ · email: ${res.email} · รหัส: ${res.password} (${res.source})`, 'success');
     renderEmpAccounts();
   } catch (ex) { toast('สร้างไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
 }
 
 async function bulkCreateAccounts() {
   if (!requireAdmin()) return;
-  if (!await modal.confirm('สร้างบัญชีทั้งหมด', 'สร้างบัญชีให้พนักงานทุกคนที่ยังไม่มีบัญชีในระบบ?\n\nemail = {รหัส}@kacha.local\nรหัสเริ่มต้น = รหัสพนักงาน\nrole = viewer')) return;
+  if (!await modal.confirm('สร้างบัญชีทั้งหมด', 'สร้างบัญชีให้พนักงานทุกคนที่ยังไม่มีบัญชีในระบบ?\n\nemail = {รหัส}@kacha.local\nรหัสเริ่มต้น = เลข ปชช → passport → kacha+รหัส\nrole = viewer')) return;
   try {
     const results = await DB.bulkCreateEmployeeAccounts();
     const okCount = results.filter(r => r.created).length;
-    const skipCount = results.filter(r => !r.created && !String(r.message).startsWith('ERROR')).length;
     const errCount = results.filter(r => String(r.message).startsWith('ERROR')).length;
+    const skipCount = results.length - okCount - errCount;
     toast(`✓ สร้าง ${okCount} ใหม่ · ข้าม ${skipCount} · ผิดพลาด ${errCount}`, errCount > 0 ? 'warning' : 'success');
+
+    // ถ้ามี error — แสดง modal สรุปข้อผิดพลาดให้ admin ดู
+    if (errCount > 0) {
+      const errs = results.filter(r => String(r.message).startsWith('ERROR')).slice(0, 10);
+      await modal.confirm('รายละเอียดข้อผิดพลาด', `แสดง ${errs.length} แรก:\n\n${errs.map(r => `• ${r.employee_id}: ${r.message.replace('ERROR: ', '')}`).join('\n')}`);
+    }
     renderEmpAccounts();
   } catch (ex) { toast('ไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
 }
