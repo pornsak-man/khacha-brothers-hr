@@ -678,6 +678,21 @@ function openEmployeeForm(id = null) {
   $$('.income-input').forEach(i => i.addEventListener('input', updateTotal));
   updateTotal();
 
+  // ─── AUTO: เพศ ← คำนำหน้าชื่อ ───
+  $('#empForm [name="title"]')?.addEventListener('change', (ev) => {
+    const t = ev.target.value;
+    const female = ['นางสาว', 'นาง', 'เด็กหญิง'].includes(t);
+    const genderSel = $('#empForm [name="gender"]');
+    if (genderSel) genderSel.value = female ? 'หญิง' : 'ชาย';
+  });
+
+  // ─── AUTO: ตำแหน่ง (positionTitle) ← ระดับตำแหน่งงาน (position) ───
+  $('#empForm [name="position"]')?.addEventListener('change', (ev) => {
+    const p = DB.getPosition(ev.target.value);
+    const titleInput = $('#empForm [name="positionTitle"]');
+    if (p && titleInput) titleInput.value = p.name;
+  });
+
   // ─── UPDATE STATUS DISPLAY เมื่อเปลี่ยนวันพ้นสภาพ ───
   const updateStatusDisplay = () => {
     const td = $('#empForm [name="terminationDate"]')?.value;
