@@ -618,6 +618,34 @@ const DB = {
     if (error) throw error;
   },
 
+  // ─── YEARLY HIRE / EXIT (ปฏิทินทั้งปี ม.ค.-ธ.ค.) ───
+  getYearlyHireExit(year = null) {
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+    const y = year || parseInt(todayStr.slice(0, 4), 10);
+    const months = [];
+    for (let m = 1; m <= 12; m++) {
+      months.push({
+        ym: `${y}-${String(m).padStart(2, '0')}`,
+        year: y, month: m,
+        hires: 0, exits: 0
+      });
+    }
+    const idx = new Map(months.map(m => [m.ym, m]));
+    for (const e of this.data.employees) {
+      if (e.hireDate) {
+        const ym = String(e.hireDate).slice(0, 7);
+        const m = idx.get(ym);
+        if (m) m.hires++;
+      }
+      if (e.terminationDate) {
+        const ym = String(e.terminationDate).slice(0, 7);
+        const m = idx.get(ym);
+        if (m) m.exits++;
+      }
+    }
+    return { year: y, months };
+  },
+
   // ─── MONTHLY HIRE / EXIT (สำหรับ Dashboard chart) ───
   getMonthlyHireExit(monthsBack = 12) {
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });

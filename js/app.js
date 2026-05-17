@@ -277,7 +277,8 @@ window.onRealtimeChange = () => {
 // ═══════════════════════════════════════════════════════
 router.register('dashboard', () => {
   const s = DB.getStats();
-  const monthly = DB.getMonthlyHireExit(12);
+  const yearly = DB.getYearlyHireExit();
+  const monthly = yearly.months;
   window.afterRender = () => renderDashboardCharts(s, monthly);
 
   const totalEmps = s.totalEmployees;
@@ -324,8 +325,9 @@ router.register('dashboard', () => {
     </div>
 
     <div class="card">
-      <div class="card-header">
-        <div class="card-title">พนักงานเข้า / ออก รายเดือน <span class="muted-2" style="font-weight:normal;font-size:12px">— 12 เดือนย้อนหลัง</span></div>
+      <div class="card-header" style="flex-direction:column;align-items:flex-start;gap:4px;margin-bottom:20px">
+        <div style="font-size:18px;font-weight:700;letter-spacing:-0.02em;color:var(--text)">พนักงานเข้า / ออก ประจำปี ${yearly.year}</div>
+        <div class="muted-2" style="font-size:13px">เปรียบเทียบจำนวนเข้าใหม่ (เขียว) กับพ้นสภาพ (แดง) แต่ละเดือน</div>
       </div>
       <canvas id="chartMonthly" style="max-height:280px"></canvas>
     </div>
@@ -363,31 +365,54 @@ function renderDashboardCharts(s, monthly) {
   Chart.defaults.font.family = 'Prompt, sans-serif';
   const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
 
-  // ── Monthly hire/exit chart (new) ──
+  // ── Monthly hire/exit chart — outline-style bars (Jan-Dec ของปีปัจจุบัน) ──
   const ctxM = $('#chartMonthly');
   if (ctxM && monthly) {
     const labels = monthly.map(m => {
       const d = new Date(m.year, m.month - 1, 1);
-      return d.toLocaleDateString('th-TH', { month: 'short', year: '2-digit' });
+      return d.toLocaleDateString('th-TH', { month: 'short' });
     });
     new Chart(ctxM, {
       type: 'bar',
       data: {
         labels,
         datasets: [
-          { label: 'เข้างาน', data: monthly.map(m => m.hires), backgroundColor: '#16a34a', borderRadius: 6, borderSkipped: false },
-          { label: 'พ้นสภาพ', data: monthly.map(m => m.exits), backgroundColor: '#dc2626', borderRadius: 6, borderSkipped: false }
+          {
+            label: 'เข้าใหม่',
+            data: monthly.map(m => m.hires),
+            backgroundColor: 'rgba(22, 163, 74, 0.12)',
+            borderColor: '#16a34a',
+            borderWidth: 2,
+            borderRadius: 8,
+            borderSkipped: false,
+            barPercentage: 0.55,
+            categoryPercentage: 0.7
+          },
+          {
+            label: 'พ้นสภาพ',
+            data: monthly.map(m => m.exits),
+            backgroundColor: 'rgba(220, 38, 38, 0.12)',
+            borderColor: '#dc2626',
+            borderWidth: 2,
+            borderRadius: 8,
+            borderSkipped: false,
+            barPercentage: 0.55,
+            categoryPercentage: 0.7
+          }
         ]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top', align: 'end', labels: { usePointStyle: true, pointStyle: 'circle', padding: 14, boxWidth: 8 } },
+          legend: {
+            position: 'top', align: 'center',
+            labels: { usePointStyle: true, pointStyle: 'rectRounded', padding: 18, boxWidth: 14, boxHeight: 14, font: { size: 13 } }
+          },
           tooltip: { mode: 'index', intersect: false }
         },
         scales: {
-          x: { grid: { display: false } },
-          y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 }, grid: { color: gridColor } }
+          x: { grid: { display: false }, ticks: { font: { size: 12 } } },
+          y: { beginAtZero: true, ticks: { stepSize: 2, precision: 0, font: { size: 12 } }, grid: { color: gridColor } }
         }
       }
     });
