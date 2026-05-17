@@ -388,7 +388,8 @@ const _RT_PAGE_DEPS = {
   uniform_issues: ['uniform'],
   branches: ['dashboard', 'employees', 'branches', 'uniform'],
   audit_log: ['audit'],
-  leave_requests: ['dashboard', 'leave']
+  leave_requests: ['dashboard', 'leave'],
+  leave_types: ['leave']
 };
 
 // อัปเดต badge แจ้งเตือนของ "จัดชุดพนักงาน" (รอจัด)
@@ -5444,7 +5445,8 @@ const AUDIT_TABLE_LABELS = {
   departments: 'ฝ่าย',
   position_levels: 'ระดับตำแหน่ง',
   user_profiles: 'โปรไฟล์ผู้ใช้',
-  leave_requests: 'คำขอลา'
+  leave_requests: 'คำขอลา',
+  leave_types: 'ตั้งค่าประเภทการลา'
 };
 const AUDIT_ACTION_LABELS = { INSERT: 'เพิ่ม', UPDATE: 'แก้ไข', DELETE: 'ลบ' };
 const AUDIT_ACTION_COLORS = { INSERT: 'badge-success', UPDATE: 'badge-info', DELETE: 'badge-danger' };
@@ -5599,8 +5601,6 @@ function auditGoPage(p) {
 //  PAGE: LEAVE MANAGEMENT (การลางาน)
 // ═══════════════════════════════════════════════════════
 const _leaveState = { tab: 'pending', filterYear: new Date().getFullYear() };
-// ประเภทการลาที่ยอมรับ start_date ย้อนหลังได้ — ตามนโยบาย (ลาป่วยฉุกเฉิน + ลาคลอดเริ่มก่อนแจ้ง)
-const LEAVE_BACKDATE_ALLOWED = new Set(['sick', 'maternity', 'paternity']);
 const LEAVE_STATUS_BADGE = {
   pending:   { label: 'รออนุมัติ', cls: 'badge-warning' },
   approved:  { label: 'อนุมัติแล้ว', cls: 'badge-success' },
@@ -5614,7 +5614,8 @@ router.register('leave', () => {
   const tabs = [
     { id: 'pending', label: '⏳ รออนุมัติ' },
     { id: 'all',     label: '📋 ทั้งหมด' },
-    { id: 'balance', label: '📊 ยอดวันลาคงเหลือ' }
+    { id: 'balance', label: '📊 ยอดวันลาคงเหลือ' },
+    ...(DB.isAdmin ? [{ id: 'types', label: '⚙️ ตั้งค่าประเภท' }] : [])
   ];
   const pendingCount = DB.data.leaveRequests.filter(r => r.status === 'pending').length;
 
@@ -5640,6 +5641,7 @@ router.register('leave', () => {
 
 function renderLeaveTab() {
   if (_leaveState.tab === 'balance') return renderLeaveBalanceTable();
+  if (_leaveState.tab === 'types') return renderLeaveTypesTable();
   const status = _leaveState.tab === 'pending' ? 'pending' : null;
   const list = DB.getLeaveRequests({ status, year: _leaveState.tab === 'all' ? _leaveState.filterYear : null });
   if (!list.length) {
@@ -5731,6 +5733,125 @@ function renderLeaveBalanceTable() {
   `;
 }
 
+// ─── Leave types config tab (admin only) ───
+function renderLeaveTypesTable() {
+  if (!DB.isAdmin) return '<div class="empty-state"><div class="title">เฉพาะ admin</div></div>';
+  const list = DB.getLeaveTypesList(true);  // include inactive
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div class="muted-2" style="font-size:13px;line-height:1.7">
+        แก้ไขประเภทการลา / จำนวนวัน / เพศที่ใช้ได้ / ลาย้อนหลังได้หรือไม่ — ทันทีที่บันทึก ระบบจะใช้ค่าใหม่ทุกที่<br>
+        <strong>rule = ตามอายุงาน</strong> = ใช้สูตรลาพักร้อน (6 วันเมื่อครบ 1 ปี เพิ่มปีละ 1 วัน max ตาม "จำนวนวันสูงสุด")
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="openLeaveTypeForm()">+ เพิ่มประเภท</button>
+    </div>
+    <div class="table-wrap"><table class="table table-compact">
+      <thead><tr>
+        <th>ลำดับ</th><th>รหัส</th><th>ชื่อแสดง</th><th class="num">วันสูงสุด/ปี</th><th>สูตร</th><th>เพศที่ใช้ได้</th><th>ย้อนหลัง</th><th>สถานะ</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${list.map(t => `<tr style="${t.active ? '' : 'opacity:0.55'}">
+          <td class="num">${t.sortOrder}</td>
+          <td><code style="font-size:11.5px">${escapeHtml(t.id)}</code></td>
+          <td><strong>${escapeHtml(t.label)}</strong>${t.note ? `<br><span class="muted-2" style="font-size:11px">${escapeHtml(t.note)}</span>` : ''}</td>
+          <td class="num"><strong>${t.maxDays ?? '-'}</strong></td>
+          <td>${t.rule === 'tenure' ? '<span class="badge badge-success" style="font-size:10.5px">ตามอายุงาน</span>' : '<span class="muted-2">ค่าคงที่</span>'}</td>
+          <td>${t.gender === 'M' ? 'ชายเท่านั้น' : t.gender === 'F' ? 'หญิงเท่านั้น' : 'ทั้งหมด'}</td>
+          <td>${t.allowBackdate ? '<span class="badge badge-warning" style="font-size:10.5px">✓ ย้อนหลังได้</span>' : '<span class="muted-2">ห้าม</span>'}</td>
+          <td>${t.active ? '<span class="badge badge-success">ใช้งาน</span>' : '<span class="badge">ปิด</span>'}</td>
+          <td class="actions">
+            <button class="btn btn-ghost btn-sm" onclick="openLeaveTypeForm('${escapeHtml(t.id)}')">แก้</button>
+            <button class="btn btn-ghost btn-sm" onclick="deleteLeaveType('${escapeHtml(t.id)}')">ลบ</button>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+  `;
+}
+
+function openLeaveTypeForm(id = null) {
+  if (!requireAdmin()) return;
+  const t = id ? DB.getLeaveType(id) : { id: '', label: '', maxDays: '', rule: null, gender: null, allowBackdate: false, badge: 'badge-info', sortOrder: 100, active: true, note: '' };
+  modal.open(id ? `แก้ไขประเภทการลา — ${escapeHtml(t.label)}` : 'เพิ่มประเภทการลาใหม่', `
+    <form id="leaveTypeForm">
+      <div class="form-grid">
+        <div class="form-group"><label>รหัส (อังกฤษ/ตัวเลข) *<span class="muted-2" style="font-size:11px"> ${id ? '(แก้ไม่ได้)' : ''}</span></label>
+          <input name="id" value="${escapeHtml(t.id)}" required pattern="[a-z0-9_]+" placeholder="เช่น study_leave" ${id ? 'readonly' : ''}/>
+        </div>
+        <div class="form-group"><label>ชื่อแสดง *</label><input name="label" value="${escapeHtml(t.label)}" required placeholder="เช่น ลาศึกษาต่อ"/></div>
+        <div class="form-group"><label>จำนวนวันสูงสุด/ปี *</label><input name="maxDays" type="number" min="0" step="0.5" value="${t.maxDays ?? ''}" required/></div>
+        <div class="form-group"><label>สูตร</label>
+          <select name="rule">
+            <option value="" ${!t.rule ? 'selected' : ''}>ค่าคงที่ (ใช้จำนวนวันสูงสุดเลย)</option>
+            <option value="tenure" ${t.rule === 'tenure' ? 'selected' : ''}>ตามอายุงาน (6 วันเมื่อครบ 1 ปี +1/ปี max ตามค่าด้านบน)</option>
+          </select>
+        </div>
+        <div class="form-group"><label>เพศที่ใช้ได้</label>
+          <select name="gender">
+            <option value="" ${!t.gender ? 'selected' : ''}>ทั้งหมด</option>
+            <option value="M" ${t.gender === 'M' ? 'selected' : ''}>ชายเท่านั้น</option>
+            <option value="F" ${t.gender === 'F' ? 'selected' : ''}>หญิงเท่านั้น</option>
+          </select>
+        </div>
+        <div class="form-group"><label>สี badge</label>
+          <select name="badge">
+            <option value="badge-info"    ${t.badge === 'badge-info' ? 'selected' : ''}>น้ำเงิน (info)</option>
+            <option value="badge-success" ${t.badge === 'badge-success' ? 'selected' : ''}>เขียว (success)</option>
+            <option value="badge-warning" ${t.badge === 'badge-warning' ? 'selected' : ''}>เหลือง (warning)</option>
+            <option value="badge-danger"  ${t.badge === 'badge-danger' ? 'selected' : ''}>แดง (danger)</option>
+          </select>
+        </div>
+        <div class="form-group"><label>ลำดับการแสดง</label><input name="sortOrder" type="number" min="0" step="10" value="${t.sortOrder}"/></div>
+        <div class="form-group"><label><input type="checkbox" name="allowBackdate" ${t.allowBackdate ? 'checked' : ''}/> อนุญาตลาย้อนหลัง</label>
+          <div class="muted-2" style="font-size:11.5px;margin-top:4px">เช่น ลาป่วย ลาคลอด — เริ่มก่อนแจ้ง HR ได้</div>
+        </div>
+        <div class="form-group"><label><input type="checkbox" name="active" ${t.active ? 'checked' : ''}/> เปิดใช้งาน</label>
+          <div class="muted-2" style="font-size:11.5px;margin-top:4px">ปิดถ้าไม่อยากให้เลือกในฟอร์มขอลา (ข้อมูลเก่ายังอยู่)</div>
+        </div>
+        <div class="form-group span-2"><label>หมายเหตุ</label><input name="note" value="${escapeHtml(t.note || '')}" placeholder="เช่น ตามกฎหมายแรงงาน §41"/></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" data-close>ยกเลิก</button>
+        <button type="submit" class="btn btn-primary">บันทึก</button>
+      </div>
+    </form>
+  `, { size: 'md' });
+
+  $('#leaveTypeForm').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const data = {
+      id: (fd.get('id') || '').toString().trim().toLowerCase(),
+      label: (fd.get('label') || '').toString().trim(),
+      maxDays: fd.get('maxDays') !== '' ? Number(fd.get('maxDays')) : null,
+      rule: fd.get('rule') || null,
+      gender: fd.get('gender') || null,
+      allowBackdate: fd.get('allowBackdate') === 'on',
+      badge: fd.get('badge') || 'badge-info',
+      sortOrder: Number(fd.get('sortOrder') || 100),
+      active: fd.get('active') === 'on',
+      note: (fd.get('note') || '').toString().trim()
+    };
+    if (!/^[a-z0-9_]+$/.test(data.id)) return toast('รหัสต้องเป็น a-z, 0-9, _ เท่านั้น', 'error');
+    try {
+      await DB.saveLeaveType(data);
+      toast('บันทึกแล้ว', 'success');
+      modal.close();
+      if (router.current === 'leave') router.go('leave');
+    } catch (ex) { toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
+  });
+}
+
+async function deleteLeaveType(id) {
+  if (!requireAdmin()) return;
+  if (!await modal.confirm('ลบประเภทการลา', `ลบ "${id}" ใช่หรือไม่? (ถ้ามีคำขอลาใช้อยู่จะลบไม่ได้ — ต้องปิด active แทน)`)) return;
+  try {
+    await DB.deleteLeaveType(id);
+    toast('ลบแล้ว', 'success');
+    router.go('leave');
+  } catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
+}
+
 // ─── Leave request form ───
 function openLeaveRequestForm(id = null) {
   const editing = id ? DB.getLeaveRequest(id) : null;
@@ -5790,11 +5911,11 @@ function openLeaveRequestForm(id = null) {
     if (!start || !type) { box.textContent = ''; return; }
     const isPast = start < today;
     if (!isPast) { box.innerHTML = ''; return; }
-    if (LEAVE_BACKDATE_ALLOWED.has(type)) {
-      const typeLabel = DB.LEAVE_TYPES[type]?.label || type;
-      box.innerHTML = `<span style="color:var(--warning)">ℹ️ ลาย้อนหลัง — อนุญาตเฉพาะ "${escapeHtml(typeLabel)}"</span>`;
+    const cfg = DB.LEAVE_TYPES[type];
+    if (cfg?.allowBackdate) {
+      box.innerHTML = `<span style="color:var(--warning)">ℹ️ ลาย้อนหลัง — ประเภท "${escapeHtml(cfg.label || type)}" อนุญาต</span>`;
     } else {
-      box.innerHTML = `<span style="color:var(--danger)">⛔ ห้ามลาย้อนหลังสำหรับประเภทนี้ — อนุญาตเฉพาะลาป่วย/ลาคลอด</span>`;
+      box.innerHTML = `<span style="color:var(--danger)">⛔ ห้ามลาย้อนหลังสำหรับประเภทนี้</span>`;
     }
   };
   const updateApprover = () => {
@@ -5837,9 +5958,9 @@ function openLeaveRequestForm(id = null) {
       return toast('สามารถส่งคำขอของตัวเองเท่านั้น', 'error');
     }
     if (new Date(data.endDate) < new Date(data.startDate)) return toast('วันสิ้นสุดต้องไม่ก่อนวันเริ่ม', 'error');
-    // กฎ: ห้ามลาย้อนหลัง ยกเว้น ลาป่วย / ลาคลอด
-    if (data.startDate < today && !LEAVE_BACKDATE_ALLOWED.has(data.leaveType)) {
-      return toast('ห้ามลาย้อนหลังสำหรับประเภทนี้ — อนุญาตเฉพาะลาป่วย/ลาคลอด', 'error');
+    // กฎ: ห้ามลาย้อนหลัง — เช็คจาก allowBackdate ของแต่ละประเภท (admin แก้ใน config tab ได้)
+    if (data.startDate < today && !DB.LEAVE_TYPES[data.leaveType]?.allowBackdate) {
+      return toast('ห้ามลาย้อนหลังสำหรับประเภทนี้ (ดู config ที่ tab "ตั้งค่าประเภท")', 'error');
     }
     try {
       const payload = { ...data, days: Number(data.days) };
