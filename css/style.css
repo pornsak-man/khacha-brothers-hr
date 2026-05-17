@@ -400,6 +400,71 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .page-header:not(:has(.actions > *)) { display: none; }
 
 /* ═════════════ CARDS / STATS ═════════════ */
+/* ═════════════ BRANCH LIST (Dashboard) ═════════════ */
+.branch-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 32px;
+}
+.branch-row {
+  display: grid;
+  grid-template-columns: 28px 56px 1fr 50px;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 4px;
+  font-size: 13px;
+  border-radius: var(--radius-xs);
+  transition: background var(--transition);
+}
+.branch-row:hover { background: var(--surface-2); }
+.branch-rank {
+  font-size: 11px; color: var(--text-3); font-weight: 600;
+  text-align: center; font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+.branch-code {
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.3px;
+  font-size: 13px;
+}
+.branch-bar {
+  height: 8px;
+  background: var(--surface-2);
+  border-radius: 99px;
+  overflow: hidden;
+  position: relative;
+}
+.branch-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--navy-400), var(--navy-600));
+  border-radius: 99px;
+  transition: width 0.6s var(--ease-out);
+  min-width: 4px;
+}
+.branch-count {
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-size: 13.5px;
+}
+/* Highlight top 3 ranks */
+.branch-list > .branch-row:nth-child(1) .branch-rank,
+.branch-list > .branch-row:nth-child(2) .branch-rank,
+.branch-list > .branch-row:nth-child(3) .branch-rank {
+  color: var(--primary-text);
+  font-weight: 700;
+}
+[data-theme="dark"] .branch-list > .branch-row:nth-child(1) .branch-rank,
+[data-theme="dark"] .branch-list > .branch-row:nth-child(2) .branch-rank,
+[data-theme="dark"] .branch-list > .branch-row:nth-child(3) .branch-rank {
+  color: var(--navy-300);
+}
+@media (max-width: 700px) {
+  .branch-list { grid-template-columns: 1fr; gap: 4px; }
+}
+
 /* ═════════════ DASHBOARD HERO ═════════════ */
 .dashboard-hero {
   display: flex; gap: 28px; align-items: center;

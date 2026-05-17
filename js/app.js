@@ -338,12 +338,22 @@ router.register('dashboard', () => {
         <div style="display:flex;justify-content:space-between;align-items:flex-end;width:100%;gap:16px;flex-wrap:wrap">
           <div>
             <div style="font-size:18px;font-weight:700;letter-spacing:-0.02em;color:var(--text)">พนักงานตามสาขา</div>
-            <div class="muted-2" style="font-size:13px;margin-top:4px">จำนวนพนักงานปฏิบัติงานในแต่ละสาขา (เรียงจากมาก → น้อย)</div>
+            <div class="muted-2" style="font-size:13px;margin-top:4px">เรียงจำนวนพนักงานจากมาก → น้อย</div>
           </div>
           <div class="muted-2" style="font-size:12.5px">รวม <strong style="color:var(--text)">${branchStats.length}</strong> สาขา · <strong style="color:var(--text)">${fmt.num(branchStats.reduce((sum, b) => sum + b.count, 0))}</strong> คน</div>
         </div>
       </div>
-      <canvas id="chartByBranch" style="max-height:${Math.max(280, branchStats.length * 24 + 40)}px"></canvas>
+      ${(() => {
+        if (!branchStats.length) return '<div class="muted-2 text-center" style="padding:24px">ไม่มีข้อมูลสาขา</div>';
+        const maxCount = Math.max(...branchStats.map(b => b.count));
+        return `<div class="branch-list">${branchStats.map((b, i) => `
+          <div class="branch-row">
+            <div class="branch-rank">${i + 1}</div>
+            <div class="branch-code">${escapeHtml(b.branch)}</div>
+            <div class="branch-bar"><div class="branch-bar-fill" style="width:${(b.count / maxCount * 100).toFixed(1)}%"></div></div>
+            <div class="branch-count">${fmt.num(b.count)}</div>
+          </div>`).join('')}</div>`;
+      })()}
     </div>
 
     <div class="chart-row">
@@ -432,37 +442,7 @@ function renderDashboardCharts(s, monthly, branchStats) {
     });
   }
 
-  // ── Branch distribution chart (horizontal bar) ──
-  const ctxB = $('#chartByBranch');
-  if (ctxB && branchStats && branchStats.length) {
-    new Chart(ctxB, {
-      type: 'bar',
-      data: {
-        labels: branchStats.map(b => b.branch),
-        datasets: [{
-          label: 'จำนวนพนักงาน',
-          data: branchStats.map(b => b.count),
-          backgroundColor: 'rgba(30, 58, 138, 0.85)',
-          borderRadius: 6,
-          borderSkipped: false,
-          barPercentage: 0.75,
-          categoryPercentage: 0.85
-        }]
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: (ctx) => 'จำนวน ' + ctx.parsed.x.toLocaleString('th-TH') + ' คน' } }
-        },
-        scales: {
-          x: { beginAtZero: true, ticks: { precision: 0, font: { size: 12 } }, grid: { color: gridColor } },
-          y: { grid: { display: false }, ticks: { font: { size: 12, weight: '600' } } }
-        }
-      }
-    });
-  }
+  // (Branch distribution ใช้ HTML list — ไม่ใช้ Chart.js แล้ว)
 
   const ctx1 = $('#chartByDept');
   if (ctx1) new Chart(ctx1, {
