@@ -1473,12 +1473,13 @@ function parseImportRow(row) {
     allowancePerDiem: num('ค่าเบี้ยเลี้ยง'),
     allowanceLanguage: num('ค่าภาษา'),
     allowanceOther: num('ค่าอื่นๆ'),
-    // sync status กับวันพ้นสภาพ — ถ้าวันพ้นสภาพอยู่ในอดีต/วันนี้ → resigned; อนาคต/ไม่มี → active
-    // ไม่ใช้ field "สถานะ" จาก Excel เพราะอาจ stale (DB.empStatus() เป็น single source of truth)
+    // sync status — priority: terminationDate ก่อน, ถ้าไม่มีถึงดู Excel "สถานะ"
+    // เคารพ status='resigned' จาก Excel (ใช้กับ legacy data ที่ลืมกรอกวันพ้นสภาพ)
     status: (() => {
       const td = parseDate('วันพ้นสภาพ');
-      if (!td) return 'active';
-      return td <= tz.today() ? 'resigned' : 'active';
+      if (td) return td <= tz.today() ? 'resigned' : 'active';
+      // ไม่มีวันพ้นสภาพ → ใช้ค่าจาก Excel column "สถานะ"
+      return get('สถานะ') === 'resigned' ? 'resigned' : 'active';
     })(),
     note: get('หมายเหตุ'),
     photoUrl: ''

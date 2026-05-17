@@ -254,9 +254,14 @@ const DB = {
   // สถานะที่แท้จริง (effective status) — คำนวณจาก terminationDate
   // 'active'    = ปฏิบัติงาน (ไม่มีวันพ้นสภาพ)
   // 'pending'   = นัดพ้นสภาพ (วันพ้นสภาพอยู่ในอนาคต — ยังทำงานอยู่)
-  // 'resigned'  = พ้นสภาพแล้ว (วันพ้นสภาพผ่านไปแล้ว)
+  // 'resigned'  = พ้นสภาพแล้ว (วันพ้นสภาพผ่านไปแล้ว หรือ status='resigned' ตั้งแต่ import)
   empStatus(emp) {
-    if (!emp.terminationDate) return 'active';
+    if (!emp.terminationDate) {
+      // Fallback: ข้อมูล legacy ที่ import มามี status='resigned' แต่ลืมกรอกวันพ้นสภาพ
+      // ถือว่าออกแล้ว (เคารพการตั้ง status ของ HR) — มิฉะนั้นจะนับเป็น active ผิด
+      if (emp.status === 'resigned') return 'resigned';
+      return 'active';
+    }
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
     return emp.terminationDate > today ? 'pending' : 'resigned';
   },
