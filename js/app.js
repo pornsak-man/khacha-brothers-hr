@@ -3841,6 +3841,81 @@ async function markUniformRequestIssued(id) {
   } catch (ex) { toast('อัปเดตไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
 }
 
+// Parse บรรทัด recruit เช่น "กางเกง M 1 ตัว" → { name, size, qty, unit }
+function parseUniformNoteToItems(note) {
+  if (!note) return [];
+  return note.split('\n').map(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+    const tokens = trimmed.split(/\s+/);
+    if (tokens.length < 3) return { raw: trimmed, parseable: false };
+    const unit = tokens[tokens.length - 1];
+    const qty = Number(tokens[tokens.length - 2]);
+    if (!Number.isFinite(qty) || qty <= 0) return { raw: trimmed, parseable: false };
+    let size = '';
+    let nameEnd = tokens.length - 2;
+    if (tokens.length >= 4) {
+      size = tokens[tokens.length - 3];
+      nameEnd = tokens.length - 3;
+    }
+    const name = tokens.slice(0, nameEnd).join(' ');
+    return { raw: trimmed, name, size, qty, unit, parseable: true };
+  }).filter(Boolean);
+}
+
+// match กับ stock master โดย exact name + size (case-insensitive)
+function matchUniformItemFromStock(parsed, masterItems) {
+  if (!parsed.parseable) return null;
+  return masterItems.find(m =>
+    m.active &&
+    m.name === parsed.name &&
+    (m.size || '').toLowerCase() === (parsed.size || '').toLowerCase()
+  ) || null;
+}
+
+// กดทีเดียวสร้าง issue ทุกรายการตามที่ recruit แจ้ง
+async function issueAllFromRecruit(requestId) {
+  if (!requireAdmin()) return;
+  const req = DB.getUniformRequest(requestId);
+  if (!req) return;
+  const parsed = parseUniformNoteToItems(req.note);
+  const items = DB.getUniformItems({ activeOnly: true });
+  const matched = parsed.map(p => ({ parsed: p, item: matchUniformItemFromStock(p, items) })).filter(m => m.item);
+  if (matched.length === 0) {
+    toast('ไม่พบรายการที่ match กับ stock — เพิ่ม master หรือลงรายการ manual แทน', 'warning');
+    return;
+  }
+  const summary = matched.map(m => `• ${m.parsed.name}${m.parsed.size ? ' ' + m.parsed.size : ''} × ${m.parsed.qty} (${fmt.money(m.item.unitCost)} ฿/ชิ้น)`).join('\n');
+  if (!await modal.confirm('ยืนยันส่งทั้งหมด', `จะสร้าง ${matched.length} รายการ + ตัด stock + เปลี่ยนสถานะเป็น "จัดส่งแล้ว":\n\n${summary}`)) return;
+
+  const issuedBy = DB.profile?.name || DB.user?.email || '';
+  const issuedDate = tz.today();
+  let okCount = 0, failCount = 0;
+  for (const m of matched) {
+    try {
+      await DB.saveUniformIssue({
+        requestId,
+        itemId: m.item.id,
+        itemName: m.item.name,
+        size: m.item.size || '',
+        qty: m.parsed.qty,
+        unitCost: m.item.unitCost,
+        issuedDate,
+        issuedBy,
+        employeeId: req.employeeId || '',
+        note: ''
+      });
+      okCount++;
+    } catch (ex) {
+      console.warn('Issue fail:', m.parsed.raw, ex);
+      failCount++;
+    }
+  }
+  if (failCount === 0) toast(`✓ บันทึก ${okCount} รายการสำเร็จ`, 'success');
+  else toast(`บันทึก ${okCount}/${matched.length} (ล้มเหลว ${failCount})`, 'warning');
+  openIssueItemsForm(requestId); // refresh modal
+}
+
 // ─── จัดชุด: เพิ่มรายการ issue ทีละหลายรายการพร้อมกัน ───
 function openIssueItemsForm(requestId) {
   if (!requireAdmin()) return;
@@ -3894,6 +3969,49 @@ function openIssueItemsForm(requestId) {
         </div>
       </div>
     </div>
+
+    ${(() => {
+      // panel รายการที่ recruit แจ้ง — ซ่อนถ้าจัดส่งบางส่วนไปแล้ว
+      if (existing.length > 0) return '';
+      const parsed = parseUniformNoteToItems(req.note);
+      if (parsed.length === 0) return '';
+      const matched = parsed.map(p => ({ parsed: p, item: matchUniformItemFromStock(p, items) }));
+      const matchedCount = matched.filter(m => m.item).length;
+      const totalCost = matched.reduce((s, m) => s + (m.item ? m.item.unitCost * m.parsed.qty : 0), 0);
+      return `
+        <div class="form-section" style="background:var(--surface-2);padding:14px;border-radius:8px;border-left:3px solid var(--primary)">
+          <h3 style="margin-top:0">📋 รายการที่ recruit แจ้ง <span class="muted-2" style="font-weight:normal;font-size:12px">(${parsed.length} รายการ · match ${matchedCount}/${parsed.length})</span></h3>
+          <div class="table-wrap"><table class="table table-compact" style="font-size:13px;background:var(--surface)">
+            <thead><tr><th>รายการ</th><th>size</th><th class="num">qty</th><th>สถานะ match</th><th class="num">ราคา/ชิ้น</th><th class="num">รวม</th></tr></thead>
+            <tbody>
+              ${matched.map(m => {
+                if (!m.parsed.parseable) {
+                  return `<tr><td colspan="6" class="muted-2">⚠️ แยกข้อมูลไม่ได้: ${escapeHtml(m.parsed.raw)}</td></tr>`;
+                }
+                const stockOk = m.item && Number(m.item.stockQty) >= m.parsed.qty;
+                return `<tr>
+                  <td><strong>${escapeHtml(m.parsed.name)}</strong></td>
+                  <td>${escapeHtml(m.parsed.size || '-')}</td>
+                  <td class="num">${m.parsed.qty}</td>
+                  <td>${m.item
+                    ? `<span class="badge ${stockOk ? 'badge-success' : 'badge-warning'}">${stockOk ? '✓ พร้อมส่ง' : `Stock เหลือ ${m.item.stockQty}`}</span>`
+                    : '<span class="badge badge-danger">⚠️ ไม่พบใน stock</span>'}</td>
+                  <td class="num">${m.item ? fmt.money(m.item.unitCost) : '-'}</td>
+                  <td class="num"><strong>${m.item ? fmt.money(m.item.unitCost * m.parsed.qty) : '-'}</strong></td>
+                </tr>`;
+              }).join('')}
+              ${matchedCount > 0 ? `<tr style="background:var(--surface-2);font-weight:600"><td colspan="5" style="text-align:right">รวมที่จะเก็บจากพนักงาน</td><td class="num" style="color:var(--success)">${fmt.money(totalCost)} ฿</td></tr>` : ''}
+            </tbody>
+          </table></div>
+          <div class="form-actions" style="justify-content:flex-end;margin-top:12px;gap:8px">
+            ${matchedCount > 0
+              ? `<button type="button" class="btn btn-primary" onclick="issueAllFromRecruit('${requestId}')">🚀 ส่งทั้งหมดตาม recruit (${matchedCount} รายการ)</button>`
+              : `<span class="muted-2" style="font-size:12px;color:var(--warning)">⚠️ ไม่มีรายการที่ match กับ stock — เพิ่ม master ก่อน หรือลงรายการ manual ด้านล่าง</span>`}
+          </div>
+          ${matched.some(m => !m.item) ? `<div class="muted-2" style="font-size:11.5px;color:var(--warning);margin-top:8px;line-height:1.6">💡 รายการที่ match ไม่ได้จะถูกข้าม — ให้ลงรายการเพิ่มแบบ manual ในส่วน "เพิ่มรายการ" ด้านล่าง</div>` : ''}
+        </div>
+      `;
+    })()}
 
     <div class="form-section">
       <h3>รายการที่จัดให้แล้ว <span class="muted-2" style="font-weight:normal;font-size:12px">(${existing.length} รายการ · รวม ${fmt.money(req.totalCost)} บาท)</span></h3>
