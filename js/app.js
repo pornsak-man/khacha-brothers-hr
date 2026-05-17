@@ -5621,28 +5621,65 @@ const LEAVE_STATUS_BADGE = {
 function switchLeaveTab(t) { _leaveState.tab = t; router.go('leave'); }
 
 router.register('leave', () => {
+  const today = tz.today();
+  const thisMonth = today.slice(0, 7);
+  const all = DB.data.leaveRequests;
+  const pending = all.filter(r => r.status === 'pending');
+  const approvedThisMonth = all.filter(r => r.status === 'approved' && (r.startDate || '').startsWith(thisMonth));
+  const totalDaysThisMonth = approvedThisMonth.reduce((s, r) => s + Number(r.days || 0), 0);
+  const onLeaveToday = all.filter(r => r.status === 'approved' && r.startDate <= today && r.endDate >= today);
+
   const tabs = [
-    { id: 'pending', label: '⏳ รออนุมัติ' },
-    { id: 'all',     label: '📋 ทั้งหมด' },
-    { id: 'balance', label: '📊 ยอดวันลาคงเหลือ' },
-    ...(DB.isAdmin ? [{ id: 'types', label: '⚙️ ตั้งค่าประเภท' }] : [])
+    { id: 'pending', label: 'รออนุมัติ',     count: pending.length || null },
+    { id: 'all',     label: 'ประวัติทั้งหมด',  count: null },
+    { id: 'balance', label: 'ยอดวันลาคงเหลือ', count: null },
+    ...(DB.isAdmin ? [{ id: 'types', label: 'ตั้งค่าประเภท', count: null }] : [])
   ];
-  const pendingCount = DB.data.leaveRequests.filter(r => r.status === 'pending').length;
+
+  const todayStr = new Date().toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' });
 
   return `
     <div class="sw-page-header">
       <div>
         <div class="sw-page-title">การลางาน</div>
-        <div class="sw-page-subtitle">ลากิจ · ลาป่วย · ลาคลอด · ลาพักร้อน · ลาบวช · ลารับราชการทหาร — ตามกฎหมายแรงงานไทย</div>
+        <div class="sw-page-subtitle">บริหารคำขอลาตามกฎหมายแรงงานไทย — ${todayStr}</div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        ${pendingCount > 0 ? `<span class="badge badge-warning" style="font-size:12.5px;padding:6px 12px">⏳ รออนุมัติ ${pendingCount}</span>` : ''}
+      <div class="sw-page-actions">
         <button class="btn btn-primary" onclick="openLeaveRequestForm()">+ ส่งคำขอลา</button>
       </div>
     </div>
 
-    <div style="display:flex;gap:6px;border-bottom:1px solid var(--border);margin-bottom:18px;flex-wrap:wrap">
-      ${tabs.map(t => `<button class="${_leaveState.tab === t.id ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}" style="border-radius:8px 8px 0 0;border-bottom:0" onclick="switchLeaveTab('${t.id}')">${t.label}</button>`).join('')}
+    <div class="sw-stats-grid" style="margin-bottom:32px">
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(217,119,6,0.12);color:var(--warning)">⏳</div>
+        <div class="sw-stat-label">รออนุมัติ</div>
+        <div class="sw-stat-value" style="color:${pending.length > 0 ? 'var(--warning)' : 'var(--text)'}">${fmt.num(pending.length)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">คำขอที่ต้องดำเนินการ</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(22,163,74,0.12);color:var(--success)">✓</div>
+        <div class="sw-stat-label">อนุมัติแล้วเดือนนี้</div>
+        <div class="sw-stat-value" style="color:var(--success)">${fmt.num(approvedThisMonth.length)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">รวม ${totalDaysThisMonth} วัน</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(30,136,229,0.12);color:#1e88e5">🏖️</div>
+        <div class="sw-stat-label">กำลังลาวันนี้</div>
+        <div class="sw-stat-value">${fmt.num(onLeaveToday.length)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">${onLeaveToday.length ? 'พนักงานไม่อยู่' : 'พนักงานครบทุกคน'}</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(124,58,237,0.12);color:#7c3aed">📜</div>
+        <div class="sw-stat-label">ประเภทการลา</div>
+        <div class="sw-stat-value">${fmt.num(DB.getLeaveTypesList().length)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">เปิดใช้งานในระบบ</div>
+      </div>
+    </div>
+
+    <div class="sw-tabs" role="tablist">
+      ${tabs.map(t => `<button class="sw-tab ${_leaveState.tab === t.id ? 'active' : ''}" onclick="switchLeaveTab('${t.id}')" role="tab">
+        <span>${escapeHtml(t.label)}</span>${t.count != null ? `<span class="sw-tab-pill">${fmt.num(t.count)}</span>` : ''}
+      </button>`).join('')}
     </div>
 
     <div id="leaveContent">${renderLeaveTab()}</div>
@@ -5654,48 +5691,88 @@ function renderLeaveTab() {
   if (_leaveState.tab === 'types') return renderLeaveTypesTable();
   const status = _leaveState.tab === 'pending' ? 'pending' : null;
   const list = DB.getLeaveRequests({ status, year: _leaveState.tab === 'all' ? _leaveState.filterYear : null });
-  if (!list.length) {
-    return `<div class="empty-state"><div class="title">${_leaveState.tab === 'pending' ? 'ไม่มีคำขอรออนุมัติ' : 'ยังไม่มีคำขอลา'}</div><div class="hint">กดปุ่ม "+ ส่งคำขอลา" เพื่อเริ่ม</div></div>`;
-  }
+
+  const titleMap = { pending: 'คำขอที่รออนุมัติ', all: `ประวัติคำขอลา · ปี ${_leaveState.filterYear + 543}` };
+  const subMap = {
+    pending: 'รายการที่ต้องตัดสินใจ — admin หรือหัวสาขาเป็นผู้อนุมัติ',
+    all: 'คำขอลาทั้งหมดในปีที่เลือก เรียงจากใหม่สุด'
+  };
+
   const yearSelector = _leaveState.tab === 'all' ? `
-    <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;font-size:13px">
-      <label>ปี:</label>
-      <select onchange="_leaveState.filterYear = Number(this.value); router.go('leave')" style="width:auto;padding:6px 10px">
-        ${[0, 1, 2].map(off => { const y = new Date().getFullYear() - off; return `<option value="${y}" ${_leaveState.filterYear === y ? 'selected' : ''}>${y + 543}</option>`; }).join('')}
-      </select>
-    </div>` : '';
-  return `${yearSelector}
-    <div class="table-wrap"><table class="table table-compact">
+    <select class="sw-inline-select" onchange="_leaveState.filterYear = Number(this.value); router.go('leave')">
+      ${[0, 1, 2].map(off => { const y = new Date().getFullYear() - off; return `<option value="${y}" ${_leaveState.filterYear === y ? 'selected' : ''}>ปี ${y + 543}</option>`; }).join('')}
+    </select>` : '';
+
+  if (!list.length) {
+    return `<div class="sw-chart-card">
+      <div class="sw-chart-header">
+        <div>
+          <div class="sw-chart-title">${escapeHtml(titleMap[_leaveState.tab] || '')}</div>
+          <div class="sw-chart-sub">${escapeHtml(subMap[_leaveState.tab] || '')}</div>
+        </div>
+        ${yearSelector}
+      </div>
+      <div class="empty-state" style="padding:60px 20px">
+        <div style="font-size:42px;margin-bottom:12px;opacity:0.35">🌴</div>
+        <div class="title" style="font-size:16px;font-weight:600">${_leaveState.tab === 'pending' ? 'ไม่มีคำขอรออนุมัติ' : 'ยังไม่มีคำขอลาในปีนี้'}</div>
+        <div class="hint" style="margin-top:6px">${_leaveState.tab === 'pending' ? 'งานเคลียร์ทุกอย่างเรียบร้อย' : 'กดปุ่ม + ส่งคำขอลา เพื่อเริ่ม'}</div>
+      </div>
+    </div>`;
+  }
+
+  return `<div class="sw-chart-card">
+    <div class="sw-chart-header">
+      <div>
+        <div class="sw-chart-title">${escapeHtml(titleMap[_leaveState.tab] || '')} <span class="sw-chart-count">${fmt.num(list.length)}</span></div>
+        <div class="sw-chart-sub">${escapeHtml(subMap[_leaveState.tab] || '')}</div>
+      </div>
+      ${yearSelector}
+    </div>
+    <div class="table-wrap"><table class="table table-compact sw-leave-table">
       <thead><tr>
-        <th>วันที่ขอ</th><th>พนักงาน</th><th>ประเภท</th><th>วันที่ลา</th><th class="num">จำนวน</th>
+        <th>วันที่ขอ</th><th>พนักงาน</th><th>ประเภทการลา</th><th>ช่วงวันที่ลา</th><th class="num">วัน</th>
         <th>เหตุผล</th><th>สถานะ</th><th>ผู้อนุมัติ (หัวสาขา)</th><th></th>
       </tr></thead>
       <tbody>
         ${list.map(r => {
           const e = DB.getEmployee(r.employeeId) || {};
-          const typeCfg = DB.LEAVE_TYPES[r.leaveType] || { label: r.leaveType };
+          const typeCfg = DB.LEAVE_TYPES[r.leaveType] || { label: r.leaveType, badge: 'badge-info' };
           const stat = LEAVE_STATUS_BADGE[r.status] || { label: r.status, cls: 'badge' };
           const approver = DB.getLeaveApprover(r.employeeId);
           const canApprove = DB.canApproveLeaveFor(r.employeeId);
-          const isSelfApprove = approver && approver.id === r.employeeId;  // หัวสาขาขอลาเอง — ต้อง admin override
-          let approverCell = '<span class="muted-2">-</span>';
+          const isSelfApprove = approver && approver.id === r.employeeId;
+          let approverCell = '<span class="muted-2">—</span>';
           if (approver) {
             const approverPos = DB.getPosition(approver.position);
-            approverCell = `<strong style="font-size:12.5px">${escapeHtml(approver.firstName + ' ' + (approver.lastName || ''))}</strong><br><span class="muted-2" style="font-size:11px">${approverPos ? escapeHtml(approverPos.name) : ''} · ${escapeHtml(approver.branch || '')}</span>${isSelfApprove ? '<br><span class="badge badge-warning" style="font-size:10px;margin-top:3px">หัวสาขาเอง — admin override</span>' : ''}`;
+            approverCell = `<div class="sw-approver">
+              <strong>${escapeHtml(approver.firstName + ' ' + (approver.lastName || ''))}</strong>
+              <span class="muted-2">${approverPos ? escapeHtml(approverPos.name) : ''}${approver.branch ? ' · ' + escapeHtml(approver.branch) : ''}</span>
+              ${isSelfApprove ? '<span class="badge badge-warning sw-approver-note">หัวสาขาเอง · admin override</span>' : ''}
+            </div>`;
           }
-          return `<tr style="vertical-align:top">
-            <td style="font-size:12.5px;white-space:nowrap">${fmt.date(r.requestedAt)}</td>
-            <td><strong>${escapeHtml((e.firstName || '?') + ' ' + (e.lastName || ''))}</strong><br><span class="muted-2" style="font-size:11px">${escapeHtml(r.employeeId)}${e.branch ? ' · ' + escapeHtml(e.branch) : ''}</span></td>
-            <td>${escapeHtml(typeCfg.label)}</td>
-            <td style="font-size:12.5px;white-space:nowrap">${fmt.date(r.startDate)}${r.startDate !== r.endDate ? ' – ' + fmt.date(r.endDate) : ''}</td>
-            <td class="num"><strong>${r.days}</strong> วัน</td>
-            <td style="font-size:12.5px;max-width:200px"><div style="white-space:pre-wrap;line-height:1.5">${escapeHtml(r.reason || '-')}</div></td>
-            <td><span class="badge ${stat.cls}">${stat.label}</span>${r.approverNote ? `<br><span class="muted-2" style="font-size:11px;font-style:italic">"${escapeHtml(r.approverNote)}"</span>` : ''}${r.cancelReason ? `<br><span class="muted-2" style="font-size:11px;font-style:italic">"${escapeHtml(r.cancelReason)}"</span>` : ''}</td>
+          const range = r.startDate === r.endDate ? fmt.date(r.startDate) : `${fmt.date(r.startDate)}<span class="muted-2"> – </span>${fmt.date(r.endDate)}`;
+          return `<tr>
+            <td class="sw-cell-meta">${fmt.date(r.requestedAt)}</td>
+            <td>
+              <div class="sw-emp-cell">
+                <strong>${escapeHtml((e.firstName || '?') + ' ' + (e.lastName || ''))}</strong>
+                <span class="muted-2">${escapeHtml(r.employeeId)}${e.branch ? ' · ' + escapeHtml(e.branch) : ''}</span>
+              </div>
+            </td>
+            <td><span class="badge ${typeCfg.badge || 'badge-info'} sw-leave-type">${escapeHtml(typeCfg.label)}</span></td>
+            <td class="sw-cell-meta">${range}</td>
+            <td class="num"><strong style="font-size:14px">${r.days}</strong><span class="muted-2" style="font-size:11px"> วัน</span></td>
+            <td class="sw-reason-cell">${r.reason ? escapeHtml(r.reason) : '<span class="muted-2">—</span>'}</td>
+            <td>
+              <span class="badge ${stat.cls}">${stat.label}</span>
+              ${r.approverNote ? `<div class="sw-status-note">"${escapeHtml(r.approverNote)}"</div>` : ''}
+              ${r.cancelReason ? `<div class="sw-status-note">"${escapeHtml(r.cancelReason)}"</div>` : ''}
+            </td>
             <td>${approverCell}</td>
-            <td class="actions" style="white-space:nowrap">
+            <td class="actions">
               ${r.status === 'pending' && canApprove ? `<button class="btn btn-success btn-sm" onclick="approveLeave('${r.id}')">อนุมัติ</button>
                 <button class="btn btn-danger btn-sm" onclick="rejectLeave('${r.id}')">ปฏิเสธ</button>` : ''}
-              ${r.status === 'pending' && !canApprove ? `<span class="muted-2" style="font-size:11px;font-style:italic">รออนุมัติจากหัวสาขา</span>` : ''}
+              ${r.status === 'pending' && !canApprove ? `<span class="muted-2 sw-wait-note">รอหัวสาขา</span>` : ''}
               ${r.status === 'pending' ? `<button class="btn btn-ghost btn-sm" onclick="openLeaveRequestForm('${r.id}')">แก้</button>
                 <button class="btn btn-ghost btn-sm" onclick="cancelLeave('${r.id}')">ยกเลิก</button>` : ''}
               ${r.status !== 'pending' && DB.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="deleteLeave('${r.id}')">ลบ</button>` : ''}
@@ -5704,54 +5781,65 @@ function renderLeaveTab() {
         }).join('')}
       </tbody>
     </table></div>
-  `;
+  </div>`;
 }
 
 function renderLeaveBalanceTable() {
   const year = _leaveState.filterYear;
   const emps = DB.data.employees.filter(e => DB.empStatus(e) !== 'resigned');
-  if (!emps.length) return `<div class="empty-state"><div class="title">ไม่มีพนักงาน</div></div>`;
+  if (!emps.length) {
+    return `<div class="sw-chart-card"><div class="empty-state"><div class="title">ไม่มีพนักงาน</div></div></div>`;
+  }
   const types = Object.entries(DB.LEAVE_TYPES);
-  return `
-    <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;font-size:13px">
-      <label>ปี:</label>
-      <select onchange="_leaveState.filterYear = Number(this.value); router.go('leave')" style="width:auto;padding:6px 10px">
-        ${[0, 1, 2].map(off => { const y = new Date().getFullYear() - off; return `<option value="${y}" ${_leaveState.filterYear === y ? 'selected' : ''}>${y + 543}</option>`; }).join('')}
+  return `<div class="sw-chart-card">
+    <div class="sw-chart-header">
+      <div>
+        <div class="sw-chart-title">ยอดวันลาคงเหลือ · ปี ${year + 543}</div>
+        <div class="sw-chart-sub">แสดง "คงเหลือ / โควต้า" — นับจากคำขอที่อนุมัติแล้ว · เปลี่ยนปีเพื่อดูย้อนหลัง</div>
+      </div>
+      <select class="sw-inline-select" onchange="_leaveState.filterYear = Number(this.value); router.go('leave')">
+        ${[0, 1, 2].map(off => { const y = new Date().getFullYear() - off; return `<option value="${y}" ${_leaveState.filterYear === y ? 'selected' : ''}>ปี ${y + 543}</option>`; }).join('')}
       </select>
-      <span class="muted-2" style="font-size:11.5px">· แสดง คงเหลือ/โควต้า · นับเฉพาะที่อนุมัติแล้ว</span>
     </div>
-    <div class="table-wrap"><table class="table table-compact">
+    <div class="table-wrap"><table class="table table-compact sw-balance-table">
       <thead><tr>
         <th>พนักงาน</th>
         ${types.map(([k, v]) => `<th class="num" title="${escapeHtml(v.label)}">${escapeHtml(v.label)}</th>`).join('')}
       </tr></thead>
       <tbody>
         ${emps.map(e => {
+          const g = DB.genderCode(e.gender);
+          const genderMark = g ? `<span class="sw-gender ${g === 'M' ? 'sw-gender-m' : 'sw-gender-f'}">${g === 'M' ? '♂' : '♀'}</span>` : '';
           return `<tr>
-            <td><strong>${escapeHtml(e.firstName + ' ' + (e.lastName || ''))}</strong><br><span class="muted-2" style="font-size:11px">${escapeHtml(e.id)}${(() => { const g = DB.genderCode(e.gender); return g ? ` <span style="font-size:12px;color:${g === 'M' ? '#1e88e5' : '#ec407a'};font-weight:600">${g === 'M' ? '♂' : '♀'}</span>` : ''; })()}</span></td>
+            <td>
+              <div class="sw-emp-cell">
+                <strong>${escapeHtml(e.firstName + ' ' + (e.lastName || ''))} ${genderMark}</strong>
+                <span class="muted-2">${escapeHtml(e.id)}${e.branch ? ' · ' + escapeHtml(e.branch) : ''}</span>
+              </div>
+            </td>
             ${types.map(([k]) => {
               const b = DB.calcLeaveBalance(e.id, k, year);
               if (b.quota === 0) return '<td class="num"><span class="muted-2">—</span></td>';
               const ratio = b.used / b.quota;
-              const color = ratio >= 1 ? 'var(--danger)' : ratio >= 0.7 ? 'var(--warning)' : 'var(--success)';
-              return `<td class="num"><strong style="color:${color}">${b.remaining}</strong><span class="muted-2" style="font-size:11px">/${b.quota}</span></td>`;
+              const cls = ratio >= 1 ? 'sw-bal-low' : ratio >= 0.7 ? 'sw-bal-warn' : 'sw-bal-ok';
+              return `<td class="num"><span class="sw-bal ${cls}"><strong>${b.remaining}</strong><span class="muted-2">/${b.quota}</span></span></td>`;
             }).join('')}
           </tr>`;
         }).join('')}
       </tbody>
     </table></div>
-  `;
+  </div>`;
 }
 
 // ─── Leave types config tab (admin only) ───
 function renderLeaveTypesTable() {
-  if (!DB.isAdmin) return '<div class="empty-state"><div class="title">เฉพาะ admin</div></div>';
+  if (!DB.isAdmin) return '<div class="sw-chart-card"><div class="empty-state"><div class="title">เฉพาะ admin</div></div></div>';
   const list = DB.getLeaveTypesList(true);  // include inactive
-  return `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div class="muted-2" style="font-size:13px;line-height:1.7">
-        แก้ไขประเภทการลา / จำนวนวัน / เพศที่ใช้ได้ / ลาย้อนหลังได้หรือไม่ — ทันทีที่บันทึก ระบบจะใช้ค่าใหม่ทุกที่<br>
-        <strong>rule = ตามอายุงาน</strong> = ใช้สูตรลาพักร้อน (6 วันเมื่อครบ 1 ปี เพิ่มปีละ 1 วัน max ตาม "จำนวนวันสูงสุด")
+  return `<div class="sw-chart-card">
+    <div class="sw-chart-header">
+      <div>
+        <div class="sw-chart-title">ตั้งค่าประเภทการลา</div>
+        <div class="sw-chart-sub">แก้ชื่อ จำนวนวันสูงสุด เพศที่ใช้ได้ และการลาย้อนหลัง · บันทึกแล้วใช้ทันทีทั่วระบบ · <strong>rule = ตามอายุงาน</strong> ใช้สูตรลาพักร้อน 6 วันเมื่อครบ 1 ปี +1/ปี สูงสุดตาม "จำนวนวันสูงสุด"</div>
       </div>
       <button class="btn btn-primary btn-sm" onclick="openLeaveTypeForm()">+ เพิ่มประเภท</button>
     </div>
@@ -5776,7 +5864,7 @@ function renderLeaveTypesTable() {
         </tr>`).join('')}
       </tbody>
     </table></div>
-  `;
+  </div>`;
 }
 
 function openLeaveTypeForm(id = null) {
