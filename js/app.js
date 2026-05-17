@@ -5964,6 +5964,11 @@ function openLeaveRequestForm(id = null) {
   $('#leaveForm').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const data = Object.fromEntries(new FormData(ev.target).entries());
+    // viewer: select ถูก disable → FormData ไม่ส่งค่า employeeId มา → fallback เป็น employee_id ของตัวเอง
+    if (!DB.isAdmin) {
+      data.employeeId = DB.profile?.employee_id || '';
+      if (!data.employeeId) return toast('โปรไฟล์ของคุณยังไม่ผูกกับรหัสพนักงาน — ติดต่อ admin', 'error');
+    }
     if (!DB.isAdmin && data.employeeId !== (DB.profile?.employee_id || '')) {
       return toast('สามารถส่งคำขอของตัวเองเท่านั้น', 'error');
     }
