@@ -571,6 +571,7 @@ function openEmployeeForm(id = null) {
     nationality: 'ไทย', religion: '', education: '',
     phone: '', email: '', address: '',
     subDistrict: '', district: '', province: '', postalCode: '',
+    passportNumber: '', workPermitNumber: '',
     department: DB.getDepartments()[0]?.id || '', branch: '',
     position: DB.getPositions()[0]?.id || '', positionTitle: '',
     employeeType: 'พนักงานประจำ',
@@ -620,6 +621,8 @@ function openEmployeeForm(id = null) {
           <div class="form-group"><label>วันเกิด</label><input name="dob" type="date" value="${emp.dob || ''}"/></div>
           <div class="form-group"><label>เลขประชาชน</label><input name="nationalId" value="${escapeHtml(emp.nationalId)}" maxlength="20" placeholder="13 หลัก (ไม่มีขีด)"/><small class="form-warn" id="nidWarn"></small></div>
           <div class="form-group"><label>สัญชาติ</label><input name="nationality" list="dl-nationalities" value="${escapeHtml(emp.nationality)}"/></div>
+          <div class="form-group foreign-only" id="passportField"><label>Passport <span class="muted-2" style="font-weight:normal;font-size:11px">(หนังสือเดินทาง)</span></label><input name="passportNumber" value="${escapeHtml(emp.passportNumber)}" placeholder="เช่น A1234567"/></div>
+          <div class="form-group foreign-only" id="wpField"><label>Work Permit <span class="muted-2" style="font-weight:normal;font-size:11px">(ใบอนุญาตทำงาน)</span></label><input name="workPermitNumber" value="${escapeHtml(emp.workPermitNumber)}" placeholder="เช่น WP-2026-12345"/></div>
           <div class="form-group"><label>ศาสนา</label><input name="religion" list="dl-religions" value="${escapeHtml(emp.religion)}"/></div>
           <div class="form-group"><label>วุฒิการศึกษา</label><input name="education" list="dl-educations" value="${escapeHtml(emp.education)}"/></div>
         </div>
@@ -721,6 +724,21 @@ function openEmployeeForm(id = null) {
   };
   $$('.income-input').forEach(i => i.addEventListener('input', updateTotal));
   updateTotal();
+
+  // ─── TOGGLE: Passport + Work Permit แสดงเฉพาะเมื่อสัญชาติ ≠ ไทย ───
+  const toggleForeignFields = () => {
+    const nat = ($('#empForm [name="nationality"]')?.value || '').trim();
+    const isThai = !nat || nat === 'ไทย';
+    $$('.foreign-only', $('#empForm')).forEach(el => el.style.display = isThai ? 'none' : '');
+    // update nationalId placeholder ให้บอกว่ารับเลขเอกสารต่างชาติได้
+    const nid = $('#empForm [name="nationalId"]');
+    if (nid) nid.placeholder = isThai ? '13 หลัก (ไม่มีขีด)' : 'เลขประชาชนของประเทศต้นทาง — หรือเว้นว่างถ้าไม่มี';
+    const nidLabel = nid?.closest('.form-group')?.querySelector('label');
+    if (nidLabel) nidLabel.textContent = isThai ? 'เลขประชาชน' : 'เลขประชาชน (ประเทศต้นทาง)';
+  };
+  $('#empForm [name="nationality"]')?.addEventListener('input', toggleForeignFields);
+  $('#empForm [name="nationality"]')?.addEventListener('change', toggleForeignFields);
+  toggleForeignFields(); // run once on form open
 
   // ─── VALIDATION: เบอร์โทร + เลขประชาชน ───
   const setFieldWarn = (inputSel, warnId, msg) => {
@@ -905,6 +923,8 @@ function viewEmployee(id) {
         <div class="emp-info-row"><div class="label">วันเกิด</div><div class="value">${fmt.date(e.dob)}${e.dob ? ' <span class="muted-2" style="font-size:12px">(' + fmt.age(e.dob) + ')</span>' : ''}</div></div>
         <div class="emp-info-row"><div class="label">เลขประชาชน</div><div class="value mono">${escapeHtml(e.nationalId || '-')}</div></div>
         <div class="emp-info-row"><div class="label">สัญชาติ</div><div class="value">${escapeHtml(e.nationality || '-')}</div></div>
+        ${e.passportNumber ? `<div class="emp-info-row"><div class="label">Passport</div><div class="value mono">${escapeHtml(e.passportNumber)}</div></div>` : ''}
+        ${e.workPermitNumber ? `<div class="emp-info-row"><div class="label">Work Permit</div><div class="value mono">${escapeHtml(e.workPermitNumber)}</div></div>` : ''}
         <div class="emp-info-row"><div class="label">ศาสนา</div><div class="value">${escapeHtml(e.religion || '-')}</div></div>
         <div class="emp-info-row"><div class="label">วุฒิการศึกษา</div><div class="value">${escapeHtml(e.education || '-')}</div></div>
       </div>
@@ -1008,7 +1028,7 @@ function viewEmployee(id) {
 // ─── EXCEL IMPORT ───
 const IMPORT_COLUMNS = [
   'รหัสพนักงาน', 'คำนำหน้า', 'ชื่อ', 'นามสกุล', 'ชื่อเล่น', 'เพศ',
-  'วันเกิด', 'เลขประชาชน', 'สัญชาติ', 'ศาสนา', 'วุฒิการศึกษา',
+  'วันเกิด', 'เลขประชาชน', 'Passport', 'Work Permit', 'สัญชาติ', 'ศาสนา', 'วุฒิการศึกษา',
   'เบอร์โทร', 'อีเมล',
   'ที่อยู่', 'แขวง/ตำบล', 'เขต/อำเภอ', 'จังหวัด', 'รหัสไปรษณีย์',
   'รหัสฝ่าย', 'สาขา', 'รหัสระดับตำแหน่ง', 'ตำแหน่ง', 'ประเภทพนักงาน', 'วันเริ่มงาน', 'วันพ้นสภาพ',
@@ -1023,6 +1043,7 @@ function downloadEmployeeTemplate() {
     {
       'รหัสพนักงาน': 1001, 'คำนำหน้า': 'นาย', 'ชื่อ': 'ตัวอย่าง', 'นามสกุล': 'นามสกุลตัวอย่าง',
       'ชื่อเล่น': 'ตย.', 'เพศ': 'ชาย', 'วันเกิด': '15/01/1990', 'เลขประชาชน': 1234567890123,
+      'Passport': '', 'Work Permit': '',
       'สัญชาติ': 'ไทย', 'ศาสนา': 'พุทธ', 'วุฒิการศึกษา': 'ปริญญาตรี',
       'เบอร์โทร': '081-234-5678', 'อีเมล': 'sample@khacha.co.th',
       'ที่อยู่': '123 หมู่ 4 ซอยสุขุมวิท 21 ถ.สุขุมวิท',
@@ -1124,6 +1145,8 @@ function parseImportRow(row) {
     gender: get('เพศ') || 'ชาย',
     dob: parseDate('วันเกิด'),
     nationalId: get('เลขประชาชน'),
+    passportNumber: get('Passport'),
+    workPermitNumber: get('Work Permit'),
     nationality: get('สัญชาติ') || 'ไทย',
     religion: get('ศาสนา'),
     education: get('วุฒิการศึกษา'),
@@ -1507,7 +1530,7 @@ function exportEmployeesXLSX() {
   const rows = DB.getEmployees().map(e => ({
     'รหัส': excelNum(e.id), 'คำนำหน้า': e.title, 'ชื่อ': e.firstName, 'นามสกุล': e.lastName,
     'ชื่อเล่น': e.nickname,
-    'เลขประชาชน': excelNum(e.nationalId), 'วันเกิด': excelDate(e.dob), 'เพศ': e.gender,
+    'เลขประชาชน': excelNum(e.nationalId), 'Passport': e.passportNumber, 'Work Permit': e.workPermitNumber, 'วันเกิด': excelDate(e.dob), 'เพศ': e.gender,
     'สัญชาติ': e.nationality, 'ศาสนา': e.religion, 'วุฒิการศึกษา': e.education,
     'เบอร์โทร': e.phone, 'อีเมล': e.email,
     'ที่อยู่': e.address, 'แขวง/ตำบล': e.subDistrict, 'เขต/อำเภอ': e.district,

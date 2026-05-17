@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS public.employees (
   allowance_other     NUMERIC(12,2) DEFAULT 0,
   bank                TEXT,
   bank_account        TEXT,
+  passport_number     TEXT,
+  work_permit_number  TEXT,
   photo_url           TEXT,
   termination_date    DATE,
   status              TEXT DEFAULT 'active',
