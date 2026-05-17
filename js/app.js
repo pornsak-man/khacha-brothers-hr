@@ -3737,10 +3737,27 @@ function renderUniformIssuesTable() {
       </tr></thead>
       <tbody>
         ${list.map(i => {
-          const e = DB.getEmployee(i.employeeId) || {};
+          // หาเจ้าของ: ถ้ามี employeeId → ดึง employee, ถ้าไม่มี → ดึง applicant ผ่าน request
+          let ownerCell = '<span class="muted-2">-</span>';
+          if (i.employeeId) {
+            const e = DB.getEmployee(i.employeeId);
+            if (e) {
+              ownerCell = `<strong>${escapeHtml(e.firstName + ' ' + (e.lastName || ''))}</strong> <span class="muted-2" style="font-size:11.5px">(${escapeHtml(i.employeeId)})</span>`;
+            } else {
+              ownerCell = `<span class="muted-2">${escapeHtml(i.employeeId)}</span>`;
+            }
+          } else if (i.requestId) {
+            const req = DB.getUniformRequest(i.requestId);
+            if (req?.applicantId) {
+              const ap = DB.getApplicant(req.applicantId);
+              if (ap) {
+                ownerCell = `<strong>${escapeHtml(ap.firstName + ' ' + (ap.lastName || ''))}</strong> <span class="badge badge-warning" style="font-size:10px;margin-left:6px">ผู้สมัคร</span>`;
+              }
+            }
+          }
           return `<tr>
             <td>${fmt.date(i.issuedDate)}</td>
-            <td>${escapeHtml(e.firstName ? e.firstName + ' ' + (e.lastName || '') : '-')} <span class="muted-2" style="font-size:11.5px">(${escapeHtml(i.employeeId || '-')})</span></td>
+            <td>${ownerCell}</td>
             <td>${escapeHtml(i.itemName || '-')}</td>
             <td>${escapeHtml(i.size || '-')}</td>
             <td class="num">${fmt.num(i.qty)}</td>
@@ -3911,7 +3928,7 @@ async function issueAllFromRecruit(requestId) {
   if (!await modal.confirm('ยืนยันส่งทั้งหมด', `จะสร้าง ${matched.length} รายการ + ตัด stock + เปลี่ยนสถานะเป็น "จัดส่งแล้ว":\n\n${summary}`)) return;
 
   const issuedBy = DB.profile?.name || DB.user?.email || '';
-  const issuedDate = tz.today();
+  const issuedDate = document.getElementById('recruitIssueDate')?.value || tz.today();
   let okCount = 0, failCount = 0;
   for (const m of matched) {
     try {
@@ -4023,9 +4040,12 @@ function openIssueItemsForm(requestId) {
               ${matchedCount > 0 ? `<tr style="background:var(--surface-2);font-weight:600"><td colspan="5" style="text-align:right">รวมที่จะเก็บจากพนักงาน</td><td class="num" style="color:var(--success)">${fmt.money(totalCost)} ฿</td></tr>` : ''}
             </tbody>
           </table></div>
-          <div class="form-actions" style="justify-content:flex-end;margin-top:12px;gap:8px">
+          <div class="form-actions" style="justify-content:flex-end;margin-top:12px;gap:10px;align-items:center;flex-wrap:wrap">
             ${matchedCount > 0
-              ? `<button type="button" class="btn btn-primary" onclick="issueAllFromRecruit('${requestId}')">🚀 ส่งทั้งหมดตาม recruit (${matchedCount} รายการ)</button>`
+              ? `<label style="font-size:12.5px;color:var(--text-2);display:flex;align-items:center;gap:6px;margin:0">วันที่จัดส่ง:
+                  <input type="date" id="recruitIssueDate" value="${tz.today()}" style="padding:6px 10px;font-size:13px;width:auto"/>
+                 </label>
+                 <button type="button" class="btn btn-primary" onclick="issueAllFromRecruit('${requestId}')">🚀 ส่งทั้งหมดตาม recruit (${matchedCount} รายการ)</button>`
               : `<span class="muted-2" style="font-size:12px;color:var(--warning)">⚠️ ไม่มีรายการที่ match กับ stock — เพิ่ม master ก่อน หรือลงรายการ manual ด้านล่าง</span>`}
           </div>
           ${matched.some(m => !m.item) ? `<div class="muted-2" style="font-size:11.5px;color:var(--warning);margin-top:8px;line-height:1.6">💡 รายการที่ match ไม่ได้จะถูกข้าม — ให้ลงรายการเพิ่มแบบ manual ในส่วน "เพิ่มรายการ" ด้านล่าง</div>` : ''}
