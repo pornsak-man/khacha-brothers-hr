@@ -2339,16 +2339,25 @@ function exportEmployeesXLSX() {
 // ═══════════════════════════════════════════════════════
 //  PAGE: BRANCHES (สาขา — master list)
 // ═══════════════════════════════════════════════════════
+const _branchPageState = { showClosed: false };
+function toggleShowClosedBranches() { _branchPageState.showClosed = !_branchPageState.showClosed; router.go('branches'); }
+
 router.register('branches', () => {
-  const list = DB.getBranchMaster();
+  const allBranches = DB.getBranchMaster();
+  const closedCount = allBranches.filter(b => !b.active).length;
+  const list = _branchPageState.showClosed ? allBranches : allBranches.filter(b => b.active);
   const totalEmps = list.reduce((s, b) => s + DB.getBranchEmployeeCount(b.id), 0);
   return `
     <div class="sw-page-header">
       <div>
         <div class="sw-page-title">สาขา</div>
-        <div class="sw-page-subtitle">จัดการรายการสาขาของบริษัท · ${fmt.num(list.length)} สาขา · พนักงานปัจจุบัน ${fmt.num(totalEmps)} คน</div>
+        <div class="sw-page-subtitle">จัดการรายการสาขาของบริษัท · ${fmt.num(list.length)} สาขา${_branchPageState.showClosed ? '' : (closedCount > 0 ? ` (ซ่อน ${closedCount} ที่ปิดอยู่)` : '')} · พนักงานปัจจุบัน ${fmt.num(totalEmps)} คน</div>
       </div>
-      <div class="sw-page-actions">
+      <div class="sw-page-actions" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        ${closedCount > 0 ? `<label style="font-size:12.5px;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text-2)">
+          <input type="checkbox" ${_branchPageState.showClosed ? 'checked' : ''} onchange="toggleShowClosedBranches()"/>
+          แสดงสาขาที่ปิด (${closedCount})
+        </label>` : ''}
         ${DB.isAdmin ? `<button class="btn btn-primary" onclick="openBranchForm()">+ เพิ่มสาขา</button>` : ''}
       </div>
     </div>
