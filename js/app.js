@@ -1108,8 +1108,12 @@ function openImportEmployees() {
         ` : ''}
       </div>
     `;
-    $('#importStartBtn').textContent = 'เสร็จสิ้น';
-    $('#importStartBtn').disabled = true;
+    // ตั้งให้ปุ่ม "เสร็จสิ้น" คลิกได้ + ปิด modal
+    parsedRows = null;
+    const finishBtn = $('#importStartBtn');
+    finishBtn.textContent = 'เสร็จสิ้น';
+    finishBtn.disabled = false;
+    finishBtn.setAttribute('data-close', '');
     renderEmployeeList();
   });
 }
