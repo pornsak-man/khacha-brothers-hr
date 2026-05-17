@@ -3605,6 +3605,20 @@ async function deleteUniformRequest(id) {
   catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
 }
 
+// Mark request as issued without itemizing — สำหรับกรณีจัดส่งครบแล้วไม่ต้องลงรายการรายชิ้น
+async function markUniformRequestIssued(id) {
+  if (!requireAdmin()) return;
+  const req = DB.getUniformRequest(id);
+  if (!req) return;
+  if (!await modal.confirm('ยืนยัน', 'ทำเครื่องหมายคำขอนี้ว่า "จัดส่งครบแล้ว" ใช่หรือไม่?\n\n— สถานะจะเปลี่ยนเป็น "จัดส่งแล้ว"\n— ถ้ายังไม่ได้ลงรายการรายชิ้น stock จะไม่ถูกตัด')) return;
+  try {
+    await DB.saveUniformRequest({ ...req, status: 'issued' });
+    modal.close();
+    toast('อัปเดตสถานะแล้ว · จัดส่งครบ', 'success');
+    if (router.current === 'uniform') router.go('uniform');
+  } catch (ex) { toast('อัปเดตไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
+}
+
 // ─── จัดชุด: เพิ่มรายการ issue ทีละหลายรายการพร้อมกัน ───
 function openIssueItemsForm(requestId) {
   if (!requireAdmin()) return;
@@ -3694,11 +3708,24 @@ function openIssueItemsForm(requestId) {
           <div class="form-group"><label>รวม</label><input id="issueTotal" type="text" readonly style="font-weight:600;color:var(--success)"/></div>
           <div class="form-group span-2"><label>หมายเหตุ</label><input name="note" placeholder="เช่น ส่งให้พนักงานเรียบร้อย"/></div>
         </div>
-        <div class="form-actions">
-          <button type="button" class="btn btn-secondary" data-close>ปิด</button>
-          <button type="submit" class="btn btn-primary">+ เพิ่มรายการ</button>
+        <div class="form-actions" style="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" class="btn btn-secondary" data-close>ปิด</button>
+            ${req.status !== 'issued' && req.status !== 'cancelled' ? `
+              <button type="button" class="btn btn-success" onclick="markUniformRequestIssued('${requestId}')" title="ทำเครื่องหมายว่าจัดส่งครบแล้ว (เปลี่ยนสถานะเป็น 'จัดส่งแล้ว')">
+                ✓ จัดส่งครบแล้ว
+              </button>
+            ` : `<span class="badge badge-success" style="padding:8px 14px;font-size:12.5px">✓ จัดส่งแล้ว</span>`}
+          </div>
+          <button type="submit" class="btn btn-primary">+ เพิ่มรายการ${existing.length === 0 ? ' (พร้อมตัด stock)' : ''}</button>
         </div>
       </form>
+    </div>
+    <div class="muted-2" style="font-size:12px;padding:12px 14px;background:var(--surface-2);border-radius:8px;margin-top:14px;line-height:1.7">
+      <strong style="color:var(--text)">📌 คำแนะนำ:</strong><br>
+      • <strong>"+ เพิ่มรายการ"</strong> — บันทึกแต่ละชิ้นที่จัดให้ พร้อมตัด stock + คิดค่าชุดอัตโนมัติ<br>
+      • <strong>"✓ จัดส่งครบแล้ว"</strong> — ทำเครื่องหมายว่าจบ (เปลี่ยนสถานะเป็น "จัดส่งแล้ว") เมื่อไม่ต้องการลงรายการรายชิ้น<br>
+      • <strong>"ปิด"</strong> — ออกจากหน้านี้โดยไม่เปลี่ยนสถานะ
     </div>
   `, { size: 'lg' });
 
