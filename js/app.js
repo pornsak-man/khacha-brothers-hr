@@ -336,7 +336,8 @@ router.register('dashboard', () => {
 
   const todayStr = new Date().toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' });
   const tvColor = kpi.turnoverAnnualized <= 5 ? 'var(--success)' : kpi.turnoverAnnualized <= 10 ? 'var(--warning)' : 'var(--danger)';
-  const tvLabel = kpi.turnoverAnnualized <= 5 ? '🟢 ดีมาก' : kpi.turnoverAnnualized <= 10 ? '🟡 ปานกลาง' : '🔴 สูง';
+  const tvDot = kpi.turnoverAnnualized <= 5 ? 'green' : kpi.turnoverAnnualized <= 10 ? 'amber' : 'red';
+  const tvLabel = kpi.turnoverAnnualized <= 5 ? 'ดีมาก' : kpi.turnoverAnnualized <= 10 ? 'ปานกลาง' : 'สูง';
   const maxBranch = branchStats[0]?.count || 1;
 
   return `
@@ -373,15 +374,16 @@ router.register('dashboard', () => {
         <div class="sw-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg></div>
         <div class="sw-stat-label">Turnover Rate (คาดทั้งปี)</div>
         <div class="sw-stat-value" style="color:${tvColor}">${kpi.turnoverAnnualized.toFixed(2)}%</div>
-        <div class="sw-stat-change">${tvLabel} · YTD ${kpi.turnoverYTD.toFixed(2)}%</div>
+        <div class="sw-stat-change"><span class="sw-dot ${tvDot}"></span>${tvLabel} · YTD ${kpi.turnoverYTD.toFixed(2)}%</div>
       </div>
     </div>
 
     ${(reach90.length || reach119.length) ? `
+    <div class="sw-section-label">ทดลองงาน</div>
     <div class="sw-charts-grid">
-      <div class="sw-chart-card" style="border-left:4px solid var(--warning)">
-        <div class="sw-chart-title">⚠️ ครบทดลองงาน 90 วัน — เดือนนี้
-          <span class="badge badge-warning" style="margin-left:8px;font-size:11.5px">${reach90.length} คน</span>
+      <div class="sw-chart-card" style="border-left:3px solid var(--warning)">
+        <div class="sw-chart-title">ครบทดลองงาน 90 วัน — เดือนนี้
+          <span class="badge badge-warning" style="margin-left:10px;font-size:11px">${reach90.length} คน</span>
         </div>
         <div class="sw-chart-sub">ครบกำหนดทดลองงาน — ควรประเมินผลก่อนตัดสินใจ</div>
         <div style="max-height:320px;overflow-y:auto">
@@ -399,9 +401,9 @@ router.register('dashboard', () => {
             </div>`).join('') : '<div style="padding:30px;text-align:center;color:var(--text-3);font-size:13px">— ไม่มีพนักงานที่ครบ 90 วันในเดือนนี้ —</div>'}
         </div>
       </div>
-      <div class="sw-chart-card" style="border-left:4px solid var(--danger)">
-        <div class="sw-chart-title">🚨 ครบ 119 วัน (ก่อนครบ 120 วัน) — เดือนนี้
-          <span class="badge badge-danger" style="margin-left:8px;font-size:11.5px">${reach119.length} คน</span>
+      <div class="sw-chart-card" style="border-left:3px solid var(--danger)">
+        <div class="sw-chart-title">ครบ 119 วัน (ก่อนครบ 120 วัน) — เดือนนี้
+          <span class="badge badge-danger" style="margin-left:10px;font-size:11px">${reach119.length} คน</span>
         </div>
         <div class="sw-chart-sub">ต้องตัดสินใจก่อนครบ 120 วัน (เลิกจ้างต้องจ่ายค่าชดเชยตามกฎหมาย)</div>
         <div style="max-height:320px;overflow-y:auto">
@@ -421,6 +423,7 @@ router.register('dashboard', () => {
       </div>
     </div>` : ''}
 
+    <div class="sw-section-label">ภาพรวมพนักงาน</div>
     <div class="sw-charts-grid">
       <div class="sw-chart-card">
         <div class="sw-chart-title">พนักงานที่เพิ่งเพิ่มเข้าระบบ</div>
@@ -453,9 +456,10 @@ router.register('dashboard', () => {
       </div>
     </div>
 
+    <div class="sw-section-label">การวิเคราะห์</div>
     <div class="sw-chart-card">
       <div class="sw-chart-title">พนักงานเข้า / ออก ประจำปี ${yearly.year}</div>
-      <div class="sw-chart-sub">เปรียบเทียบจำนวนเข้าใหม่ (เขียว) กับพ้นสภาพ (แดง) แต่ละเดือน</div>
+      <div class="sw-chart-sub">เปรียบเทียบจำนวนเข้าใหม่ กับพ้นสภาพ แต่ละเดือน</div>
       <canvas id="chartMonthly" style="max-height:280px"></canvas>
     </div>
 
@@ -470,6 +474,7 @@ router.register('dashboard', () => {
       <canvas id="chartByAge" style="max-height:280px"></canvas>
     </div>
 
+    <div class="sw-section-label">ค่าจ้าง</div>
     <div class="sw-chart-card">
       <div class="sw-chart-title">อัตราค่าจ้างต่อตำแหน่งงาน</div>
       <div class="sw-chart-sub">รายได้รวมเฉลี่ย (เงินเดือน + ค่าตำแหน่ง + เดินทาง + อาหาร + เบี้ยเลี้ยง + ภาษา + อื่นๆ) · เรียงสูงสุด → ต่ำสุด · ${s.salaryByPosition.length} ตำแหน่ง</div>
