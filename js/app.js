@@ -343,7 +343,7 @@ function renderDashboardCharts(s) {
 // ═══════════════════════════════════════════════════════
 //  PAGE: EMPLOYEES
 // ═══════════════════════════════════════════════════════
-const empState = { search: '', branch: '', status: 'active', page: 1, pageSize: 50 };
+const empState = { search: '', branch: '', position: '', status: 'active', sortBy: '', sortDir: 'asc', page: 1, pageSize: 50 };
 let _empSearchTimer = null;
 
 router.register('employees', () => {
@@ -364,10 +364,29 @@ router.register('employees', () => {
           <option value="">ทุกสาขา</option>
           ${DB.getBranches().map(b => `<option value="${escapeHtml(b)}" ${empState.branch === b ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
         </select>
+        ${(() => {
+          const ps = DB.getPositions();
+          const kitchen = [], ops = [], common = [];
+          for (const p of ps) {
+            const n = (p.name || '').toLowerCase();
+            if (n.includes('chef') || n.includes('barista')) kitchen.push(p);
+            else if (n.includes('part')) common.push(p);
+            else ops.push(p);
+          }
+          const byLv = (a, b) => (b.level || 0) - (a.level || 0) || (a.name || '').localeCompare(b.name || '');
+          ops.sort(byLv); kitchen.sort(byLv); common.sort(byLv);
+          const opt = (arr) => arr.map(p => `<option value="${p.id}" ${empState.position === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
+          return `<select class="filter-select" id="empPosition">
+            <option value="">ทุกตำแหน่ง</option>
+            ${ops.length ? `<optgroup label="ฝ่ายปฏิบัติการ">${opt(ops)}</optgroup>` : ''}
+            ${kitchen.length ? `<optgroup label="ฝ่ายครัว">${opt(kitchen)}</optgroup>` : ''}
+            ${common.length ? `<optgroup label="อื่นๆ">${opt(common)}</optgroup>` : ''}
+          </select>`;
+        })()}
         <select class="filter-select" id="empStatus">
           <option value="">ทุกสถานะ</option>
           <option value="active" ${empState.status === 'active' ? 'selected' : ''}>ปฏิบัติงาน</option>
-          <option value="pending" ${empState.status === 'pending' ? 'selected' : ''}>นัดพ้นสภาพ (ยังปฏิบัติงาน)</option>
+          <option value="pending" ${empState.status === 'pending' ? 'selected' : ''}>นัดพ้นสภาพ</option>
           <option value="resigned" ${empState.status === 'resigned' ? 'selected' : ''}>พ้นสภาพแล้ว</option>
         </select>
       </div>
@@ -388,7 +407,71 @@ function wireEmployeePage() {
     }, 200);
   });
   $('#empBranch')?.addEventListener('change', (e) => { empState.branch = e.target.value; empState.page = 1; renderEmployeeList(); });
+  $('#empPosition')?.addEventListener('change', (e) => { empState.position = e.target.value; empState.page = 1; renderEmployeeList(); });
   $('#empStatus')?.addEventListener('change', (e) => { empState.status = e.target.value; empState.page = 1; renderEmployeeList(); });
+
+  // คลิกหัวคอลัมน์ที่มี class .sortable → toggle sort
+  $('#empList')?.addEventListener('click', (e) => {
+    const th = e.target.closest('th.sortable');
+    if (!th) return;
+    const field = th.dataset.sort;
+    if (empState.sortBy === field) {
+      empState.sortDir = empState.sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      empState.sortBy = field;
+      empState.sortDir = 'asc';
+    }
+    empState.page = 1;
+    renderEmployeeList();
+  });
+}
+
+// Helper: sort indicator HTML for table headers
+function sortIcon(field) {
+  if (empState.sortBy !== field) return '<span class="sort-icon">↕</span>';
+  return empState.sortDir === 'asc'
+    ? '<span class="sort-icon active">↑</span>'
+    : '<span class="sort-icon active">↓</span>';
+}
+
+// Helper: apply sort to employee list based on empState.sortBy/sortDir
+function applyEmpSort(list) {
+  const field = empState.sortBy;
+  if (!field) return list;
+  const dir = empState.sortDir === 'desc' ? -1 : 1;
+  const todayYMD = parseYMD(tz.today());
+  const numeric = (s) => parseInt(String(s || '').replace(/\D/g, ''), 10) || 0;
+  const cmpStr = (a, b) => String(a || '').localeCompare(String(b || ''));
+  const cmpNum = (a, b) => a - b;
+  const monthsBetween = (d) => {
+    if (!d) return -1;
+    const ymd = parseYMD(d);
+    if (!ymd || !todayYMD) return -1;
+    return (todayYMD[0] - ymd[0]) * 12 + (todayYMD[1] - ymd[1]);
+  };
+  const ageYears = (d) => {
+    if (!d) return -1;
+    const ymd = parseYMD(d);
+    if (!ymd || !todayYMD) return -1;
+    return todayYMD[0] - ymd[0];
+  };
+  return list.slice().sort((a, b) => {
+    let cmp = 0;
+    switch (field) {
+      case 'id': cmp = cmpNum(numeric(a.id), numeric(b.id)); break;
+      case 'firstName': cmp = cmpStr(a.firstName, b.firstName); break;
+      case 'lastName': cmp = cmpStr(a.lastName, b.lastName); break;
+      case 'positionTitle': cmp = cmpStr(a.positionTitle, b.positionTitle); break;
+      case 'branch': cmp = cmpStr(a.branch, b.branch); break;
+      case 'hireDate': cmp = cmpStr(a.hireDate, b.hireDate); break;
+      case 'serviceMonths': cmp = cmpNum(monthsBetween(a.hireDate), monthsBetween(b.hireDate)); break;
+      case 'age': cmp = cmpNum(ageYears(a.dob), ageYears(b.dob)); break;
+      case 'salary': cmp = cmpNum(Number(a.salary || 0), Number(b.salary || 0)); break;
+      case 'terminationDate': cmp = cmpStr(a.terminationDate || '', b.terminationDate || ''); break;
+      default: return 0;
+    }
+    return cmp * dir;
+  });
 }
 
 function avatarThumb(e) {
@@ -398,7 +481,8 @@ function avatarThumb(e) {
 }
 
 function renderEmployeeList() {
-  const allList = DB.getEmployees(empState);
+  const filtered = DB.getEmployees(empState);
+  const allList = applyEmpSort(filtered);
   const total = allList.length;
   const pageSize = empState.pageSize;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -418,18 +502,18 @@ function renderEmployeeList() {
         <thead>
           <tr>
             <th class="num">ลำดับ</th>
-            <th>รหัสพนักงาน</th>
-            <th>ชื่อ</th>
-            <th>สกุล</th>
+            <th class="sortable" data-sort="id">รหัสพนักงาน ${sortIcon('id')}</th>
+            <th class="sortable" data-sort="firstName">ชื่อ ${sortIcon('firstName')}</th>
+            <th class="sortable" data-sort="lastName">สกุล ${sortIcon('lastName')}</th>
             <th>ชื่อเล่น</th>
-            <th>ตำแหน่ง</th>
-            <th>สาขา</th>
+            <th class="sortable" data-sort="positionTitle">ตำแหน่ง ${sortIcon('positionTitle')}</th>
+            <th class="sortable" data-sort="branch">สาขา ${sortIcon('branch')}</th>
             <th>ฝ่าย</th>
-            <th>วันเริ่มงาน</th>
-            <th>อายุงาน</th>
-            <th class="num">อายุ</th>
-            <th class="num">เงินเดือน</th>
-            <th>วันพ้นสภาพ</th>
+            <th class="sortable" data-sort="hireDate">วันเริ่มงาน ${sortIcon('hireDate')}</th>
+            <th class="sortable" data-sort="serviceMonths">อายุงาน ${sortIcon('serviceMonths')}</th>
+            <th class="num sortable" data-sort="age">อายุ ${sortIcon('age')}</th>
+            <th class="num sortable" data-sort="salary">เงินเดือน ${sortIcon('salary')}</th>
+            <th class="sortable" data-sort="terminationDate">วันพ้นสภาพ ${sortIcon('terminationDate')}</th>
             <th></th>
           </tr>
         </thead>

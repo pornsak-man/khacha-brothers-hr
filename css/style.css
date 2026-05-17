@@ -514,6 +514,32 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 }
 .table.table-compact th { font-size: 10.5px; padding: 10px 10px; }
 
+/* ── Sortable headers ── */
+.table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition);
+}
+.table th.sortable:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.sort-icon {
+  display: inline-block;
+  font-size: 11px;
+  margin-left: 4px;
+  opacity: 0.35;
+  font-weight: 400;
+  vertical-align: middle;
+}
+.sort-icon.active {
+  opacity: 1;
+  color: var(--primary);
+  font-weight: 700;
+}
+.table th.sortable:hover .sort-icon { opacity: 0.7; }
+.table th.sortable:hover .sort-icon.active { opacity: 1; }
+
 .badge {
   display: inline-flex; align-items: center; padding: 3px 10px;
   border-radius: var(--radius-full);

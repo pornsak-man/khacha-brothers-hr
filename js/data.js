@@ -240,6 +240,7 @@ const DB = {
       );
     }
     if (filter.branch) list = list.filter(e => e.branch === filter.branch);
+    if (filter.position) list = list.filter(e => e.position === filter.position);
     if (filter.department) list = list.filter(e => e.department === filter.department);
     if (filter.status) {
       // ใช้ effective status — รองรับ "active" (รวม pending) และ "resigned"
