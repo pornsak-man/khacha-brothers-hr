@@ -252,8 +252,31 @@ const DB = {
   _allowToDB: (a) => ({ employee_id: a.employeeId, month: a.month, type: a.type, amount: Number(a.amount), note: a.note }),
   _evalFromDB: (r) => ({ id: r.id, employeeId: r.employee_id, date: r.date, period: r.period || '', score: r.score, grade: r.grade || '', note: r.note || '' }),
   _evalToDB: (e) => ({ employee_id: e.employeeId, date: e.date, period: e.period, score: Number(e.score), grade: e.grade, note: e.note }),
-  _salFromDB: (r) => ({ id: r.id, employeeId: r.employee_id, date: r.date, oldSalary: Number(r.old_salary), newSalary: Number(r.new_salary), newPosition: r.new_position || '', newPositionTitle: r.new_position_title || '', reason: r.reason || '' }),
-  _salToDB: (s) => ({ employee_id: s.employeeId, date: s.date, old_salary: Number(s.oldSalary), new_salary: Number(s.newSalary), new_position: s.newPosition || null, new_position_title: s.newPositionTitle, reason: s.reason }),
+  _salFromDB: (r) => ({
+    id: r.id, employeeId: r.employee_id, date: r.date,
+    oldSalary: Number(r.old_salary || 0), newSalary: Number(r.new_salary || 0),
+    oldPosition: r.old_position || '', oldPositionTitle: r.old_position_title || '',
+    newPosition: r.new_position || '', newPositionTitle: r.new_position_title || '',
+    oldBranch: r.old_branch || '', newBranch: r.new_branch || '',
+    oldDepartment: r.old_department || '', newDepartment: r.new_department || '',
+    changeType: r.change_type || '',
+    reason: r.reason || ''
+  }),
+  _salToDB: (s) => ({
+    employee_id: s.employeeId, date: s.date,
+    old_salary: s.oldSalary != null ? Number(s.oldSalary) : null,
+    new_salary: s.newSalary != null ? Number(s.newSalary) : null,
+    old_position: s.oldPosition || null,
+    old_position_title: s.oldPositionTitle || null,
+    new_position: s.newPosition || null,
+    new_position_title: s.newPositionTitle || null,
+    old_branch: s.oldBranch || null,
+    new_branch: s.newBranch || null,
+    old_department: s.oldDepartment || null,
+    new_department: s.newDepartment || null,
+    change_type: s.changeType || null,
+    reason: s.reason || null
+  }),
   _calFromDB: (r) => ({ id: r.id, date: r.date, title: r.title, type: r.type || 'holiday' }),
   _calToDB: (c) => ({ date: c.date, title: c.title, type: c.type }),
   _applFromDB: (r) => ({
@@ -555,26 +578,72 @@ const DB = {
     return 'P' + String(max + 1).padStart(2, '0');
   },
 
-  // ─── SALARY HISTORY ───
+  // ─── EMPLOYEE CHANGE HISTORY (salary / position / branch / department) ───
   getSalaryHistory(employeeId = null) {
     let list = this.data.salaryHistory.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     if (employeeId) list = list.filter(s => s.employeeId === employeeId);
     return list;
   },
+  // Add change record + update employee with new values (current snapshot stays in employees table)
+  // rec จะมีฟิลด์ newSalary / newPosition / newPositionTitle / newBranch / newDepartment
+  // อย่างน้อย 1 อย่าง — ฟิลด์ old_* จะถูกเติมอัตโนมัติจาก state ปัจจุบันของพนักงาน
   async addSalaryAdjustment(rec) {
-    const { data, error } = await this.client.from('salary_history').insert(this._salToDB(rec)).select().single();
+    const emp = this.getEmployee(rec.employeeId);
+    if (!emp) throw new Error('ไม่พบพนักงาน: ' + rec.employeeId);
+
+    // กรอก old_* จาก current state ของพนักงาน — ทำให้ประวัติเป็น snapshot ที่สมบูรณ์
+    const enriched = {
+      ...rec,
+      oldSalary: rec.oldSalary != null ? rec.oldSalary : emp.salary,
+      oldPosition: rec.oldPosition || emp.position || '',
+      oldPositionTitle: rec.oldPositionTitle || emp.positionTitle || '',
+      oldBranch: rec.oldBranch || emp.branch || '',
+      oldDepartment: rec.oldDepartment || emp.department || ''
+    };
+
+    // คำนวณ change_type อัตโนมัติจากฟิลด์ที่เปลี่ยน
+    const changed = [];
+    if (enriched.newSalary != null && Number(enriched.newSalary) !== Number(enriched.oldSalary)) changed.push('salary');
+    if (enriched.newPosition && enriched.newPosition !== enriched.oldPosition) changed.push('position');
+    if (enriched.newBranch && enriched.newBranch !== enriched.oldBranch) changed.push('branch');
+    if (enriched.newDepartment && enriched.newDepartment !== enriched.oldDepartment) changed.push('department');
+    enriched.changeType = changed.length > 1 ? 'multiple' : (changed[0] || 'salary');
+
+    // Insert ประวัติ
+    const { data, error } = await this.client.from('salary_history').insert(this._salToDB(enriched)).select().single();
     if (error) throw error;
     const mapped = this._salFromDB(data);
     this.data.salaryHistory.unshift(mapped);
 
-    const emp = this.getEmployee(rec.employeeId);
-    if (emp) {
-      emp.salary = Number(rec.newSalary);
-      if (rec.newPosition) emp.position = rec.newPosition;
-      if (rec.newPositionTitle) emp.positionTitle = rec.newPositionTitle;
-      await this.saveEmployee(emp);
-    }
+    // Update employee state (snapshot ล่าสุด)
+    if (enriched.newSalary != null && Number(enriched.newSalary) > 0) emp.salary = Number(enriched.newSalary);
+    if (enriched.newPosition) emp.position = enriched.newPosition;
+    if (enriched.newPositionTitle) emp.positionTitle = enriched.newPositionTitle;
+    if (enriched.newBranch) emp.branch = enriched.newBranch;
+    if (enriched.newDepartment) emp.department = enriched.newDepartment;
+    await this.saveEmployee(emp);
+
     return mapped;
+  },
+
+  // Bulk insert changes — ใช้สำหรับ Excel import
+  // แต่ละแถวต้องมี employeeId; field new_* อย่างน้อย 1
+  async bulkAddSalaryAdjustments(rows, onProgress) {
+    const result = { inserted: 0, failed: 0, errors: [] };
+    for (let i = 0; i < rows.length; i++) {
+      try {
+        await this.addSalaryAdjustment(rows[i]);
+        result.inserted++;
+      } catch (ex) {
+        result.failed++;
+        result.errors.push({ row: i + 2, message: ex.message || String(ex) });
+      }
+      if (onProgress && (i % 10 === 0 || i === rows.length - 1)) {
+        onProgress(i + 1, rows.length);
+        await new Promise(r => requestAnimationFrame(r));
+      }
+    }
+    return result;
   },
 
   // ─── LOANS ───

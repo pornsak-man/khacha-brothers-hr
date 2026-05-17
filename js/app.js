@@ -262,7 +262,7 @@ const router = {
       departments: 'ฝ่าย',
       positions: 'ระดับตำแหน่ง',
       recruit: 'รับสมัครงาน',
-      'salary-adjust': 'ปรับเงินเดือน / ตำแหน่ง',
+      'salary-adjust': 'ปรับค่าจ้าง / ตำแหน่ง / สาขา',
       loans: 'การกู้เงินบริษัท',
       advances: 'เบิกเงินล่วงหน้า',
       allowance: 'เบี้ยเลี้ยงรายเดือน',
@@ -2897,32 +2897,77 @@ function renderApplicantImportPreview(rows, errors) {
 // ═══════════════════════════════════════════════════════
 //  PAGE: SALARY ADJUSTMENT
 // ═══════════════════════════════════════════════════════
+const CHANGE_TYPE_BADGE = {
+  salary:     { label: 'ปรับเงินเดือน',  cls: 'badge-info' },
+  position:   { label: 'ปรับตำแหน่ง',    cls: 'badge-success' },
+  branch:     { label: 'ย้ายสาขา',       cls: 'badge-warning' },
+  department: { label: 'ย้ายฝ่าย',        cls: 'badge-warning' },
+  multiple:   { label: 'ปรับหลายอย่าง',  cls: 'badge-danger' }
+};
+
 router.register('salary-adjust', () => {
   const history = DB.getSalaryHistory();
+  const fmtChange = (h) => {
+    const parts = [];
+    if (h.newSalary && Number(h.newSalary) !== Number(h.oldSalary)) {
+      const diff = Number(h.newSalary) - Number(h.oldSalary);
+      const sign = diff > 0 ? '+' : '';
+      parts.push(`💰 ${fmt.money(h.oldSalary)} → <strong>${fmt.money(h.newSalary)}</strong> <span style="color:${diff > 0 ? 'var(--success)' : 'var(--danger)'}">(${sign}${fmt.money(diff)})</span>`);
+    }
+    if (h.newPosition && h.newPosition !== h.oldPosition) {
+      const oldName = DB.getPosition(h.oldPosition)?.name || h.oldPositionTitle || '-';
+      const newName = DB.getPosition(h.newPosition)?.name || h.newPositionTitle || '-';
+      parts.push(`🎖️ ${escapeHtml(oldName)} → <strong>${escapeHtml(newName)}</strong>`);
+    } else if (h.newPositionTitle && h.newPositionTitle !== h.oldPositionTitle) {
+      parts.push(`🎖️ ${escapeHtml(h.oldPositionTitle || '-')} → <strong>${escapeHtml(h.newPositionTitle)}</strong>`);
+    }
+    if (h.newBranch && h.newBranch !== h.oldBranch) {
+      parts.push(`🏢 ${escapeHtml(h.oldBranch || '-')} → <strong>${escapeHtml(h.newBranch)}</strong>`);
+    }
+    if (h.newDepartment && h.newDepartment !== h.oldDepartment) {
+      const oldD = DB.getDepartment(h.oldDepartment)?.name || h.oldDepartment || '-';
+      const newD = DB.getDepartment(h.newDepartment)?.name || h.newDepartment;
+      parts.push(`📋 ${escapeHtml(oldD)} → <strong>${escapeHtml(newD)}</strong>`);
+    }
+    return parts.length ? parts.join('<br>') : '-';
+  };
+
   return `
-    <div class="page-header">
-      <h2>ปรับเงินเดือน / ตำแหน่ง</h2>
-      <div class="actions">${DB.isAdmin ? '<button class="btn btn-primary" onclick="openSalaryAdjustForm()">+ บันทึกการปรับ</button>' : ''}</div>
+    <div class="sw-page-header">
+      <div>
+        <div class="sw-page-title">ปรับค่าจ้าง / ตำแหน่ง / สาขา</div>
+        <div class="sw-page-subtitle">บันทึกการเปลี่ยนแปลงพนักงาน · ระบบจะอัปเดตทะเบียนพนักงานอัตโนมัติ</div>
+      </div>
+      <div class="sw-page-actions">
+        ${DB.isAdmin ? `
+          <button class="btn btn-secondary" onclick="openImportEmployeeChanges()">${ICON.upload}นำเข้า Excel</button>
+          <button class="btn btn-secondary" onclick="exportEmployeeChangesXLSX()">${ICON.download}ส่งออก Excel</button>
+          <button class="btn btn-primary" onclick="openSalaryAdjustForm()">+ บันทึกการปรับ</button>
+        ` : ''}
+      </div>
     </div>
-    <div class="card">
-      <div class="card-header"><div class="card-title">ประวัติการปรับเงินเดือน</div></div>
+    <div class="sw-chart-card">
+      <div class="sw-chart-title">ประวัติการปรับ · ${fmt.num(history.length)} รายการ</div>
+      <div class="sw-chart-sub">รวมทั้ง การปรับเงินเดือน, ปรับตำแหน่ง, ย้ายสาขา, ย้ายฝ่าย</div>
       ${history.length ? `
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>วันที่</th><th>พนักงาน</th><th class="num">เก่า</th><th class="num">ใหม่</th><th class="num">ส่วนต่าง</th><th>ตำแหน่งใหม่</th><th>เหตุผล</th></tr></thead>
+          <thead><tr><th>วันที่</th><th>พนักงาน</th><th>ประเภท</th><th>รายการเปลี่ยนแปลง</th><th>เหตุผล</th></tr></thead>
           <tbody>
-            ${history.map(h => { const e = DB.getEmployee(h.employeeId) || {}; return `<tr>
-                <td>${fmt.date(h.date)}</td>
-                <td>${escapeHtml(e.firstName + ' ' + (e.lastName || ''))} <span class="muted-2">(${escapeHtml(h.employeeId)})</span></td>
-                <td class="num">${fmt.money(h.oldSalary)}</td>
-                <td class="num">${fmt.money(h.newSalary)}</td>
-                <td class="num"><strong>${fmt.money(h.newSalary - h.oldSalary)}</strong></td>
-                <td>${escapeHtml(h.newPositionTitle || '-')}</td>
+            ${history.map(h => {
+              const e = DB.getEmployee(h.employeeId) || {};
+              const badge = CHANGE_TYPE_BADGE[h.changeType] || CHANGE_TYPE_BADGE.salary;
+              return `<tr>
+                <td style="white-space:nowrap">${fmt.date(h.date)}</td>
+                <td>${escapeHtml((e.firstName || '') + ' ' + (e.lastName || ''))} <span class="muted-2" style="font-size:12px">(${escapeHtml(h.employeeId)})</span></td>
+                <td><span class="badge ${badge.cls}">${badge.label}</span></td>
+                <td style="line-height:1.7">${fmtChange(h)}</td>
                 <td>${escapeHtml(h.reason || '-')}</td>
-              </tr>`; }).join('')}
+              </tr>`;
+            }).join('')}
           </tbody>
         </table>
-      </div>` : `<div class="empty-state"><div class="icon">${ICON.money}</div><div class="title">ยังไม่มีการปรับเงินเดือน</div></div>`}
+      </div>` : `<div class="empty-state"><div class="icon">${ICON.money}</div><div class="title">ยังไม่มีประวัติการปรับ</div><div class="hint">กดปุ่ม "+ บันทึกการปรับ" เพื่อเริ่มต้น</div></div>`}
     </div>`;
 });
 
@@ -2930,40 +2975,427 @@ function openSalaryAdjustForm() {
   if (!requireAdmin()) return;
   const emps = DB.getEmployees({ status: 'active' });
   const positions = DB.getPositions();
-  modal.open('บันทึกการปรับเงินเดือน', `
+  const depts = DB.getDepartments();
+  const branches = DB.getBranches();
+
+  modal.open('บันทึกการปรับ — ค่าจ้าง / ตำแหน่ง / สาขา', `
     <form id="adjForm">
-      <div class="form-grid">
-        <div class="form-group span-2"><label>พนักงาน *</label><select name="employeeId" id="adjEmp" required><option value="">- เลือกพนักงาน -</option>${emps.map(e => `<option value="${e.id}">${escapeHtml(e.id + ' — ' + e.firstName + ' ' + e.lastName + ' (' + fmt.money(e.salary) + ')')}</option>`).join('')}</select></div>
-        <div class="form-group"><label>วันที่ *</label><input name="date" type="date" value="${tz.today()}" required/></div>
-        <div class="form-group"><label>เงินเดือนเก่า</label><input id="adjOld" type="number" readonly /></div>
-        <div class="form-group"><label>เงินเดือนใหม่ *</label><input name="newSalary" type="number" min="0" step="100" required/></div>
-        <div class="form-group"><label>ระดับตำแหน่งใหม่</label><select name="newPosition"><option value="">- ไม่เปลี่ยน -</option>${positions.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}</select></div>
-        <div class="form-group span-2"><label>ชื่อตำแหน่งใหม่</label><input name="newPositionTitle"/></div>
-        <div class="form-group span-2"><label>เหตุผล</label><textarea name="reason" rows="2"></textarea></div>
+      <div class="form-section">
+        <h3>เลือกพนักงาน</h3>
+        <div class="form-grid">
+          <div class="form-group span-2"><label>พนักงาน *</label>
+            <select name="employeeId" id="adjEmp" required>
+              <option value="">— เลือกพนักงาน —</option>
+              ${emps.map(e => `<option value="${e.id}">${escapeHtml(e.id + ' — ' + e.firstName + ' ' + e.lastName)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group"><label>วันที่มีผล *</label><input name="date" type="date" value="${tz.today()}" required/></div>
+        </div>
       </div>
+
+      <div class="form-section">
+        <h3>สถานะปัจจุบัน <span class="muted-2" style="font-weight:normal;font-size:12px">(read-only)</span></h3>
+        <div class="form-grid">
+          <div class="form-group"><label>เงินเดือนเก่า</label><input id="adjOldSalary" type="text" readonly/></div>
+          <div class="form-group"><label>ตำแหน่งเก่า</label><input id="adjOldPosition" type="text" readonly/></div>
+          <div class="form-group"><label>สาขาเก่า</label><input id="adjOldBranch" type="text" readonly/></div>
+          <div class="form-group"><label>ฝ่ายเก่า</label><input id="adjOldDept" type="text" readonly/></div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>ค่าใหม่ <span class="muted-2" style="font-weight:normal;font-size:12px">(เปลี่ยนเฉพาะที่ต้องการ — ที่ไม่กรอกจะคงเดิม)</span></h3>
+        <div class="form-grid">
+          <div class="form-group"><label>เงินเดือนใหม่</label><input name="newSalary" type="number" min="0" step="100" placeholder="เว้นว่างถ้าไม่เปลี่ยน"/></div>
+          <div class="form-group"><label>ระดับตำแหน่งใหม่</label>
+            <select name="newPosition"><option value="">— ไม่เปลี่ยน —</option>${positions.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}</select>
+          </div>
+          <div class="form-group"><label>ชื่อตำแหน่งใหม่</label><input name="newPositionTitle" placeholder="เว้นว่างถ้าไม่เปลี่ยน"/></div>
+          <div class="form-group"><label>สาขาใหม่</label>
+            <input name="newBranch" list="dl-branches-adj" placeholder="เว้นว่างถ้าไม่ย้าย"/>
+            <datalist id="dl-branches-adj">${branches.map(b => `<option value="${escapeHtml(b)}">`).join('')}</datalist>
+          </div>
+          <div class="form-group span-2"><label>ฝ่ายใหม่</label>
+            <select name="newDepartment"><option value="">— ไม่ย้าย —</option>${depts.map(d => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join('')}</select>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>เหตุผล</h3>
+        <div class="form-grid">
+          <div class="form-group span-2"><textarea name="reason" rows="2" placeholder="เช่น ปรับขึ้นประจำปี, โปรโมท, ย้ายฐานการทำงาน"></textarea></div>
+        </div>
+      </div>
+
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" data-close>ยกเลิก</button>
         <button type="submit" class="btn btn-primary">บันทึก</button>
       </div>
-    </form>`);
+    </form>`, { size: 'lg' });
+
+  // เมื่อเลือกพนักงาน → เติม current state ลงในช่องอ่านอย่างเดียว
   $('#adjEmp').addEventListener('change', (e) => {
     const emp = DB.getEmployee(e.target.value);
-    $('#adjOld').value = emp ? emp.salary : 0;
+    $('#adjOldSalary').value = emp ? fmt.money(emp.salary) + ' บาท' : '';
+    $('#adjOldPosition').value = emp ? ((DB.getPosition(emp.position)?.name || '') + (emp.positionTitle ? ' · ' + emp.positionTitle : '')) : '';
+    $('#adjOldBranch').value = emp?.branch || '';
+    $('#adjOldDept').value = emp ? (DB.getDepartment(emp.department)?.name || '') : '';
   });
+
   $('#adjForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
       const data = Object.fromEntries(new FormData(e.target).entries());
       const emp = DB.getEmployee(data.employeeId);
-      if (!emp) return;
-      data.oldSalary = emp.salary;
-      data.newSalary = Number(data.newSalary);
-      await DB.addSalaryAdjustment(data);
+      if (!emp) { toast('กรุณาเลือกพนักงาน', 'error'); return; }
+
+      // ต้องเปลี่ยนอย่างน้อย 1 อย่าง
+      const hasChange = data.newSalary !== '' || data.newPosition || data.newPositionTitle || data.newBranch || data.newDepartment;
+      if (!hasChange) { toast('กรุณากรอกค่าใหม่อย่างน้อย 1 อย่าง', 'warning'); return; }
+
+      const rec = {
+        employeeId: data.employeeId,
+        date: data.date,
+        reason: data.reason || ''
+      };
+      if (data.newSalary !== '') rec.newSalary = Number(data.newSalary);
+      if (data.newPosition) rec.newPosition = data.newPosition;
+      if (data.newPositionTitle) rec.newPositionTitle = data.newPositionTitle;
+      if (data.newBranch) rec.newBranch = data.newBranch;
+      if (data.newDepartment) rec.newDepartment = data.newDepartment;
+
+      await DB.addSalaryAdjustment(rec);
       modal.close();
-      toast('บันทึกการปรับเงินเดือนแล้ว', 'success');
+      toast('บันทึกแล้ว — ทะเบียนพนักงานอัปเดตอัตโนมัติ', 'success');
       router.go('salary-adjust');
     } catch (ex) { toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
   });
+}
+
+// ─── EMPLOYEE CHANGES: Excel import / export / template ───
+const CHANGE_IMPORT_COLUMNS = [
+  'รหัสพนักงาน', 'วันที่มีผล',
+  'เงินเดือนใหม่', 'รหัสตำแหน่งใหม่', 'ชื่อตำแหน่งใหม่',
+  'สาขาใหม่', 'รหัสฝ่ายใหม่', 'เหตุผล'
+];
+
+function downloadEmployeeChangesTemplate() {
+  if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(downloadEmployeeChangesTemplate, 800); return; }
+
+  const sample = [
+    {
+      'รหัสพนักงาน': 1001, 'วันที่มีผล': '01/06/2026',
+      'เงินเดือนใหม่': 35000, 'รหัสตำแหน่งใหม่': 'P04', 'ชื่อตำแหน่งใหม่': 'หัวหน้าฝ่ายอาวุโส',
+      'สาขาใหม่': '', 'รหัสฝ่ายใหม่': '',
+      'เหตุผล': 'โปรโมทประจำปี'
+    },
+    {
+      'รหัสพนักงาน': 1002, 'วันที่มีผล': '01/06/2026',
+      'เงินเดือนใหม่': '', 'รหัสตำแหน่งใหม่': '', 'ชื่อตำแหน่งใหม่': '',
+      'สาขาใหม่': 'สาขาเซ็นทรัล', 'รหัสฝ่ายใหม่': '',
+      'เหตุผล': 'ย้ายมาช่วยสาขาใหม่'
+    },
+    {
+      'รหัสพนักงาน': 1003, 'วันที่มีผล': '15/06/2026',
+      'เงินเดือนใหม่': 20000, 'รหัสตำแหน่งใหม่': '', 'ชื่อตำแหน่งใหม่': '',
+      'สาขาใหม่': '', 'รหัสฝ่ายใหม่': 'D002',
+      'เหตุผล': 'ปรับขึ้น + ย้ายฝ่าย'
+    }
+  ];
+  const ws = XLSX.utils.json_to_sheet(sample, { header: CHANGE_IMPORT_COLUMNS });
+  ws['!cols'] = CHANGE_IMPORT_COLUMNS.map(k => ({ wch: Math.max(k.length + 2, 16) }));
+
+  const depts = DB.getDepartments().map(d => `${d.id} = ${d.name}`).join('\n');
+  const positions = DB.getPositions().map(p => `${p.id} = ${p.name}`).join('\n');
+  const notes = [
+    ['คำแนะนำการกรอกข้อมูลการปรับ — ค่าจ้าง / ตำแหน่ง / สาขา / ฝ่าย'],
+    [''],
+    ['ฟิลด์ที่จำเป็น:'],
+    ['• รหัสพนักงาน — ต้องมีในระบบแล้ว (ระบบจะ update ทะเบียนพนักงานเป็นค่าใหม่)'],
+    ['• วันที่มีผล — ใส่ DD/MM/YYYY หรือ Excel Date'],
+    [''],
+    ['ฟิลด์ค่าใหม่ (กรอกอย่างน้อย 1 อย่าง — ที่ไม่กรอกระบบจะคงเดิม):'],
+    ['• เงินเดือนใหม่ — ตัวเลข ไม่ใส่ comma'],
+    ['• รหัสตำแหน่งใหม่ — เช่น P03, P04 (ดูรหัสด้านล่าง)'],
+    ['• ชื่อตำแหน่งใหม่ — ข้อความ'],
+    ['• สาขาใหม่ — ชื่อสาขาที่ต้องการย้ายไป'],
+    ['• รหัสฝ่ายใหม่ — เช่น D001 (ดูรหัสด้านล่าง)'],
+    [''],
+    ['การทำงานของระบบ:'],
+    ['• แต่ละแถวจะถูกบันทึกเป็น "ประวัติการปรับ" 1 รายการ'],
+    ['• ทะเบียนพนักงานจะถูก update ตามค่าใหม่ทันที (snapshot ล่าสุด)'],
+    ['• ค่าเก่า (old_*) ระบบจะดึงจาก state ปัจจุบันของพนักงานเอง — ไม่ต้องกรอก'],
+    ['• change_type คำนวณอัตโนมัติจากฟิลด์ที่เปลี่ยน'],
+    [''],
+    ['รูปแบบวันที่:'],
+    ['• DD/MM/YYYY  เช่น 01/06/2026  หรือ 01/06/2569 (พ.ศ.)'],
+    ['• YYYY-MM-DD  เช่น 2026-06-01  (ISO)'],
+    ['• Excel Date cell'],
+    [''],
+    ['รหัสฝ่ายที่มีในระบบ:'],
+    ...depts.split('\n').map(s => ['• ' + s]),
+    [''],
+    ['รหัสตำแหน่งที่มีในระบบ:'],
+    ...positions.split('\n').map(s => ['• ' + s])
+  ];
+  const wsNotes = XLSX.utils.aoa_to_sheet(notes);
+  wsNotes['!cols'] = [{ wch: 80 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'การปรับ');
+  XLSX.utils.book_append_sheet(wb, wsNotes, 'คำแนะนำ');
+  XLSX.writeFile(wb, 'template-คชา-นำเข้าการปรับ.xlsx');
+  toast('ดาวน์โหลด template แล้ว', 'success');
+}
+
+function exportEmployeeChangesXLSX() {
+  if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(exportEmployeeChangesXLSX, 800); return; }
+  const list = DB.getSalaryHistory();
+  if (!list.length) { toast('ยังไม่มีประวัติการปรับ', 'warning'); return; }
+  const cs = csvSafe;
+  const typeLabel = { salary: 'ปรับเงินเดือน', position: 'ปรับตำแหน่ง', branch: 'ย้ายสาขา', department: 'ย้ายฝ่าย', multiple: 'ปรับหลายอย่าง' };
+  const rows = list.map(h => {
+    const e = DB.getEmployee(h.employeeId) || {};
+    return {
+      'วันที่': excelDate(h.date),
+      'รหัสพนักงาน': excelNum(h.employeeId),
+      'ชื่อ-นามสกุล': cs((e.firstName || '') + ' ' + (e.lastName || '')),
+      'ประเภท': cs(typeLabel[h.changeType] || '-'),
+      'เงินเดือนเก่า': Number(h.oldSalary || 0),
+      'เงินเดือนใหม่': Number(h.newSalary || 0),
+      'ส่วนต่าง': Number((h.newSalary || 0) - (h.oldSalary || 0)),
+      'รหัสตำแหน่งเก่า': cs(h.oldPosition),
+      'ชื่อตำแหน่งเก่า': cs(h.oldPositionTitle),
+      'รหัสตำแหน่งใหม่': cs(h.newPosition),
+      'ชื่อตำแหน่งใหม่': cs(h.newPositionTitle),
+      'สาขาเก่า': cs(h.oldBranch),
+      'สาขาใหม่': cs(h.newBranch),
+      'รหัสฝ่ายเก่า': cs(h.oldDepartment),
+      'รหัสฝ่ายใหม่': cs(h.newDepartment),
+      'เหตุผล': cs(h.reason)
+    };
+  });
+  const ws = XLSX.utils.json_to_sheet(rows, { cellDates: true, dateNF: 'dd mmm yyyy' });
+  const headerKeys = Object.keys(rows[0] || {});
+  const idIdx = headerKeys.indexOf('รหัสพนักงาน');
+  if (idIdx >= 0) setColumnFormat(ws, idIdx, '0');
+  for (const col of ['เงินเดือนเก่า', 'เงินเดือนใหม่', 'ส่วนต่าง']) {
+    const idx = headerKeys.indexOf(col);
+    if (idx >= 0) setColumnFormat(ws, idx, '#,##0');
+  }
+  ws['!cols'] = headerKeys.map(k => {
+    if (k === 'วันที่') return { wch: 13 };
+    if (k === 'รหัสพนักงาน') return { wch: 10 };
+    if (k === 'ชื่อ-นามสกุล') return { wch: 22 };
+    if (k === 'ประเภท' || k === 'เหตุผล') return { wch: 20 };
+    return { wch: 14 };
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'ประวัติการปรับ');
+  XLSX.writeFile(wb, `คชา-การปรับ-${tz.today()}.xlsx`);
+  toast('ส่งออกไฟล์ Excel แล้ว', 'success');
+}
+
+function parseImportChangeRow(row) {
+  const get = (k) => (row[k] == null ? '' : String(row[k])).trim();
+  const num = (k) => {
+    const v = row[k];
+    if (v == null || v === '') return null;
+    return Number(v);
+  };
+  const parseDate = (k) => {
+    const v = row[k];
+    if (!v) return '';
+    if (v instanceof Date) return v.toLocaleDateString('en-CA', { timeZone: TZ });
+    const s = String(v).trim();
+    if (!s) return '';
+    const yToCE = (y) => (y >= 2400 ? y - 543 : y);
+    const pad = (n) => String(n).padStart(2, '0');
+    let m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/);
+    if (m) return `${yToCE(+m[1])}-${pad(+m[2])}-${pad(+m[3])}`;
+    m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/);
+    if (m) return `${yToCE(+m[3])}-${pad(+m[2])}-${pad(+m[1])}`;
+    return s;
+  };
+  return {
+    employeeId: get('รหัสพนักงาน'),
+    date: parseDate('วันที่มีผล') || tz.today(),
+    newSalary: num('เงินเดือนใหม่'),
+    newPosition: get('รหัสตำแหน่งใหม่'),
+    newPositionTitle: get('ชื่อตำแหน่งใหม่'),
+    newBranch: get('สาขาใหม่'),
+    newDepartment: get('รหัสฝ่ายใหม่'),
+    reason: get('เหตุผล')
+  };
+}
+
+function validateImportChangeRows(rows) {
+  const errors = [];
+  const empIds = new Set(DB.data.employees.map(e => String(e.id)));
+  const deptIds = new Set(DB.getDepartments().map(d => d.id));
+  const posIds = new Set(DB.getPositions().map(p => p.id));
+  rows.forEach((r, i) => {
+    const rowNum = i + 2;
+    if (!r.employeeId) { errors.push({ row: rowNum, msg: 'รหัสพนักงานว่าง' }); return; }
+    if (!empIds.has(String(r.employeeId))) errors.push({ row: rowNum, msg: `ไม่พบรหัสพนักงาน: ${r.employeeId}` });
+    if (r.newPosition && !posIds.has(r.newPosition)) errors.push({ row: rowNum, msg: `รหัสตำแหน่งไม่มีในระบบ: ${r.newPosition}` });
+    if (r.newDepartment && !deptIds.has(r.newDepartment)) errors.push({ row: rowNum, msg: `รหัสฝ่ายไม่มีในระบบ: ${r.newDepartment}` });
+    // ต้องมี new_* อย่างน้อย 1 อย่าง
+    const hasChange = r.newSalary != null || r.newPosition || r.newPositionTitle || r.newBranch || r.newDepartment;
+    if (!hasChange) errors.push({ row: rowNum, msg: 'ไม่มีค่าใหม่อย่างน้อย 1 อย่าง' });
+  });
+  return errors;
+}
+
+async function readChangesExcelFile(file) {
+  if (file.size > EXCEL_MAX_MB * 1024 * 1024) {
+    throw new Error(`ไฟล์ใหญ่เกิน ${EXCEL_MAX_MB} MB`);
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        await new Promise(r => setTimeout(r, 0));
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
+        const sheetName = wb.SheetNames.find(n => n.includes('การปรับ') || n.includes('ปรับ')) || wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        await new Promise(r => setTimeout(r, 0));
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        resolve(rows.map(parseImportChangeRow));
+      } catch (ex) { reject(ex); }
+    };
+    reader.onerror = () => reject(new Error('อ่านไฟล์ไม่สำเร็จ'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function openImportEmployeeChanges() {
+  if (!requireAdmin()) return;
+  modal.open('นำเข้าการปรับ (Excel)', `
+    <div class="import-flow">
+      <div class="import-step">
+        <div class="import-step-num">1</div>
+        <div class="import-step-body">
+          <div class="import-step-title">ดาวน์โหลด Template</div>
+          <div class="muted-2" style="font-size:13px;margin-bottom:8px">มีตัวอย่าง 3 แถว — ปรับเงินเดือน, ย้ายสาขา, ปรับหลายอย่างพร้อมกัน</div>
+          <button class="btn btn-secondary btn-sm" onclick="downloadEmployeeChangesTemplate()">${ICON.download}ดาวน์โหลด Template</button>
+        </div>
+      </div>
+      <div class="import-step">
+        <div class="import-step-num">2</div>
+        <div class="import-step-body">
+          <div class="import-step-title">เลือกไฟล์ Excel ที่กรอกแล้ว</div>
+          <input type="file" accept=".xlsx,.xls,.csv" id="chgImportFile" class="import-file">
+        </div>
+      </div>
+      <div id="chgImportBody"></div>
+    </div>
+  `, {
+    size: 'lg',
+    footer: `<button class="btn btn-secondary" data-close>ปิด</button><button class="btn btn-primary" id="chgImportStartBtn" disabled>เริ่มนำเข้า</button>`
+  });
+
+  let parsedRows = null;
+  let validationErrors = [];
+
+  $('#chgImportFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    $('#chgImportBody').innerHTML = '<div class="muted-2 mt-4">กำลังอ่านไฟล์...</div>';
+    try {
+      parsedRows = await readChangesExcelFile(file);
+      validationErrors = validateImportChangeRows(parsedRows);
+      $('#chgImportBody').innerHTML = renderChangeImportPreview(parsedRows, validationErrors);
+      $('#chgImportStartBtn').disabled = validationErrors.length > 0 || parsedRows.length === 0;
+    } catch (ex) {
+      $('#chgImportBody').innerHTML = `<div class="card mt-4" style="border-color:var(--danger);color:var(--danger)">อ่านไฟล์ไม่สำเร็จ: ${escapeHtml(ex.message)}</div>`;
+      $('#chgImportStartBtn').disabled = true;
+    }
+  });
+
+  $('#chgImportStartBtn').addEventListener('click', async () => {
+    if (!parsedRows || !parsedRows.length) return;
+    $('#chgImportStartBtn').disabled = true;
+    $('#chgImportBody').innerHTML = `
+      <div class="card mt-4">
+        <div style="margin-bottom:10px">กำลังนำเข้า <strong id="chgProgressText">0</strong> / <strong>${parsedRows.length.toLocaleString()}</strong></div>
+        <div class="progress-bar"><div class="progress-fill" id="chgProgressFill" style="width:0%"></div></div>
+        <div class="muted-2 mt-2" style="font-size:12px">บันทึกประวัติ + อัปเดตทะเบียนพนักงานทีละแถว — ห้ามปิดหน้าต่างนี้</div>
+      </div>
+    `;
+    const start = performance.now();
+    const result = await DB.bulkAddSalaryAdjustments(parsedRows, (done, total) => {
+      const pct = (done / total) * 100;
+      const fill = $('#chgProgressFill');
+      const text = $('#chgProgressText');
+      if (fill) fill.style.width = pct + '%';
+      if (text) text.textContent = done.toLocaleString();
+    });
+    const elapsed = ((performance.now() - start) / 1000).toFixed(1);
+
+    $('#chgImportBody').innerHTML = `
+      <div class="card mt-4">
+        <div style="font-size:16px;font-weight:600;color:var(--success);margin-bottom:8px">✓ นำเข้าสำเร็จ</div>
+        <div style="font-size:14px;line-height:1.8">
+          • สำเร็จ: <strong>${result.inserted.toLocaleString()}</strong> รายการ<br>
+          ${result.failed ? `• ผิดพลาด: <strong style="color:var(--danger)">${result.failed.toLocaleString()}</strong> รายการ<br>` : ''}
+          • ใช้เวลา: <strong>${elapsed}</strong> วินาที
+        </div>
+        ${result.errors.length ? `
+          <details class="mt-2" style="font-size:13px">
+            <summary style="cursor:pointer;color:var(--danger)">ดูข้อผิดพลาด (${result.errors.length})</summary>
+            <ul style="margin-top:6px;padding-left:20px;max-height:200px;overflow-y:auto">${result.errors.slice(0, 50).map(e => `<li>แถวที่ ${e.row}: ${escapeHtml(e.message)}</li>`).join('')}</ul>
+          </details>
+        ` : ''}
+      </div>
+    `;
+    parsedRows = null;
+    const finishBtn = $('#chgImportStartBtn');
+    finishBtn.textContent = 'เสร็จสิ้น';
+    finishBtn.disabled = false;
+    finishBtn.setAttribute('data-close', '');
+    if (router.current === 'salary-adjust') router.go('salary-adjust');
+  });
+}
+
+function renderChangeImportPreview(rows, errors) {
+  const sample = rows.slice(0, 5);
+  return `
+    <div class="card mt-4">
+      <div class="flex items-center gap-2" style="margin-bottom:10px;flex-wrap:wrap">
+        <strong>พบ ${rows.length.toLocaleString()} แถว</strong>
+        ${errors.length
+          ? `<span class="badge badge-danger">${errors.length} ข้อผิดพลาด</span>`
+          : '<span class="badge badge-success">พร้อมนำเข้า</span>'}
+      </div>
+      ${errors.length ? `
+        <div style="background:var(--danger-soft);border-radius:8px;padding:12px;max-height:180px;overflow-y:auto;font-size:12.5px;margin-bottom:12px">
+          <strong style="color:var(--danger-text)">ข้อผิดพลาดที่ต้องแก้ก่อน Import:</strong>
+          <ul style="margin-top:6px;padding-left:20px">
+            ${errors.slice(0, 30).map(e => `<li>แถวที่ ${e.row}: ${escapeHtml(e.msg)}</li>`).join('')}
+            ${errors.length > 30 ? `<li>... และอีก ${errors.length - 30} ข้อ</li>` : ''}
+          </ul>
+        </div>
+      ` : ''}
+      <div style="font-size:12.5px;margin-bottom:6px"><strong>ตัวอย่าง 5 แถวแรก:</strong></div>
+      <div class="table-wrap">
+        <table class="table" style="font-size:12.5px">
+          <thead><tr><th>รหัส</th><th>วันที่</th><th class="num">เงินเดือน</th><th>ตำแหน่ง</th><th>สาขา</th><th>ฝ่าย</th></tr></thead>
+          <tbody>
+            ${sample.map(r => `<tr>
+              <td>${escapeHtml(r.employeeId || '-')}</td>
+              <td>${escapeHtml(r.date)}</td>
+              <td class="num">${r.newSalary != null ? fmt.money(r.newSalary) : '-'}</td>
+              <td>${escapeHtml(r.newPositionTitle || r.newPosition || '-')}</td>
+              <td>${escapeHtml(r.newBranch || '-')}</td>
+              <td>${escapeHtml(r.newDepartment || '-')}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 // ═══════════════════════════════════════════════════════
