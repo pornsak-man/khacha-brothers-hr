@@ -245,9 +245,10 @@ const DB = {
     this.data.employees = this.data.employees.filter(e => e.id !== id);
   },
   nextEmployeeId() {
+    // รหัสพนักงาน: ตัวเลขล้วน zero-padded 5 หลัก (เช่น "00008", "62002")
     const nums = this.data.employees.map(e => parseInt(String(e.id).replace(/\D/g, ''), 10)).filter(n => !isNaN(n));
     const max = nums.length ? Math.max(...nums) : 0;
-    return 'KB' + String(max + 1).padStart(4, '0');
+    return String(max + 1).padStart(5, '0');
   },
 
   // ─── PHOTOS ───
