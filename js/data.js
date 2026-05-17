@@ -618,6 +618,30 @@ const DB = {
     if (error) throw error;
   },
 
+  // ─── PROBATION DUE — พนักงานที่อายุงานครบ N วันในเดือนนี้ ───
+  // 90 = ครบทดลองงาน, 119 = ก่อนครบ 120 วัน (deadline กฎหมายแรงงาน)
+  getProbationDue(days) {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+    const [ty, tm] = today.split('-').map(Number);
+    const results = [];
+    for (const e of this.data.employees) {
+      if (this.empStatus(e) === 'resigned') continue;
+      if (!e.hireDate) continue;
+      const m = String(e.hireDate).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (!m) continue;
+      const hire = new Date(+m[1], +m[2] - 1, +m[3]);
+      const reach = new Date(hire.getTime() + days * 86400000);
+      if (reach.getFullYear() === ty && reach.getMonth() + 1 === tm) {
+        const ry = reach.getFullYear();
+        const rm = String(reach.getMonth() + 1).padStart(2, '0');
+        const rd = String(reach.getDate()).padStart(2, '0');
+        results.push({ ...e, reachDate: `${ry}-${rm}-${rd}` });
+      }
+    }
+    results.sort((a, b) => a.reachDate.localeCompare(b.reachDate));
+    return results;
+  },
+
   // ─── DASHBOARD KPI (Safari-style) ───
   getDashboardKPI() {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });

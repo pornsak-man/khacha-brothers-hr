@@ -285,6 +285,8 @@ router.register('dashboard', () => {
     .filter(e => DB.empStatus(e) !== 'resigned')
     .sort((a, b) => (b.hireDate || '').localeCompare(a.hireDate || ''))
     .slice(0, 10);
+  const reach90 = DB.getProbationDue(90);
+  const reach119 = DB.getProbationDue(119);
 
   window.afterRender = () => renderDashboardCharts(s, monthly, null);
 
@@ -330,6 +332,50 @@ router.register('dashboard', () => {
         <div class="sw-stat-change">${tvLabel} · YTD ${kpi.turnoverYTD.toFixed(2)}%</div>
       </div>
     </div>
+
+    ${(reach90.length || reach119.length) ? `
+    <div class="sw-charts-grid">
+      <div class="sw-chart-card" style="border-left:4px solid var(--warning)">
+        <div class="sw-chart-title">⚠️ ครบทดลองงาน 90 วัน — เดือนนี้
+          <span class="badge badge-warning" style="margin-left:8px;font-size:11.5px">${reach90.length} คน</span>
+        </div>
+        <div class="sw-chart-sub">ครบกำหนดทดลองงาน — ควรประเมินผลก่อนตัดสินใจ</div>
+        <div style="max-height:320px;overflow-y:auto">
+          ${reach90.length ? reach90.map((e, i) => `
+            <div class="sw-recent-item" onclick="viewEmployee('${escapeHtml(e.id)}')">
+              <div class="probation-rank amber">${i + 1}</div>
+              <div class="sw-recent-info">
+                <div class="sw-recent-name">${escapeHtml((e.title || '') + e.firstName + ' ' + e.lastName)}</div>
+                <div class="sw-recent-sub">${escapeHtml(e.positionTitle || '-')} · ${escapeHtml(e.branch || '-')}</div>
+              </div>
+              <div style="text-align:right;flex-shrink:0">
+                <div style="font-size:11px;color:var(--text-3)">ครบกำหนด</div>
+                <div style="font-size:13px;font-weight:600;color:var(--warning)">${fmt.date(e.reachDate)}</div>
+              </div>
+            </div>`).join('') : '<div style="padding:30px;text-align:center;color:var(--text-3);font-size:13px">— ไม่มีพนักงานที่ครบ 90 วันในเดือนนี้ —</div>'}
+        </div>
+      </div>
+      <div class="sw-chart-card" style="border-left:4px solid var(--danger)">
+        <div class="sw-chart-title">🚨 ครบ 119 วัน (ก่อนครบ 120 วัน) — เดือนนี้
+          <span class="badge badge-danger" style="margin-left:8px;font-size:11.5px">${reach119.length} คน</span>
+        </div>
+        <div class="sw-chart-sub">ต้องตัดสินใจก่อนครบ 120 วัน (เลิกจ้างต้องจ่ายค่าชดเชยตามกฎหมาย)</div>
+        <div style="max-height:320px;overflow-y:auto">
+          ${reach119.length ? reach119.map((e, i) => `
+            <div class="sw-recent-item" onclick="viewEmployee('${escapeHtml(e.id)}')">
+              <div class="probation-rank red">${i + 1}</div>
+              <div class="sw-recent-info">
+                <div class="sw-recent-name">${escapeHtml((e.title || '') + e.firstName + ' ' + e.lastName)}</div>
+                <div class="sw-recent-sub">${escapeHtml(e.positionTitle || '-')} · ${escapeHtml(e.branch || '-')}</div>
+              </div>
+              <div style="text-align:right;flex-shrink:0">
+                <div style="font-size:11px;color:var(--text-3)">ครบกำหนด</div>
+                <div style="font-size:13px;font-weight:600;color:var(--danger)">${fmt.date(e.reachDate)}</div>
+              </div>
+            </div>`).join('') : '<div style="padding:30px;text-align:center;color:var(--text-3);font-size:13px">— ไม่มีพนักงานที่ครบ 119 วันในเดือนนี้ —</div>'}
+        </div>
+      </div>
+    </div>` : ''}
 
     <div class="sw-charts-grid">
       <div class="sw-chart-card">
