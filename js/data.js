@@ -710,6 +710,29 @@ const DB = {
     if (idx >= 0) this.data.applicants[idx] = mapped;
     return mapped;
   },
+  // Bulk insert applicants — ใช้สำหรับ import จาก Excel
+  async bulkInsertApplicants(rows, onProgress) {
+    const CHUNK = 100;
+    const result = { inserted: 0, failed: 0, errors: [] };
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK).map(r => this._applToDB(r));
+      const { data, error } = await this.client.from('applicants').insert(chunk).select();
+      if (error) {
+        result.failed += chunk.length;
+        result.errors.push({ chunk: i / CHUNK + 1, message: error.message });
+      } else {
+        result.inserted += data.length;
+        for (const row of data) {
+          const mapped = this._applFromDB(row);
+          this.data.applicants.unshift(mapped);
+        }
+      }
+      if (onProgress) onProgress(Math.min(i + CHUNK, rows.length), rows.length);
+      await new Promise(r => requestAnimationFrame(r));
+    }
+    return result;
+  },
+
   getApplicantStats() {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
     const thisMonth = today.slice(0, 7);

@@ -2250,7 +2250,11 @@ router.register('recruit', () => {
         <div class="sw-page-subtitle">จัดการผู้สมัคร · ติดตามสถานะ · รับเข้าทำงาน</div>
       </div>
       <div class="sw-page-actions">
-        ${DB.isAdmin ? `<button class="btn btn-primary" onclick="openApplicantForm()">+ เพิ่มผู้สมัคร</button>` : ''}
+        ${DB.isAdmin ? `
+          <button class="btn btn-secondary" onclick="openImportApplicants()">${ICON.upload}นำเข้า Excel</button>
+          <button class="btn btn-secondary" onclick="exportApplicantsXLSX()">${ICON.download}ส่งออก Excel</button>
+          <button class="btn btn-primary" onclick="openApplicantForm()">+ เพิ่มผู้สมัคร</button>
+        ` : ''}
       </div>
     </div>
 
@@ -2495,6 +2499,335 @@ function hireApplicant(applicantId) {
       }
     }
   );
+}
+
+// ─── RECRUIT EXCEL: import / export / template ───
+const APPL_IMPORT_COLUMNS = [
+  'ชื่อ', 'นามสกุล', 'ชื่อเล่น', 'เบอร์โทร', 'อีเมล',
+  'รหัสระดับตำแหน่ง', 'ชื่อตำแหน่ง', 'รหัสฝ่าย', 'สาขา',
+  'เงินเดือนที่ขอ', 'ช่องทาง', 'สถานะ',
+  'วันที่สมัคร', 'วันสัมภาษณ์', 'วันตัดสินใจ', 'หมายเหตุ'
+];
+
+// Map ไทย ↔ EN status — ยอมรับหลายรูปแบบเพื่อความยืดหยุ่นในการ import
+const APPL_STATUS_TO_EN = {
+  'สมัครใหม่': 'new', 'ใหม่': 'new', 'new': 'new',
+  'นัดสัมภาษณ์': 'screening', 'รอสัมภาษณ์': 'screening', 'screening': 'screening',
+  'สัมภาษณ์แล้ว': 'interviewed', 'interviewed': 'interviewed',
+  'ผ่าน': 'passed', 'ผ่านการคัดเลือก': 'passed', 'passed': 'passed',
+  'ไม่ผ่าน': 'rejected', 'ตกสัมภาษณ์': 'rejected', 'rejected': 'rejected',
+  'รับเข้าทำงาน': 'hired', 'รับเข้า': 'hired', 'hired': 'hired'
+};
+
+function downloadApplicantTemplate() {
+  if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(downloadApplicantTemplate, 800); return; }
+
+  // ตัวอย่าง 2 แถว — ครอบคลุมหลายสถานะ
+  const sample = [
+    {
+      'ชื่อ': 'สมชาย', 'นามสกุล': 'ใจดี', 'ชื่อเล่น': 'ชาย',
+      'เบอร์โทร': '081-234-5678', 'อีเมล': 'somchai@example.com',
+      'รหัสระดับตำแหน่ง': 'P03', 'ชื่อตำแหน่ง': 'Service',
+      'รหัสฝ่าย': 'D001', 'สาขา': 'สาขาหลัก',
+      'เงินเดือนที่ขอ': 15000, 'ช่องทาง': 'Walk-in', 'สถานะ': 'สมัครใหม่',
+      'วันที่สมัคร': '15/05/2026', 'วันสัมภาษณ์': '', 'วันตัดสินใจ': '',
+      'หมายเหตุ': 'มีประสบการณ์ร้านอาหาร 2 ปี'
+    },
+    {
+      'ชื่อ': 'สุดา', 'นามสกุล': 'มีฝีมือ', 'ชื่อเล่น': 'ดา',
+      'เบอร์โทร': '089-876-5432', 'อีเมล': 'suda@example.com',
+      'รหัสระดับตำแหน่ง': 'P05', 'ชื่อตำแหน่ง': 'Chef',
+      'รหัสฝ่าย': 'D002', 'สาขา': 'สาขาเซ็นทรัล',
+      'เงินเดือนที่ขอ': 22000, 'ช่องทาง': 'JobsDB', 'สถานะ': 'นัดสัมภาษณ์',
+      'วันที่สมัคร': '10/05/2026', 'วันสัมภาษณ์': '20/05/2026', 'วันตัดสินใจ': '',
+      'หมายเหตุ': ''
+    }
+  ];
+  const ws = XLSX.utils.json_to_sheet(sample, { header: APPL_IMPORT_COLUMNS });
+  ws['!cols'] = APPL_IMPORT_COLUMNS.map(k => ({ wch: Math.max(k.length + 2, 14) }));
+
+  // Sheet "คำแนะนำ" — ครอบคลุมรูปแบบและ valid values
+  const depts = DB.getDepartments().map(d => `${d.id} = ${d.name}`).join('\n');
+  const positions = DB.getPositions().map(p => `${p.id} = ${p.name}`).join('\n');
+  const notes = [
+    ['คำแนะนำการกรอกข้อมูลผู้สมัครงาน'],
+    [''],
+    ['ฟิลด์ที่จำเป็น:'],
+    ['• ชื่อ — ต้องมีอย่างน้อย'],
+    ['• วันที่สมัคร — ถ้าไม่ระบุ ระบบใส่วันนี้ให้อัตโนมัติ'],
+    [''],
+    ['รูปแบบวันที่:'],
+    ['• DD/MM/YYYY  เช่น 15/05/2026  หรือ 15/05/2569 (พ.ศ.)'],
+    ['• YYYY-MM-DD  เช่น 2026-05-15  (ISO standard)'],
+    ['• Excel Date cell (ฟอร์แมตเป็นวันที่ใน Excel)'],
+    ['• ปี พ.ศ. (>2400) → ระบบแปลงเป็น ค.ศ. อัตโนมัติ'],
+    [''],
+    ['สถานะที่รองรับ:'],
+    ['• สมัครใหม่ — เพิ่งรับใบสมัคร (default)'],
+    ['• นัดสัมภาษณ์ — กำหนดวันสัมภาษณ์แล้ว'],
+    ['• สัมภาษณ์แล้ว — รอตัดสินใจ'],
+    ['• ผ่าน — ผ่านการคัดเลือก รอเริ่มงาน'],
+    ['• ไม่ผ่าน — ตกการคัดเลือก'],
+    ['• รับเข้าทำงาน — เป็นพนักงานแล้ว'],
+    [''],
+    ['ช่องทางที่แนะนำ:'],
+    ['• Walk-in, JobsDB, LINE, Facebook, แนะนำ, อื่นๆ'],
+    ['• พิมพ์อื่นๆ ได้ (ระบบเก็บเป็น text)'],
+    [''],
+    ['รหัสฝ่ายที่มีในระบบ:'],
+    ...depts.split('\n').map(s => ['• ' + s]),
+    [''],
+    ['รหัสระดับตำแหน่งที่มีในระบบ:'],
+    ...positions.split('\n').map(s => ['• ' + s]),
+    [''],
+    ['การ Import:'],
+    ['• ระบบจะ INSERT เป็น record ใหม่ทุกแถว — ไม่ overwrite ของเดิม'],
+    ['• ถ้าผู้สมัครซ้ำ ค่อยลบในระบบทีหลัง'],
+    ['• ห้ามใส่ข้อมูลใน sheet "คำแนะนำ" — กรอกแค่ sheet "ผู้สมัคร"']
+  ];
+  const wsNotes = XLSX.utils.aoa_to_sheet(notes);
+  wsNotes['!cols'] = [{ wch: 80 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'ผู้สมัคร');
+  XLSX.utils.book_append_sheet(wb, wsNotes, 'คำแนะนำ');
+  XLSX.writeFile(wb, 'template-คชา-นำเข้าผู้สมัคร.xlsx');
+  toast('ดาวน์โหลด template แล้ว', 'success');
+}
+
+function exportApplicantsXLSX() {
+  if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(exportApplicantsXLSX, 800); return; }
+  const list = DB.getApplicants();
+  if (!list.length) { toast('ยังไม่มีข้อมูลผู้สมัคร', 'warning'); return; }
+  const cs = csvSafe;
+  const statusToTH = Object.fromEntries(Object.entries(APPL_STATUS).map(([k, v]) => [k, v.label]));
+  const rows = list.map(a => ({
+    'ชื่อ': cs(a.firstName), 'นามสกุล': cs(a.lastName), 'ชื่อเล่น': cs(a.nickname),
+    'เบอร์โทร': cs(a.phone), 'อีเมล': cs(a.email),
+    'รหัสระดับตำแหน่ง': cs(a.position), 'ชื่อตำแหน่ง': cs(a.positionTitle || (DB.getPosition(a.position)?.name || '')),
+    'รหัสฝ่าย': cs(a.department), 'สาขา': cs(a.branch),
+    'เงินเดือนที่ขอ': Number(a.expectedSalary || 0),
+    'ช่องทาง': cs(a.source), 'สถานะ': statusToTH[a.status] || a.status,
+    'วันที่สมัคร': excelDate(a.appliedDate),
+    'วันสัมภาษณ์': excelDate(a.interviewDate),
+    'วันตัดสินใจ': excelDate(a.decidedDate),
+    'หมายเหตุ': cs(a.note),
+    'รหัสพนักงาน (ถ้ารับเข้าแล้ว)': cs(a.hiredEmployeeId)
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows, { cellDates: true, dateNF: 'dd mmm yyyy' });
+  ws['!cols'] = Object.keys(rows[0]).map(k => {
+    if (k.includes('วัน')) return { wch: 13 };
+    if (k === 'ชื่อ' || k === 'นามสกุล') return { wch: 14 };
+    if (k === 'หมายเหตุ') return { wch: 30 };
+    return { wch: 14 };
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'ผู้สมัคร');
+  XLSX.writeFile(wb, `คชา-ผู้สมัครงาน-${tz.today()}.xlsx`);
+  toast('ส่งออกไฟล์ Excel แล้ว', 'success');
+}
+
+function parseImportApplicantRow(row) {
+  const get = (k) => (row[k] == null ? '' : String(row[k])).trim();
+  const num = (k) => Number(row[k]) || 0;
+  const parseDate = (k) => {
+    const v = row[k];
+    if (!v) return '';
+    if (v instanceof Date) return v.toLocaleDateString('en-CA', { timeZone: TZ });
+    const s = String(v).trim();
+    if (!s) return '';
+    const yToCE = (y) => (y >= 2400 ? y - 543 : y);
+    const pad = (n) => String(n).padStart(2, '0');
+    let m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/);
+    if (m) return `${yToCE(+m[1])}-${pad(+m[2])}-${pad(+m[3])}`;
+    m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/);
+    if (m) return `${yToCE(+m[3])}-${pad(+m[2])}-${pad(+m[1])}`;
+    return s;
+  };
+  const statusRaw = get('สถานะ').toLowerCase();
+  const status = APPL_STATUS_TO_EN[get('สถานะ')] || APPL_STATUS_TO_EN[statusRaw] || 'new';
+  return {
+    firstName: get('ชื่อ'),
+    lastName: get('นามสกุล'),
+    nickname: get('ชื่อเล่น'),
+    phone: get('เบอร์โทร'),
+    email: get('อีเมล'),
+    position: get('รหัสระดับตำแหน่ง'),
+    positionTitle: get('ชื่อตำแหน่ง'),
+    department: get('รหัสฝ่าย'),
+    branch: get('สาขา'),
+    expectedSalary: num('เงินเดือนที่ขอ'),
+    source: get('ช่องทาง') || 'Walk-in',
+    status,
+    appliedDate: parseDate('วันที่สมัคร') || tz.today(),
+    interviewDate: parseDate('วันสัมภาษณ์'),
+    decidedDate: parseDate('วันตัดสินใจ'),
+    note: get('หมายเหตุ')
+  };
+}
+
+function validateImportApplicantRows(rows) {
+  const errors = [];
+  const deptIds = new Set(DB.getDepartments().map(d => d.id));
+  const posIds = new Set(DB.getPositions().map(p => p.id));
+  rows.forEach((r, i) => {
+    const rowNum = i + 2;
+    if (!r.firstName) errors.push({ row: rowNum, msg: 'ชื่อว่าง' });
+    if (r.department && !deptIds.has(r.department))
+      errors.push({ row: rowNum, msg: `รหัสฝ่ายไม่มีในระบบ: ${r.department}` });
+    if (r.position && !posIds.has(r.position))
+      errors.push({ row: rowNum, msg: `รหัสตำแหน่งไม่มีในระบบ: ${r.position}` });
+  });
+  return errors;
+}
+
+async function readApplicantExcelFile(file) {
+  if (file.size > EXCEL_MAX_MB * 1024 * 1024) {
+    throw new Error(`ไฟล์ใหญ่เกิน ${EXCEL_MAX_MB} MB`);
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        await new Promise(r => setTimeout(r, 0));
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
+        const sheetName = wb.SheetNames.find(n => n.includes('ผู้สมัคร')) || wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        await new Promise(r => setTimeout(r, 0));
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        resolve(rows.map(parseImportApplicantRow));
+      } catch (ex) { reject(ex); }
+    };
+    reader.onerror = () => reject(new Error('อ่านไฟล์ไม่สำเร็จ'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function openImportApplicants() {
+  if (!requireAdmin()) return;
+  modal.open('นำเข้าผู้สมัครงาน (Excel)', `
+    <div class="import-flow">
+      <div class="import-step">
+        <div class="import-step-num">1</div>
+        <div class="import-step-body">
+          <div class="import-step-title">ดาวน์โหลด Template</div>
+          <div class="muted-2" style="font-size:13px;margin-bottom:8px">ใช้ template เพื่อให้ข้อมูลครบและถูกรูปแบบ มีคำแนะนำในไฟล์ด้วย</div>
+          <button class="btn btn-secondary btn-sm" onclick="downloadApplicantTemplate()">${ICON.download}ดาวน์โหลด Template</button>
+        </div>
+      </div>
+      <div class="import-step">
+        <div class="import-step-num">2</div>
+        <div class="import-step-body">
+          <div class="import-step-title">เลือกไฟล์ Excel ที่กรอกแล้ว</div>
+          <input type="file" accept=".xlsx,.xls,.csv" id="applImportFile" class="import-file">
+        </div>
+      </div>
+      <div id="applImportBody"></div>
+    </div>
+  `, {
+    size: 'lg',
+    footer: `<button class="btn btn-secondary" data-close>ปิด</button><button class="btn btn-primary" id="applImportStartBtn" disabled>เริ่มนำเข้า</button>`
+  });
+
+  let parsedRows = null;
+  let validationErrors = [];
+
+  $('#applImportFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    $('#applImportBody').innerHTML = '<div class="muted-2 mt-4">กำลังอ่านไฟล์...</div>';
+    try {
+      parsedRows = await readApplicantExcelFile(file);
+      validationErrors = validateImportApplicantRows(parsedRows);
+      $('#applImportBody').innerHTML = renderApplicantImportPreview(parsedRows, validationErrors);
+      $('#applImportStartBtn').disabled = validationErrors.length > 0 || parsedRows.length === 0;
+    } catch (ex) {
+      $('#applImportBody').innerHTML = `<div class="card mt-4" style="border-color:var(--danger);color:var(--danger)">อ่านไฟล์ไม่สำเร็จ: ${escapeHtml(ex.message)}</div>`;
+      $('#applImportStartBtn').disabled = true;
+    }
+  });
+
+  $('#applImportStartBtn').addEventListener('click', async () => {
+    if (!parsedRows || !parsedRows.length) return;
+    $('#applImportStartBtn').disabled = true;
+    $('#applImportBody').innerHTML = `
+      <div class="card mt-4">
+        <div style="margin-bottom:10px">กำลังนำเข้า <strong id="applProgressText">0</strong> / <strong>${parsedRows.length.toLocaleString()}</strong></div>
+        <div class="progress-bar"><div class="progress-fill" id="applProgressFill" style="width:0%"></div></div>
+      </div>
+    `;
+    const start = performance.now();
+    const result = await DB.bulkInsertApplicants(parsedRows, (done, total) => {
+      const pct = (done / total) * 100;
+      const fill = $('#applProgressFill');
+      const text = $('#applProgressText');
+      if (fill) fill.style.width = pct + '%';
+      if (text) text.textContent = done.toLocaleString();
+    });
+    const elapsed = ((performance.now() - start) / 1000).toFixed(1);
+
+    $('#applImportBody').innerHTML = `
+      <div class="card mt-4">
+        <div style="font-size:16px;font-weight:600;color:var(--success);margin-bottom:8px">✓ นำเข้าสำเร็จ</div>
+        <div style="font-size:14px;line-height:1.8">
+          • นำเข้าสำเร็จ: <strong>${result.inserted.toLocaleString()}</strong> คน<br>
+          ${result.failed ? `• ผิดพลาด: <strong style="color:var(--danger)">${result.failed.toLocaleString()}</strong> คน<br>` : ''}
+          • ใช้เวลา: <strong>${elapsed}</strong> วินาที
+        </div>
+        ${result.errors.length ? `
+          <details class="mt-2" style="font-size:13px">
+            <summary style="cursor:pointer;color:var(--danger)">ดูข้อผิดพลาด ${result.errors.length} batch</summary>
+            <ul style="margin-top:6px;padding-left:20px">${result.errors.map(e => `<li>Batch ${e.chunk}: ${escapeHtml(e.message)}</li>`).join('')}</ul>
+          </details>
+        ` : ''}
+      </div>
+    `;
+    parsedRows = null;
+    const finishBtn = $('#applImportStartBtn');
+    finishBtn.textContent = 'เสร็จสิ้น';
+    finishBtn.disabled = false;
+    finishBtn.setAttribute('data-close', '');
+    if (router.current === 'recruit') router.go('recruit');
+  });
+}
+
+function renderApplicantImportPreview(rows, errors) {
+  const sample = rows.slice(0, 5);
+  return `
+    <div class="card mt-4">
+      <div class="flex items-center gap-2" style="margin-bottom:10px;flex-wrap:wrap">
+        <strong>พบ ${rows.length.toLocaleString()} แถว</strong>
+        ${errors.length
+          ? `<span class="badge badge-danger">${errors.length} ข้อผิดพลาด</span>`
+          : '<span class="badge badge-success">พร้อมนำเข้า</span>'}
+      </div>
+      ${errors.length ? `
+        <div style="background:var(--danger-soft);border-radius:8px;padding:12px;max-height:180px;overflow-y:auto;font-size:12.5px;margin-bottom:12px">
+          <strong style="color:var(--danger-text)">ข้อผิดพลาด:</strong>
+          <ul style="margin-top:6px;padding-left:20px">
+            ${errors.slice(0, 30).map(e => `<li>แถวที่ ${e.row}: ${escapeHtml(e.msg)}</li>`).join('')}
+            ${errors.length > 30 ? `<li>... และอีก ${errors.length - 30} ข้อ</li>` : ''}
+          </ul>
+        </div>
+      ` : ''}
+      <div style="font-size:12.5px;margin-bottom:6px"><strong>ตัวอย่าง 5 แถวแรก:</strong></div>
+      <div class="table-wrap">
+        <table class="table" style="font-size:12.5px">
+          <thead><tr><th>ชื่อ-สกุล</th><th>เบอร์</th><th>ตำแหน่ง</th><th>ช่องทาง</th><th>สถานะ</th><th>วันสมัคร</th></tr></thead>
+          <tbody>
+            ${sample.map(r => `<tr>
+              <td>${escapeHtml((r.firstName || '') + ' ' + (r.lastName || ''))}</td>
+              <td>${escapeHtml(r.phone || '-')}</td>
+              <td>${escapeHtml(r.positionTitle || r.position || '-')}</td>
+              <td>${escapeHtml(r.source || '-')}</td>
+              <td>${escapeHtml(r.status)}</td>
+              <td>${escapeHtml(r.appliedDate)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 // ═══════════════════════════════════════════════════════
