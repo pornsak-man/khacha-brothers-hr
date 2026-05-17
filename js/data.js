@@ -1383,6 +1383,31 @@ const DB = {
     return { quota, used, remaining: Math.max(0, quota - used) };
   },
 
+  // หาผู้อนุมัติของพนักงานคนนี้ = คนที่มี position_level สูงสุดในสาขาเดียวกัน
+  // (ไม่นับคนลาออกแล้ว) — ถ้าเสมอกันใช้ id แรก
+  getLeaveApprover(empId) {
+    const emp = this.getEmployee(empId);
+    if (!emp || !emp.branch) return null;
+    const sameBranch = this.data.employees
+      .filter(e => e.branch === emp.branch && this.empStatus(e) !== 'resigned');
+    if (!sameBranch.length) return null;
+    // เพิ่ม level จาก position_levels (default 0)
+    const withLevel = sameBranch.map(e => {
+      const pos = this.getPosition(e.position);
+      return { emp: e, level: pos ? Number(pos.level || 0) : 0 };
+    });
+    withLevel.sort((a, b) => b.level - a.level || a.emp.id.localeCompare(b.emp.id));
+    return withLevel[0].emp;
+  },
+
+  // current user สามารถอนุมัติของ empId นี้ได้ไหม
+  canApproveLeaveFor(empId) {
+    if (this.isAdmin) return true;
+    const approver = this.getLeaveApprover(empId);
+    if (!approver) return false;
+    return this.profile?.employee_id === approver.id;
+  },
+
   getLeaveRequests({ employeeId = null, status = null, year = null } = {}) {
     let list = this.data.leaveRequests.slice();
     if (employeeId) list = list.filter(r => r.employeeId === employeeId);

@@ -5654,26 +5654,34 @@ function renderLeaveTab() {
     <div class="table-wrap"><table class="table table-compact">
       <thead><tr>
         <th>วันที่ขอ</th><th>พนักงาน</th><th>ประเภท</th><th>วันที่ลา</th><th class="num">จำนวน</th>
-        <th>เหตุผล</th><th>สถานะ</th><th>ผู้อนุมัติ</th><th></th>
+        <th>เหตุผล</th><th>สถานะ</th><th>ผู้อนุมัติ (หัวสาขา)</th><th></th>
       </tr></thead>
       <tbody>
         ${list.map(r => {
           const e = DB.getEmployee(r.employeeId) || {};
           const typeCfg = DB.LEAVE_TYPES[r.leaveType] || { label: r.leaveType };
           const stat = LEAVE_STATUS_BADGE[r.status] || { label: r.status, cls: 'badge' };
-          const approver = r.approvedBy ? '✓' : (r.cancelledBy ? '⊘' : '-');
+          const approver = DB.getLeaveApprover(r.employeeId);
+          const canApprove = DB.canApproveLeaveFor(r.employeeId);
+          const isSelfApprove = approver && approver.id === r.employeeId;  // หัวสาขาขอลาเอง — ต้อง admin override
+          let approverCell = '<span class="muted-2">-</span>';
+          if (approver) {
+            const approverPos = DB.getPosition(approver.position);
+            approverCell = `<strong style="font-size:12.5px">${escapeHtml(approver.firstName + ' ' + (approver.lastName || ''))}</strong><br><span class="muted-2" style="font-size:11px">${approverPos ? escapeHtml(approverPos.name) : ''} · ${escapeHtml(approver.branch || '')}</span>${isSelfApprove ? '<br><span class="badge badge-warning" style="font-size:10px;margin-top:3px">หัวสาขาเอง — admin override</span>' : ''}`;
+          }
           return `<tr style="vertical-align:top">
             <td style="font-size:12.5px;white-space:nowrap">${fmt.date(r.requestedAt)}</td>
-            <td><strong>${escapeHtml((e.firstName || '?') + ' ' + (e.lastName || ''))}</strong><br><span class="muted-2" style="font-size:11px">${escapeHtml(r.employeeId)}</span></td>
+            <td><strong>${escapeHtml((e.firstName || '?') + ' ' + (e.lastName || ''))}</strong><br><span class="muted-2" style="font-size:11px">${escapeHtml(r.employeeId)}${e.branch ? ' · ' + escapeHtml(e.branch) : ''}</span></td>
             <td>${escapeHtml(typeCfg.label)}</td>
             <td style="font-size:12.5px;white-space:nowrap">${fmt.date(r.startDate)}${r.startDate !== r.endDate ? ' – ' + fmt.date(r.endDate) : ''}</td>
             <td class="num"><strong>${r.days}</strong> วัน</td>
             <td style="font-size:12.5px;max-width:200px"><div style="white-space:pre-wrap;line-height:1.5">${escapeHtml(r.reason || '-')}</div></td>
             <td><span class="badge ${stat.cls}">${stat.label}</span>${r.approverNote ? `<br><span class="muted-2" style="font-size:11px;font-style:italic">"${escapeHtml(r.approverNote)}"</span>` : ''}${r.cancelReason ? `<br><span class="muted-2" style="font-size:11px;font-style:italic">"${escapeHtml(r.cancelReason)}"</span>` : ''}</td>
-            <td style="font-size:11.5px">${approver}</td>
+            <td>${approverCell}</td>
             <td class="actions" style="white-space:nowrap">
-              ${r.status === 'pending' && DB.isAdmin ? `<button class="btn btn-success btn-sm" onclick="approveLeave('${r.id}')">อนุมัติ</button>
+              ${r.status === 'pending' && canApprove ? `<button class="btn btn-success btn-sm" onclick="approveLeave('${r.id}')">อนุมัติ</button>
                 <button class="btn btn-danger btn-sm" onclick="rejectLeave('${r.id}')">ปฏิเสธ</button>` : ''}
+              ${r.status === 'pending' && !canApprove ? `<span class="muted-2" style="font-size:11px;font-style:italic">รออนุมัติจากหัวสาขา</span>` : ''}
               ${r.status === 'pending' ? `<button class="btn btn-ghost btn-sm" onclick="openLeaveRequestForm('${r.id}')">แก้</button>
                 <button class="btn btn-ghost btn-sm" onclick="cancelLeave('${r.id}')">ยกเลิก</button>` : ''}
               ${r.status !== 'pending' && DB.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="deleteLeave('${r.id}')">ลบ</button>` : ''}
@@ -5742,6 +5750,7 @@ function openLeaveRequestForm(id = null) {
             <option value="">— เลือกพนักงาน —</option>
             ${empOptions}
           </select>
+          <div id="leaveApproverHint" class="muted-2" style="font-size:12px;margin-top:6px"></div>
         </div>
         <div class="form-group span-2"><label>ประเภทการลา *</label>
           <select name="leaveType" id="leaveType" required>
@@ -5770,6 +5779,16 @@ function openLeaveRequestForm(id = null) {
       if (days > 0) $('#leaveDays').value = days;
     }
   };
+  const updateApprover = () => {
+    const empId = $('#leaveEmp').value;
+    const box = $('#leaveApproverHint');
+    if (!empId) { box.textContent = ''; return; }
+    const approver = DB.getLeaveApprover(empId);
+    if (!approver) { box.innerHTML = `<span style="color:var(--warning)">⚠️ ไม่พบผู้อนุมัติของสาขานี้ — admin จะเป็นผู้อนุมัติ</span>`; return; }
+    const approverPos = DB.getPosition(approver.position);
+    const isSelf = approver.id === empId;
+    box.innerHTML = `👤 ผู้อนุมัติ: <strong>${escapeHtml(approver.firstName + ' ' + (approver.lastName || ''))}</strong> ${approverPos ? `(${escapeHtml(approverPos.name)})` : ''} · สาขา ${escapeHtml(approver.branch || '-')}${isSelf ? ' <span style="color:var(--warning)">⚠️ เป็นหัวสาขาเอง — admin จะ override</span>' : ''}`;
+  };
   const updateHint = () => {
     const empId = $('#leaveEmp').value;
     const type = $('#leaveType').value;
@@ -5787,9 +5806,10 @@ function openLeaveRequestForm(id = null) {
   $('#leaveStart').addEventListener('change', () => { recalc(); updateHint(); });
   $('#leaveEnd').addEventListener('change', () => { recalc(); updateHint(); });
   $('#leaveDays').addEventListener('input', updateHint);
-  $('#leaveEmp').addEventListener('change', updateHint);
+  $('#leaveEmp').addEventListener('change', () => { updateHint(); updateApprover(); });
   $('#leaveType').addEventListener('change', updateHint);
   updateHint();
+  updateApprover();
 
   $('#leaveForm').addEventListener('submit', async (ev) => {
     ev.preventDefault();
