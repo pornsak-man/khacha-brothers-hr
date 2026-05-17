@@ -810,6 +810,39 @@ const DB = {
     return result;
   },
 
+  // ─── SALARY BY POSITION ───
+  // คำนวณเงินเดือน avg/min/max ต่อตำแหน่งงาน (เฉพาะที่ยังปฏิบัติงาน)
+  // คืน [{ name, avg, min, max, count, level }] เรียง avg มาก → น้อย
+  getSalaryByPosition() {
+    const map = new Map();
+    for (const e of this.data.employees) {
+      if (this.empStatus(e) === 'resigned') continue;
+      if (!e.position) continue;
+      const sal = Number(e.salary) || 0;
+      if (sal <= 0) continue; // ข้าม row ที่ไม่มีเงินเดือน
+      if (!map.has(e.position)) map.set(e.position, { sum: 0, count: 0, min: Infinity, max: -Infinity });
+      const stat = map.get(e.position);
+      stat.sum += sal;
+      stat.count++;
+      if (sal < stat.min) stat.min = sal;
+      if (sal > stat.max) stat.max = sal;
+    }
+    const result = [];
+    for (const [posId, stat] of map) {
+      const pos = this.getPosition(posId);
+      if (!pos) continue;
+      result.push({
+        name: pos.name,
+        avg: Math.round(stat.sum / stat.count),
+        min: stat.min,
+        max: stat.max,
+        count: stat.count,
+        level: pos.level || 0
+      });
+    }
+    return result.sort((a, b) => b.avg - a.avg);
+  },
+
   // ─── STATS ───
   getStats() {
     const emps = this.data.employees;
@@ -836,6 +869,7 @@ const DB = {
       })),
       byPosition,
       byAge: this.getAgeDistribution(),
+      salaryByPosition: this.getSalaryByPosition(),
       byGender: {
         male: active.filter(e => e.gender === 'ชาย').length,
         female: active.filter(e => e.gender === 'หญิง').length

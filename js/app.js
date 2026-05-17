@@ -469,6 +469,12 @@ router.register('dashboard', () => {
       <div class="sw-chart-sub">นับเฉพาะที่ยังปฏิบัติงาน · ${fmt.num(s.byAge.reduce((sum, b) => sum + b.count, 0))} คน</div>
       <canvas id="chartByAge" style="max-height:280px"></canvas>
     </div>
+
+    <div class="sw-chart-card">
+      <div class="sw-chart-title">อัตราค่าจ้างต่อตำแหน่งงาน</div>
+      <div class="sw-chart-sub">เงินเดือนเฉลี่ย (บาท/เดือน) · เรียงสูงสุด → ต่ำสุด · ${s.salaryByPosition.length} ตำแหน่ง</div>
+      <canvas id="chartSalaryByPosition" style="max-height:320px"></canvas>
+    </div>
   `;
 });
 
@@ -627,6 +633,54 @@ function renderDashboardCharts(s, monthly, branchStats) {
         scales: {
           x: { grid: { display: false }, ticks: { font: { size: 12 } } },
           y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: gridColor } }
+        }
+      }
+    });
+  }
+
+  // ── อัตราค่าจ้างต่อตำแหน่งงาน — bar chart โทนทอง (editorial) ──
+  if ($('#chartSalaryByPosition') && s.salaryByPosition?.length) {
+    const data = s.salaryByPosition;
+    makeChart('chartSalaryByPosition', {
+      type: 'bar',
+      data: {
+        labels: data.map(d => d.name),
+        datasets: [{
+          label: 'เงินเดือนเฉลี่ย',
+          data: data.map(d => d.avg),
+          backgroundColor: '#b45309',
+          hoverBackgroundColor: '#92400e',
+          borderRadius: 3, borderSkipped: false, barPercentage: 0.6, categoryPercentage: 0.8
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const d = data[ctx.dataIndex];
+                return [
+                  `เฉลี่ย: ${d.avg.toLocaleString('th-TH')} บาท`,
+                  `ต่ำสุด: ${d.min.toLocaleString('th-TH')} บาท`,
+                  `สูงสุด: ${d.max.toLocaleString('th-TH')} บาท`,
+                  `จำนวน: ${d.count} คน`
+                ];
+              }
+            }
+          }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 11 }, maxRotation: 45, minRotation: 30, autoSkip: false } },
+          y: {
+            beginAtZero: true,
+            ticks: {
+              precision: 0,
+              callback: (v) => v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v
+            },
+            grid: { color: gridColor }
+          }
         }
       }
     });
