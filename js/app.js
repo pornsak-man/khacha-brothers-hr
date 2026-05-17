@@ -371,7 +371,8 @@ const _RT_PAGE_DEPS = {
   uniform_items: ['uniform'],
   uniform_requests: ['dashboard', 'uniform'],
   uniform_issues: ['uniform'],
-  branches: ['dashboard', 'employees', 'branches', 'uniform']
+  branches: ['dashboard', 'employees', 'branches', 'uniform'],
+  audit_log: ['audit']
 };
 
 // อัปเดต badge แจ้งเตือนของ "จัดชุดพนักงาน" (รอจัด)
@@ -419,6 +420,13 @@ window.onRealtimeChange = (payload) => {
   if (router.current === 'employees' && table === 'employees' && typeof renderEmployeeList === 'function') {
     clearTimeout(window._rtTimer);
     window._rtTimer = setTimeout(() => renderEmployeeList(), 250);
+    return;
+  }
+
+  // AUDIT LOG: เรียก loadAuditPage ตรงๆ เพราะ hasLoaded กัน router.refresh ไม่ให้ refetch
+  if (router.current === 'audit' && table === 'audit_log' && typeof loadAuditPage === 'function') {
+    clearTimeout(window._rtTimer);
+    window._rtTimer = setTimeout(() => loadAuditPage(), 800);
     return;
   }
 
@@ -3625,7 +3633,7 @@ function renderUniformRequestsTable() {
             <td>${r.neededBy ? fmt.date(r.neededBy) : '-'}</td>
             <td><span class="badge ${s.cls}">${s.label}</span></td>
             <td class="num"><strong>${fmt.money(r.totalCost)}</strong></td>
-            <td class="note-cell">${r.note ? `<div class="note-clamp" title="${escapeHtml(r.note)}">${escapeHtml(r.note)}</div>` : '<span style="color:var(--warning);font-weight:600">⚠️ ยังไม่ระบุ</span>'}</td>
+            <td class="note-cell">${r.note ? `<div class="note-clamp" title="${escapeHtml(r.note)}">${escapeHtml(r.note)}</div>` : '<div class="note-empty">⚠️ ยังไม่ระบุ</div>'}</td>
             <td class="actions">
               ${DB.isAdmin ? `<button class="btn btn-primary btn-sm" onclick="openIssueItemsForm('${r.id}')">จัดชุด</button>
               <button class="btn btn-ghost btn-sm" onclick="openUniformRequestForm('${r.id}')">แก้</button>
@@ -3658,8 +3666,14 @@ function renderUniformRequestsTable() {
         overflow: hidden;
         white-space: pre-wrap;
         line-height: 1.5;
-        max-height: calc(1.5em * 3);
-        min-height: calc(1.5em * 3);  /* ทุก row ความสูงเท่ากันเสมอ */
+        height: calc(1.5em * 3);  /* ทุก row ความสูงเท่ากันเสมอ (fixed > min-height เพราะ -webkit-box มัก ignore min-height) */
+      }
+      .uniform-req-table .note-empty {
+        display: flex;
+        align-items: flex-start;
+        height: calc(1.5em * 3);
+        color: var(--warning);
+        font-weight: 600;
       }
       .uniform-req-table td.actions {
         white-space: nowrap;
@@ -5232,7 +5246,7 @@ async function deleteCalRec(id) {
 const _auditState = {
   page: 0, pageSize: 50,
   filterTable: '', filterAction: '', filterSearch: '',
-  rows: [], total: 0, loading: false
+  rows: [], total: 0, loading: false, hasLoaded: false
 };
 const AUDIT_TABLE_LABELS = {
   employees: 'พนักงาน',
@@ -5255,8 +5269,8 @@ const AUDIT_ACTION_COLORS = { INSERT: 'badge-success', UPDATE: 'badge-info', DEL
 
 router.register('audit', () => {
   if (!DB.isAdmin) return `<div class="empty-state"><div class="title">เฉพาะ admin เท่านั้น</div><div class="hint">คุณไม่มีสิทธิ์ดูประวัติการแก้ไข</div></div>`;
-  // Load on first render
-  if (_auditState.rows.length === 0 && !_auditState.loading) {
+  // Load on first render — ใช้ hasLoaded กันลูปไม่จบเมื่อ fetch คืน 0 รายการ
+  if (!_auditState.hasLoaded && !_auditState.loading) {
     loadAuditPage();
   }
   return `
@@ -5316,6 +5330,7 @@ async function loadAuditPage() {
     _auditState.rows = [];
     _auditState.total = 0;
   }
+  _auditState.hasLoaded = true;
   _auditState.loading = false;
   if (router.current === 'audit') router.go('audit');
 }

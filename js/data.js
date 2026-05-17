@@ -1282,8 +1282,9 @@ const DB = {
     if (from) q = q.gte('ts', from);
     if (to) q = q.lte('ts', to);
     if (search) {
-      // search ใน user_email หรือ record_id
-      q = q.or(`user_email.ilike.%${search}%,record_id.ilike.%${search}%`);
+      // search ใน user_email หรือ record_id — strip chars ที่ break PostgREST .or() syntax
+      const s = String(search).replace(/[,()]/g, ' ').trim();
+      if (s) q = q.or(`user_email.ilike.%${s}%,record_id.ilike.%${s}%`);
     }
     q = q.order('ts', { ascending: false }).range(offset, offset + limit - 1);
     const { data, count, error } = await q;
