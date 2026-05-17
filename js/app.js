@@ -3602,8 +3602,9 @@ async function deleteUniformSchedule(id) {
 }
 
 function renderUniformRequestsTable() {
-  const reqs = DB.getUniformRequests();
-  if (!reqs.length) return `<div class="empty-state"><div class="icon">${ICON.clipboard}</div><div class="title">ยังไม่มีคำขอ</div><div class="hint">คำขอจะถูกสร้างอัตโนมัติเมื่อ recruit เพิ่มผู้สมัครใหม่</div></div>`;
+  // แสดงเฉพาะคำขอที่ยังไม่จบ — จัดส่งแล้ว/ยกเลิก ไปดูที่ tab "ประวัติการจัดส่ง"
+  const reqs = DB.getUniformRequests().filter(r => r.status !== 'issued' && r.status !== 'cancelled');
+  if (!reqs.length) return `<div class="empty-state"><div class="icon">${ICON.clipboard}</div><div class="title">ไม่มีคำขอค้าง</div><div class="hint">ทุกคำขอจัดส่งครบแล้ว · ดูประวัติได้ที่ tab "ประวัติการจัดส่ง"</div></div>`;
   return `
     <div class="table-wrap"><table class="table table-compact uniform-req-table">
       <thead><tr>
