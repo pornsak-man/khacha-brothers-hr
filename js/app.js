@@ -346,12 +346,16 @@ router.register('dashboard', () => {
       ${(() => {
         if (!branchStats.length) return '<div class="muted-2 text-center" style="padding:24px">ไม่มีข้อมูลสาขา</div>';
         const maxCount = Math.max(...branchStats.map(b => b.count));
-        return `<div class="branch-list">${branchStats.map((b, i) => `
-          <div class="branch-row">
-            <div class="branch-rank">${i + 1}</div>
-            <div class="branch-code">${escapeHtml(b.branch)}</div>
-            <div class="branch-bar"><div class="branch-bar-fill" style="width:${(b.count / maxCount * 100).toFixed(1)}%"></div></div>
-            <div class="branch-count">${fmt.num(b.count)}</div>
+        return `<div class="rank-list">${branchStats.map((b, i) => `
+          <div class="rank-item">
+            <div class="rank-row">
+              <div class="rank-info">
+                <span class="rank-num">${i + 1}</span>
+                <span class="rank-name">${escapeHtml(b.branch)}</span>
+              </div>
+              <div class="rank-count">${fmt.num(b.count)} <span class="rank-unit">คน</span></div>
+            </div>
+            <div class="rank-bar"><div class="rank-bar-fill" style="width:${(b.count / maxCount * 100).toFixed(1)}%"></div></div>
           </div>`).join('')}</div>`;
       })()}
     </div>

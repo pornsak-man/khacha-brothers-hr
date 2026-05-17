@@ -400,69 +400,76 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .page-header:not(:has(.actions > *)) { display: none; }
 
 /* ═════════════ CARDS / STATS ═════════════ */
-/* ═════════════ BRANCH LIST (Dashboard) ═════════════ */
-.branch-list {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px 32px;
+/* ═════════════ RANK LIST (Dashboard widget) ═════════════ */
+.rank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
-.branch-row {
-  display: grid;
-  grid-template-columns: 28px 56px 1fr 50px;
+.rank-item { padding: 0 4px; }
+.rank-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
   gap: 12px;
-  align-items: center;
-  padding: 8px 4px;
-  font-size: 13px;
-  border-radius: var(--radius-xs);
-  transition: background var(--transition);
 }
-.branch-row:hover { background: var(--surface-2); }
-.branch-rank {
-  font-size: 11px; color: var(--text-3); font-weight: 600;
-  text-align: center; font-variant-numeric: tabular-nums;
-  letter-spacing: 0.5px;
+.rank-info {
+  display: flex; align-items: center; gap: 10px;
+  min-width: 0;
 }
-.branch-code {
-  font-weight: 700;
+.rank-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 24px; height: 22px; padding: 0 6px;
+  background: var(--surface-2);
+  border-radius: 6px;
+  font-size: 11px; font-weight: 700;
+  color: var(--text-3);
+  letter-spacing: 0.4px;
+  font-variant-numeric: tabular-nums;
+}
+.rank-name {
+  font-size: 15px; font-weight: 600;
   color: var(--text);
-  letter-spacing: 0.3px;
-  font-size: 13px;
+  letter-spacing: -0.005em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.branch-bar {
-  height: 8px;
+.rank-count {
+  font-size: 15px; font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rank-unit {
+  font-size: 12px; font-weight: 500;
+  color: var(--text-3);
+  margin-left: 2px;
+}
+.rank-bar {
+  height: 4px;
   background: var(--surface-2);
   border-radius: 99px;
   overflow: hidden;
-  position: relative;
 }
-.branch-bar-fill {
+.rank-bar-fill {
   height: 100%;
   background: linear-gradient(90deg, var(--navy-400), var(--navy-600));
   border-radius: 99px;
   transition: width 0.6s var(--ease-out);
-  min-width: 4px;
+  min-width: 2px;
 }
-.branch-count {
-  text-align: right;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-  font-size: 13.5px;
+
+/* Highlight top 3 — gold accent for #1, primary for #2-3 */
+.rank-list > .rank-item:nth-child(1) .rank-num {
+  background: var(--primary); color: #fff;
 }
-/* Highlight top 3 ranks */
-.branch-list > .branch-row:nth-child(1) .branch-rank,
-.branch-list > .branch-row:nth-child(2) .branch-rank,
-.branch-list > .branch-row:nth-child(3) .branch-rank {
-  color: var(--primary-text);
-  font-weight: 700;
+.rank-list > .rank-item:nth-child(2) .rank-num,
+.rank-list > .rank-item:nth-child(3) .rank-num {
+  background: var(--primary-soft); color: var(--primary-text);
 }
-[data-theme="dark"] .branch-list > .branch-row:nth-child(1) .branch-rank,
-[data-theme="dark"] .branch-list > .branch-row:nth-child(2) .branch-rank,
-[data-theme="dark"] .branch-list > .branch-row:nth-child(3) .branch-rank {
+[data-theme="dark"] .rank-list > .rank-item:nth-child(2) .rank-num,
+[data-theme="dark"] .rank-list > .rank-item:nth-child(3) .rank-num {
   color: var(--navy-300);
-}
-@media (max-width: 700px) {
-  .branch-list { grid-template-columns: 1fr; gap: 4px; }
 }
 
 /* ═════════════ DASHBOARD HERO ═════════════ */
