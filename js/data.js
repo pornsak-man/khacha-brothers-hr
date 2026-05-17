@@ -23,7 +23,10 @@ const DB = {
     allowances: [],
     evaluations: [],
     calendar: [],
-    applicants: []
+    applicants: [],
+    uniformItems: [],
+    uniformRequests: [],
+    uniformIssues: []
   },
 
   // ─── INDEX CACHES (O(1) lookup; rebuild lazily after data change) ───
@@ -119,14 +122,17 @@ const DB = {
       this.client.from('company_settings').select('*').eq('id', 1).maybeSingle()
     ]);
     // ตารางที่อาจมีเกิน 1000 records — ดึงด้วย pagination
-    const [emps, loans, advs, allow, evals, sal, appls] = await Promise.all([
+    const [emps, loans, advs, allow, evals, sal, appls, uniItems, uniReqs, uniIssues] = await Promise.all([
       this._fetchAllPages('employees', 'id', true),
       this._fetchAllPages('loans', 'date', false),
       this._fetchAllPages('advances', 'date', false),
       this._fetchAllPages('allowances', 'month', false),
       this._fetchAllPages('evaluations', 'date', false),
       this._fetchAllPages('salary_history', 'date', false),
-      this._fetchAllPages('applicants', 'applied_date', false).catch(() => [])  // legacy DB อาจยังไม่มี table — fallback ว่าง
+      this._fetchAllPages('applicants', 'applied_date', false).catch(() => []),  // legacy DB อาจยังไม่มี
+      this._fetchAllPages('uniform_items', 'name', true).catch(() => []),
+      this._fetchAllPages('uniform_requests', 'requested_date', false).catch(() => []),
+      this._fetchAllPages('uniform_issues', 'issued_date', false).catch(() => [])
     ]);
     this.data.departments = (deps.data || []).map(this._depFromDB);
     this.data.positionLevels = (pos.data || []).map(this._posFromDB);
@@ -138,6 +144,9 @@ const DB = {
     this.data.salaryHistory = sal.map(this._salFromDB);
     this.data.calendar = (cal.data || []).map(this._calFromDB);
     this.data.applicants = (appls || []).map(this._applFromDB);
+    this.data.uniformItems = (uniItems || []).map(this._uniItemFromDB);
+    this.data.uniformRequests = (uniReqs || []).map(this._uniReqFromDB);
+    this.data.uniformIssues = (uniIssues || []).map(this._uniIssueFromDB);
     if (comp.data) this.data.company = this._compFromDB(comp.data);
     this._invalidateIndex();
   },
@@ -166,7 +175,10 @@ const DB = {
       evaluations: { list: 'evaluations', from: this._evalFromDB },
       salary_history: { list: 'salaryHistory', from: this._salFromDB },
       calendar_items: { list: 'calendar', from: this._calFromDB },
-      applicants: { list: 'applicants', from: this._applFromDB }
+      applicants: { list: 'applicants', from: this._applFromDB },
+      uniform_items: { list: 'uniformItems', from: this._uniItemFromDB },
+      uniform_requests: { list: 'uniformRequests', from: this._uniReqFromDB },
+      uniform_issues: { list: 'uniformIssues', from: this._uniIssueFromDB }
     };
     const m = map[table];
     if (!m) return;
@@ -344,6 +356,71 @@ const DB = {
     note: a.note || null
   }),
   _compFromDB: (r) => ({ name: r.name || '', nameEn: r.name_en || '', taxId: r.tax_id || '', address: r.address || '', phone: r.phone || '', email: r.email || '' }),
+
+  // ─── UNIFORM mappers ───
+  _uniItemFromDB: (r) => ({
+    id: r.id,
+    name: r.name || '',
+    size: r.size || '',
+    stockQty: Number(r.stock_qty || 0),
+    unitCost: Number(r.unit_cost || 0),
+    active: r.active !== false,
+    note: r.note || ''
+  }),
+  _uniItemToDB: (i) => ({
+    name: i.name,
+    size: i.size || null,
+    stock_qty: Number(i.stockQty || 0),
+    unit_cost: Number(i.unitCost || 0),
+    active: i.active !== false,
+    note: i.note || null
+  }),
+  _uniReqFromDB: (r) => ({
+    id: r.id,
+    employeeId: r.employee_id || '',
+    requestedBy: r.requested_by || '',
+    requestedDate: r.requested_date || '',
+    neededBy: r.needed_by || '',
+    status: r.status || 'pending',
+    totalCost: Number(r.total_cost || 0),
+    note: r.note || ''
+  }),
+  _uniReqToDB: (r) => ({
+    employee_id: r.employeeId || null,
+    requested_by: r.requestedBy || null,
+    requested_date: r.requestedDate || null,
+    needed_by: r.neededBy || null,
+    status: r.status || 'pending',
+    total_cost: Number(r.totalCost || 0),
+    note: r.note || null
+  }),
+  _uniIssueFromDB: (r) => ({
+    id: r.id,
+    requestId: r.request_id || '',
+    employeeId: r.employee_id || '',
+    itemId: r.item_id || '',
+    itemName: r.item_name || '',
+    size: r.size || '',
+    qty: Number(r.qty || 0),
+    unitCost: Number(r.unit_cost || 0),
+    totalCost: Number(r.total_cost || 0),
+    issuedDate: r.issued_date || '',
+    issuedBy: r.issued_by || '',
+    note: r.note || ''
+  }),
+  _uniIssueToDB: (i) => ({
+    request_id: i.requestId || null,
+    employee_id: i.employeeId || null,
+    item_id: i.itemId || null,
+    item_name: i.itemName || null,
+    size: i.size || null,
+    qty: Number(i.qty || 0),
+    unit_cost: Number(i.unitCost || 0),
+    total_cost: Number(i.totalCost || 0),
+    issued_date: i.issuedDate || null,
+    issued_by: i.issuedBy || null,
+    note: i.note || null
+  }),
 
   // ─── EMPLOYEES ───
   // สถานะที่แท้จริง (effective status) — คำนวณจาก terminationDate
@@ -867,6 +944,149 @@ const DB = {
       hiredYTD: list.filter(a => a.status === 'hired' && (a.decidedDate || '').slice(0, 4) === today.slice(0, 4)).length,
       rejected: list.filter(a => a.status === 'rejected').length
     };
+  },
+
+  // ─── UNIFORM ITEMS (master) ───
+  getUniformItems({ activeOnly = false } = {}) {
+    let list = this.data.uniformItems.slice();
+    if (activeOnly) list = list.filter(i => i.active);
+    return list.sort((a, b) => (a.name || '').localeCompare(b.name || '') || (a.size || '').localeCompare(b.size || ''));
+  },
+  getUniformItem(id) { return this.data.uniformItems.find(i => i.id === id); },
+  async saveUniformItem(item) {
+    const row = this._uniItemToDB(item);
+    if (item.id) row.id = item.id;
+    const { data, error } = await this.client.from('uniform_items').upsert(row).select().single();
+    if (error) throw error;
+    const mapped = this._uniItemFromDB(data);
+    const idx = this.data.uniformItems.findIndex(i => i.id === mapped.id);
+    if (idx >= 0) this.data.uniformItems[idx] = mapped;
+    else this.data.uniformItems.unshift(mapped);
+    return mapped;
+  },
+  async deleteUniformItem(id) {
+    const { error } = await this.client.from('uniform_items').delete().eq('id', id);
+    if (error) throw error;
+    this.data.uniformItems = this.data.uniformItems.filter(i => i.id !== id);
+  },
+  // Adjust stock — positive to add, negative to deduct
+  async adjustUniformStock(itemId, delta) {
+    const item = this.getUniformItem(itemId);
+    if (!item) return;
+    const newQty = Math.max(0, Number(item.stockQty || 0) + Number(delta));
+    const { data, error } = await this.client.from('uniform_items')
+      .update({ stock_qty: newQty })
+      .eq('id', itemId)
+      .select().single();
+    if (error) throw error;
+    const mapped = this._uniItemFromDB(data);
+    const idx = this.data.uniformItems.findIndex(i => i.id === mapped.id);
+    if (idx >= 0) this.data.uniformItems[idx] = mapped;
+  },
+
+  // ─── UNIFORM REQUESTS (header) ───
+  getUniformRequests({ status, employeeId } = {}) {
+    let list = this.data.uniformRequests.slice();
+    if (status) list = list.filter(r => r.status === status);
+    if (employeeId) list = list.filter(r => r.employeeId === employeeId);
+    return list.sort((a, b) => (b.requestedDate || '').localeCompare(a.requestedDate || ''));
+  },
+  getUniformRequest(id) { return this.data.uniformRequests.find(r => r.id === id); },
+  async saveUniformRequest(req) {
+    const row = this._uniReqToDB(req);
+    if (req.id) row.id = req.id;
+    const { data, error } = await this.client.from('uniform_requests').upsert(row).select().single();
+    if (error) throw error;
+    const mapped = this._uniReqFromDB(data);
+    const idx = this.data.uniformRequests.findIndex(r => r.id === mapped.id);
+    if (idx >= 0) this.data.uniformRequests[idx] = mapped;
+    else this.data.uniformRequests.unshift(mapped);
+    return mapped;
+  },
+  async deleteUniformRequest(id) {
+    const { error } = await this.client.from('uniform_requests').delete().eq('id', id);
+    if (error) throw error;
+    this.data.uniformRequests = this.data.uniformRequests.filter(r => r.id !== id);
+    // child issues จะถูกลบโดย CASCADE ใน DB — clean local too
+    this.data.uniformIssues = this.data.uniformIssues.filter(i => i.requestId !== id);
+  },
+
+  // ─── UNIFORM ISSUES (line items) ───
+  getUniformIssues({ requestId, employeeId } = {}) {
+    let list = this.data.uniformIssues.slice();
+    if (requestId) list = list.filter(i => i.requestId === requestId);
+    if (employeeId) list = list.filter(i => i.employeeId === employeeId);
+    return list.sort((a, b) => (b.issuedDate || '').localeCompare(a.issuedDate || ''));
+  },
+  // Save issue + auto-deduct stock + recalc request.total_cost
+  async saveUniformIssue(issue) {
+    issue.totalCost = Number(issue.qty || 0) * Number(issue.unitCost || 0);
+    const row = this._uniIssueToDB(issue);
+    if (issue.id) row.id = issue.id;
+    const { data, error } = await this.client.from('uniform_issues').upsert(row).select().single();
+    if (error) throw error;
+    const mapped = this._uniIssueFromDB(data);
+    const idx = this.data.uniformIssues.findIndex(i => i.id === mapped.id);
+    const isNew = idx < 0;
+    if (isNew) this.data.uniformIssues.unshift(mapped);
+    else this.data.uniformIssues[idx] = mapped;
+
+    // deduct stock เฉพาะตอน insert ใหม่ (กัน double-deduct ตอน update)
+    if (isNew && issue.itemId && Number(issue.qty) > 0) {
+      try { await this.adjustUniformStock(issue.itemId, -Number(issue.qty)); }
+      catch (ex) { console.warn('Stock deduct failed:', ex); }
+    }
+    // recalc parent request total
+    if (mapped.requestId) await this._recalcUniformRequestTotal(mapped.requestId);
+    return mapped;
+  },
+  async deleteUniformIssue(id) {
+    const issue = this.data.uniformIssues.find(i => i.id === id);
+    if (!issue) return;
+    const { error } = await this.client.from('uniform_issues').delete().eq('id', id);
+    if (error) throw error;
+    this.data.uniformIssues = this.data.uniformIssues.filter(i => i.id !== id);
+    // คืน stock + recalc total
+    if (issue.itemId && Number(issue.qty) > 0) {
+      try { await this.adjustUniformStock(issue.itemId, +Number(issue.qty)); } catch (ex) {}
+    }
+    if (issue.requestId) await this._recalcUniformRequestTotal(issue.requestId);
+  },
+  async _recalcUniformRequestTotal(requestId) {
+    const issues = this.data.uniformIssues.filter(i => i.requestId === requestId);
+    const total = issues.reduce((s, i) => s + Number(i.totalCost || 0), 0);
+    const req = this.getUniformRequest(requestId);
+    if (!req) return;
+    const newStatus = issues.length > 0 ? 'issued' : req.status;
+    const { data, error } = await this.client.from('uniform_requests')
+      .update({ total_cost: total, status: newStatus })
+      .eq('id', requestId)
+      .select().single();
+    if (error) return;
+    const mapped = this._uniReqFromDB(data);
+    const idx = this.data.uniformRequests.findIndex(r => r.id === requestId);
+    if (idx >= 0) this.data.uniformRequests[idx] = mapped;
+  },
+
+  // KPI สำหรับหน้า dashboard uniform
+  getUniformStats() {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+    const thisMonth = today.slice(0, 7);
+    const reqs = this.data.uniformRequests;
+    const issues = this.data.uniformIssues;
+    return {
+      pending: reqs.filter(r => r.status === 'pending').length,
+      preparing: reqs.filter(r => r.status === 'preparing').length,
+      issuedThisMonth: reqs.filter(r => r.status === 'issued' && (r.requestedDate || '').startsWith(thisMonth)).length,
+      totalUnpaid: issues.reduce((s, i) => s + Number(i.totalCost || 0), 0),
+      lowStock: this.data.uniformItems.filter(i => i.active && Number(i.stockQty || 0) < 5).length
+    };
+  },
+  // ค่าชุดทั้งหมดของพนักงาน (สำหรับแสดงใน profile)
+  getUniformCostForEmployee(employeeId) {
+    return this.data.uniformIssues
+      .filter(i => i.employeeId === employeeId)
+      .reduce((s, i) => s + Number(i.totalCost || 0), 0);
   },
 
   // ─── CALENDAR ───

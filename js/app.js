@@ -327,6 +327,7 @@ const router = {
       departments: 'ฝ่าย',
       positions: 'ระดับตำแหน่ง',
       recruit: 'รับสมัครงาน',
+      uniform: 'จัดชุดพนักงาน',
       'salary-adjust': 'ปรับค่าจ้าง / ตำแหน่ง / สาขา',
       loans: 'การกู้เงินบริษัท',
       advances: 'เบิกเงินล่วงหน้า',
@@ -350,7 +351,7 @@ const router = {
 // ─── REALTIME UPDATE — TARGETED REFRESH ───
 // ตาราง → หน้าที่ขึ้นกับตารางนั้น (ถ้า user ไม่ได้อยู่หน้านี้ จะไม่ refresh)
 const _RT_PAGE_DEPS = {
-  employees: ['dashboard', 'employees', 'departments', 'positions', 'salary-adjust', 'loans', 'advances', 'allowance', 'evaluations', 'reports', 'recruit'],
+  employees: ['dashboard', 'employees', 'departments', 'positions', 'salary-adjust', 'loans', 'advances', 'allowance', 'evaluations', 'reports', 'recruit', 'uniform'],
   departments: ['dashboard', 'employees', 'departments', 'recruit'],
   position_levels: ['employees', 'positions', 'recruit'],
   salary_history: ['dashboard', 'salary-adjust'],
@@ -361,7 +362,10 @@ const _RT_PAGE_DEPS = {
   calendar_items: ['dashboard', 'calendar'],
   company_settings: ['settings'],
   user_profiles: ['settings'],
-  applicants: ['dashboard', 'recruit']
+  applicants: ['dashboard', 'recruit'],
+  uniform_items: ['uniform'],
+  uniform_requests: ['uniform'],
+  uniform_issues: ['uniform']
 };
 
 window.onRealtimeChange = (payload) => {
@@ -1543,6 +1547,33 @@ function viewEmployee(id) {
         <div class="emp-info-row"><div class="label">เลขบัญชี</div><div class="value">${escapeHtml(e.bankAccount || '-')}</div></div>
       </div>
     </div>
+
+    ${(() => {
+      const uniIssues = DB.getUniformIssues({ employeeId: id });
+      const uniCost = DB.getUniformCostForEmployee(id);
+      if (!uniIssues.length) return '';
+      return `
+        <div class="form-section">
+          <h3>ชุดพนักงาน <span class="muted-2" style="font-weight:normal;font-size:12px">(${uniIssues.length} รายการ · ค่าชุดรวม ${fmt.money(uniCost)} บาท)</span></h3>
+          <div class="table-wrap"><table class="table table-compact" style="font-size:13px">
+            <thead><tr><th>วันที่</th><th>รายการ</th><th>ขนาด</th><th class="num">จำนวน</th><th class="num">รวม</th></tr></thead>
+            <tbody>
+              ${uniIssues.map(u => `<tr>
+                <td>${fmt.date(u.issuedDate)}</td>
+                <td>${escapeHtml(u.itemName)}</td>
+                <td>${escapeHtml(u.size || '-')}</td>
+                <td class="num">${u.qty}</td>
+                <td class="num">${fmt.money(u.totalCost)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table></div>
+          <div style="margin-top:12px;padding:10px 16px;background:var(--warning-soft);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center;border:1px solid var(--border)">
+            <div style="font-size:13px;color:var(--warning-text);font-weight:500">ค่าชุดที่ต้องเก็บจากพนักงาน</div>
+            <div style="font-size:16px;font-weight:700;color:var(--warning)">${fmt.money(uniCost)} บาท</div>
+          </div>
+        </div>
+      `;
+    })()}
 
     <div class="form-section">
       <h3>เงินเดือนและสวัสดิการ</h3>
@@ -2958,6 +2989,426 @@ function renderApplicantImportPreview(rows, errors) {
       </div>
     </div>
   `;
+}
+
+// ═══════════════════════════════════════════════════════
+//  PAGE: UNIFORM MANAGEMENT (จัดชุดพนักงาน)
+// ═══════════════════════════════════════════════════════
+const UNIFORM_STATUS = {
+  pending:    { label: 'รอจัด',     cls: 'badge-warning' },
+  preparing:  { label: 'กำลังเตรียม', cls: 'badge-info' },
+  issued:     { label: 'จัดส่งแล้ว',  cls: 'badge-success' },
+  cancelled:  { label: 'ยกเลิก',     cls: 'badge-danger' }
+};
+const _uniformState = { tab: 'requests', filter: '' };
+
+router.register('uniform', () => {
+  const stats = DB.getUniformStats();
+  const tab = _uniformState.tab;
+  return `
+    <div class="sw-page-header">
+      <div>
+        <div class="sw-page-title">จัดชุดพนักงาน</div>
+        <div class="sw-page-subtitle">คำขอจัดชุด · บันทึกการจัดส่ง · stock & ราคา · ค่าชุดที่ต้องเก็บจากพนักงาน</div>
+      </div>
+      <div class="sw-page-actions">
+        ${DB.isAdmin ? `
+          <button class="btn btn-secondary" onclick="openUniformItemForm()">${ICON.plus}เพิ่มรายการชุด</button>
+          <button class="btn btn-secondary" onclick="exportUniformIssuesXLSX()">${ICON.download}ส่งออกประวัติ</button>
+          <button class="btn btn-primary" onclick="openUniformRequestForm()">+ คำขอใหม่</button>
+        ` : ''}
+      </div>
+    </div>
+
+    <div class="sw-stats-grid">
+      <div class="sw-stat-card sw-accent-amber">
+        <div class="sw-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        <div class="sw-stat-label">รอจัด</div>
+        <div class="sw-stat-value" style="color:var(--warning)">${fmt.num(stats.pending)}</div>
+        <div class="sw-stat-change">กำลังเตรียม ${fmt.num(stats.preparing)}</div>
+      </div>
+      <div class="sw-stat-card sw-accent-green">
+        <div class="sw-stat-icon">${ICON.trendUp}</div>
+        <div class="sw-stat-label">จัดส่งเดือนนี้</div>
+        <div class="sw-stat-value" style="color:var(--success)">${fmt.num(stats.issuedThisMonth)}</div>
+        <div class="sw-stat-change">ครบทั้งหมดใน 1 เดือน</div>
+      </div>
+      <div class="sw-stat-card sw-accent-primary">
+        <div class="sw-stat-icon">${ICON.money}</div>
+        <div class="sw-stat-label">ค่าชุดรวม (สะสม)</div>
+        <div class="sw-stat-value">${fmt.money(stats.totalUnpaid)}</div>
+        <div class="sw-stat-change">บาท · นำไปคิดกับพนักงาน</div>
+      </div>
+      <div class="sw-stat-card sw-accent-red">
+        <div class="sw-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+        <div class="sw-stat-label">Stock ใกล้หมด</div>
+        <div class="sw-stat-value" style="color:var(--danger)">${fmt.num(stats.lowStock)}</div>
+        <div class="sw-stat-change">รายการที่เหลือ &lt; 5 ชิ้น</div>
+      </div>
+    </div>
+
+    <div class="sw-chart-card" style="margin-top:24px">
+      <div class="flex items-center gap-2" style="margin-bottom:16px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:14px">
+        <button class="btn btn-sm ${tab === 'requests' ? 'btn-primary' : 'btn-ghost'}" onclick="switchUniformTab('requests')">คำขอจัดชุด</button>
+        <button class="btn btn-sm ${tab === 'items' ? 'btn-primary' : 'btn-ghost'}" onclick="switchUniformTab('items')">รายการชุด + Stock</button>
+        <button class="btn btn-sm ${tab === 'issues' ? 'btn-primary' : 'btn-ghost'}" onclick="switchUniformTab('issues')">ประวัติการจัดส่ง</button>
+      </div>
+      <div id="uniformContent">${renderUniformTab()}</div>
+    </div>
+  `;
+});
+
+function switchUniformTab(tab) {
+  _uniformState.tab = tab;
+  // re-render ทั้งหน้า — update tab button states + content พร้อมกัน
+  router.go('uniform');
+}
+
+function renderUniformTab() {
+  const tab = _uniformState.tab;
+  if (tab === 'items') return renderUniformItemsTable();
+  if (tab === 'issues') return renderUniformIssuesTable();
+  return renderUniformRequestsTable();
+}
+
+function renderUniformRequestsTable() {
+  const reqs = DB.getUniformRequests();
+  if (!reqs.length) return `<div class="empty-state"><div class="icon">${ICON.clipboard}</div><div class="title">ยังไม่มีคำขอ</div><div class="hint">กดปุ่ม "+ คำขอใหม่" เพื่อเริ่ม</div></div>`;
+  return `
+    <div class="table-wrap"><table class="table table-compact">
+      <thead><tr>
+        <th>วันที่แจ้ง</th><th>พนักงาน</th><th>แจ้งโดย</th>
+        <th>ต้องการก่อน</th><th>สถานะ</th><th class="num">ค่าชุดรวม</th><th>บันทึก</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${reqs.map(r => {
+          const e = DB.getEmployee(r.employeeId) || {};
+          const s = UNIFORM_STATUS[r.status] || UNIFORM_STATUS.pending;
+          return `<tr>
+            <td>${fmt.date(r.requestedDate)}</td>
+            <td>${escapeHtml(e.firstName ? e.firstName + ' ' + (e.lastName || '') : '-')} <span class="muted-2" style="font-size:11.5px">(${escapeHtml(r.employeeId || '-')})</span></td>
+            <td>${escapeHtml(r.requestedBy || '-')}</td>
+            <td>${r.neededBy ? fmt.date(r.neededBy) : '-'}</td>
+            <td><span class="badge ${s.cls}">${s.label}</span></td>
+            <td class="num"><strong>${fmt.money(r.totalCost)}</strong></td>
+            <td>${escapeHtml(r.note || '-')}</td>
+            <td class="actions">
+              ${DB.isAdmin ? `<button class="btn btn-primary btn-sm" onclick="openIssueItemsForm('${r.id}')">จัดชุด</button>
+              <button class="btn btn-ghost btn-sm" onclick="openUniformRequestForm('${r.id}')">แก้</button>
+              <button class="btn btn-ghost btn-sm" onclick="deleteUniformRequest('${r.id}')">ลบ</button>` : ''}
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table></div>
+  `;
+}
+
+function renderUniformItemsTable() {
+  const items = DB.getUniformItems();
+  if (!items.length) return `<div class="empty-state"><div class="title">ยังไม่มีรายการชุด</div><div class="hint">กดปุ่ม "+ เพิ่มรายการชุด" ด้านบน</div></div>`;
+  return `
+    <div class="table-wrap"><table class="table table-compact">
+      <thead><tr>
+        <th>ชื่อชุด</th><th>ขนาด</th><th class="num">Stock</th><th class="num">ราคา/ชิ้น</th>
+        <th class="num">มูลค่า Stock</th><th>สถานะ</th><th>หมายเหตุ</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${items.map(i => {
+          const stockClass = Number(i.stockQty) < 5 ? 'style="color:var(--danger);font-weight:600"' : '';
+          return `<tr>
+            <td><strong>${escapeHtml(i.name)}</strong></td>
+            <td>${escapeHtml(i.size || '-')}</td>
+            <td class="num" ${stockClass}>${fmt.num(i.stockQty)}</td>
+            <td class="num">${fmt.money(i.unitCost)}</td>
+            <td class="num">${fmt.money(Number(i.stockQty) * Number(i.unitCost))}</td>
+            <td>${i.active ? '<span class="badge badge-success">ใช้งาน</span>' : '<span class="badge">ปิด</span>'}</td>
+            <td>${escapeHtml(i.note || '-')}</td>
+            <td class="actions">
+              ${DB.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="openUniformItemForm('${i.id}')">แก้ไข</button>
+              <button class="btn btn-ghost btn-sm" onclick="deleteUniformItem('${i.id}')">ลบ</button>` : ''}
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table></div>
+  `;
+}
+
+function renderUniformIssuesTable() {
+  const list = DB.getUniformIssues();
+  if (!list.length) return `<div class="empty-state"><div class="title">ยังไม่มีประวัติการจัดส่ง</div></div>`;
+  return `
+    <div class="table-wrap"><table class="table table-compact">
+      <thead><tr>
+        <th>วันที่จัดส่ง</th><th>พนักงาน</th><th>รายการ</th><th>ขนาด</th>
+        <th class="num">จำนวน</th><th class="num">ราคา/ชิ้น</th><th class="num">รวม</th>
+        <th>HR ผู้จัด</th><th>หมายเหตุ</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${list.map(i => {
+          const e = DB.getEmployee(i.employeeId) || {};
+          return `<tr>
+            <td>${fmt.date(i.issuedDate)}</td>
+            <td>${escapeHtml(e.firstName ? e.firstName + ' ' + (e.lastName || '') : '-')} <span class="muted-2" style="font-size:11.5px">(${escapeHtml(i.employeeId || '-')})</span></td>
+            <td>${escapeHtml(i.itemName || '-')}</td>
+            <td>${escapeHtml(i.size || '-')}</td>
+            <td class="num">${fmt.num(i.qty)}</td>
+            <td class="num">${fmt.money(i.unitCost)}</td>
+            <td class="num"><strong>${fmt.money(i.totalCost)}</strong></td>
+            <td>${escapeHtml(i.issuedBy || '-')}</td>
+            <td>${escapeHtml(i.note || '-')}</td>
+            <td class="actions">${DB.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="deleteUniformIssue('${i.id}')">ลบ</button>` : ''}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table></div>
+  `;
+}
+
+// ─── คำขอจัดชุด ───
+function openUniformRequestForm(id = null) {
+  if (!requireAdmin()) return;
+  const r = id ? DB.getUniformRequest(id) : {
+    id: '', employeeId: '', requestedBy: DB.profile?.name || DB.user?.email || '',
+    requestedDate: tz.today(), neededBy: '', status: 'pending', note: ''
+  };
+  const emps = DB.getEmployees({ status: 'active' });
+  modal.open(id ? 'แก้ไขคำขอจัดชุด' : 'คำขอจัดชุด (HR แจ้ง → ส่งต่อ HR จัดชุด)', `
+    <form id="uniReqForm">
+      <div class="form-grid">
+        <div class="form-group span-2"><label>พนักงาน *</label>${employeePicker({ name: 'employeeId', emps, selected: r.employeeId, required: true })}</div>
+        <div class="form-group"><label>วันที่แจ้ง *</label><input name="requestedDate" type="date" value="${r.requestedDate || tz.today()}" required/></div>
+        <div class="form-group"><label>ต้องการก่อน (วันเริ่มงาน)</label><input name="neededBy" type="date" value="${r.neededBy || ''}"/></div>
+        <div class="form-group"><label>แจ้งโดย</label><input name="requestedBy" value="${escapeHtml(r.requestedBy)}" placeholder="ชื่อ HR คนแจ้ง"/></div>
+        <div class="form-group"><label>สถานะ</label>
+          <select name="status">${Object.entries(UNIFORM_STATUS).map(([k, v]) => `<option value="${k}" ${r.status === k ? 'selected' : ''}>${v.label}</option>`).join('')}</select>
+        </div>
+        <div class="form-group span-2"><label>หมายเหตุ / รายละเอียดที่ต้องการ</label><textarea name="note" rows="2" placeholder="เช่น ต้องการเสื้อ M กางเกง L หมวก 1 ใบ">${escapeHtml(r.note)}</textarea></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" data-close>ยกเลิก</button>
+        <button type="submit" class="btn btn-primary">บันทึก</button>
+      </div>
+    </form>
+  `);
+  wireEmployeePickers('#uniReqForm');
+  $('#uniReqForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const data = Object.fromEntries(new FormData(e.target).entries());
+      if (id) data.id = id;
+      await DB.saveUniformRequest(data);
+      modal.close();
+      toast(id ? 'บันทึกแล้ว' : 'สร้างคำขอแล้ว — แจ้งทีมจัดชุด', 'success');
+      router.go('uniform');
+    } catch (ex) { toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
+  });
+}
+
+async function deleteUniformRequest(id) {
+  if (!requireAdmin()) return;
+  if (!await modal.confirm('ลบคำขอ', 'ลบคำขอนี้ + รายการชุดที่จัดทั้งหมด ใช่หรือไม่?')) return;
+  try { await DB.deleteUniformRequest(id); toast('ลบแล้ว', 'success'); router.go('uniform'); }
+  catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
+}
+
+// ─── จัดชุด: เพิ่มรายการ issue ทีละหลายรายการพร้อมกัน ───
+function openIssueItemsForm(requestId) {
+  if (!requireAdmin()) return;
+  const req = DB.getUniformRequest(requestId);
+  if (!req) return;
+  const emp = DB.getEmployee(req.employeeId);
+  const items = DB.getUniformItems({ activeOnly: true });
+  const existing = DB.getUniformIssues({ requestId });
+  const issuedBy = DB.profile?.name || DB.user?.email || '';
+
+  modal.open(`บันทึกการจัดชุด — ${escapeHtml((emp?.firstName || '') + ' ' + (emp?.lastName || ''))}`, `
+    <div class="form-section">
+      <h3>ข้อมูลคำขอ</h3>
+      <div class="form-grid">
+        <div class="form-group"><label>พนักงาน</label><input type="text" readonly value="${escapeHtml((emp?.firstName || '') + ' ' + (emp?.lastName || '') + ' (' + (req.employeeId || '-') + ')')}"/></div>
+        <div class="form-group"><label>ต้องการก่อน</label><input type="text" readonly value="${req.neededBy ? fmt.date(req.neededBy) : '-'}"/></div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <h3>รายการที่จัดให้แล้ว <span class="muted-2" style="font-weight:normal;font-size:12px">(${existing.length} รายการ · รวม ${fmt.money(req.totalCost)} บาท)</span></h3>
+      ${existing.length ? `<div class="table-wrap"><table class="table table-compact" style="font-size:13px">
+        <thead><tr><th>วันที่</th><th>รายการ</th><th>ขนาด</th><th class="num">จำนวน</th><th class="num">ราคา</th><th class="num">รวม</th><th></th></tr></thead>
+        <tbody>
+          ${existing.map(i => `<tr>
+            <td>${fmt.date(i.issuedDate)}</td>
+            <td>${escapeHtml(i.itemName)}</td>
+            <td>${escapeHtml(i.size || '-')}</td>
+            <td class="num">${i.qty}</td>
+            <td class="num">${fmt.money(i.unitCost)}</td>
+            <td class="num">${fmt.money(i.totalCost)}</td>
+            <td><button class="btn btn-ghost btn-sm" onclick="(async () => { if (await modal.confirm('ลบรายการ','คืน stock + ลบรายการ?')) { await DB.deleteUniformIssue('${i.id}'); toast('ลบแล้ว','success'); openIssueItemsForm('${requestId}'); } })()">ลบ</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>` : '<div class="muted-2" style="padding:12px 0">— ยังไม่มี —</div>'}
+    </div>
+
+    <div class="form-section">
+      <h3>เพิ่มรายการ</h3>
+      <form id="issueForm">
+        <div class="form-grid">
+          <div class="form-group"><label>เลือกชุด *</label>
+            <select name="itemId" id="issueItem" required>
+              <option value="">— เลือกรายการ —</option>
+              ${items.map(i => `<option value="${i.id}" data-name="${escapeHtml(i.name)}" data-size="${escapeHtml(i.size || '')}" data-cost="${i.unitCost}" data-stock="${i.stockQty}">${escapeHtml(i.name)} · ${escapeHtml(i.size || '-')} · เหลือ ${i.stockQty} ชิ้น · ${fmt.money(i.unitCost)} บาท</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group"><label>จำนวน *</label><input name="qty" id="issueQty" type="number" min="1" value="1" required/></div>
+          <div class="form-group"><label>ราคา/ชิ้น</label><input name="unitCost" id="issueCost" type="number" min="0" step="0.01" readonly/></div>
+          <div class="form-group"><label>วันที่จัดส่ง *</label><input name="issuedDate" type="date" value="${tz.today()}" required/></div>
+          <div class="form-group"><label>HR ผู้จัด</label><input name="issuedBy" value="${escapeHtml(issuedBy)}"/></div>
+          <div class="form-group"><label>รวม</label><input id="issueTotal" type="text" readonly style="font-weight:600;color:var(--success)"/></div>
+          <div class="form-group span-2"><label>หมายเหตุ</label><input name="note" placeholder="เช่น ส่งให้พนักงานเรียบร้อย"/></div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" data-close>ปิด</button>
+          <button type="submit" class="btn btn-primary">+ เพิ่มรายการ</button>
+        </div>
+      </form>
+    </div>
+  `, { size: 'lg' });
+
+  const updateCost = () => {
+    const sel = $('#issueItem');
+    const opt = sel.options[sel.selectedIndex];
+    const cost = opt ? Number(opt.dataset.cost || 0) : 0;
+    const qty = Number($('#issueQty').value || 0);
+    $('#issueCost').value = cost;
+    $('#issueTotal').value = fmt.money(cost * qty);
+  };
+  $('#issueItem')?.addEventListener('change', updateCost);
+  $('#issueQty')?.addEventListener('input', updateCost);
+
+  $('#issueForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const data = Object.fromEntries(new FormData(e.target).entries());
+      const sel = $('#issueItem');
+      const opt = sel.options[sel.selectedIndex];
+      data.itemName = opt?.dataset.name || '';
+      data.size = opt?.dataset.size || '';
+      data.requestId = requestId;
+      data.employeeId = req.employeeId;
+      data.qty = Number(data.qty);
+      data.unitCost = Number(data.unitCost);
+      const stock = Number(opt?.dataset.stock || 0);
+      if (data.qty > stock) {
+        if (!await modal.confirm('Stock ไม่พอ', `Stock เหลือ ${stock} ชิ้น แต่ต้องการ ${data.qty} ชิ้น — ดำเนินการต่อ?`)) return;
+      }
+      await DB.saveUniformIssue(data);
+      toast('เพิ่มรายการแล้ว · stock ถูกตัดอัตโนมัติ', 'success');
+      openIssueItemsForm(requestId); // refresh modal
+    } catch (ex) { toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
+  });
+}
+
+// ─── รายการชุด (master) ───
+function openUniformItemForm(id = null) {
+  if (!requireAdmin()) return;
+  const i = id ? DB.getUniformItem(id) : { id: '', name: '', size: '', stockQty: 0, unitCost: 0, active: true, note: '' };
+  modal.open(id ? 'แก้ไขรายการชุด' : 'เพิ่มรายการชุด', `
+    <form id="uniItemForm">
+      <div class="form-grid">
+        <div class="form-group"><label>ชื่อชุด *</label>
+          <input name="name" list="dl-uni-names" value="${escapeHtml(i.name)}" required placeholder="เสื้อยูนิฟอร์ม, กางเกง, หมวก ฯลฯ"/>
+          <datalist id="dl-uni-names">${['เสื้อยูนิฟอร์ม','กางเกง','หมวก','รองเท้า','ผ้ากันเปื้อน','เสื้อแขนยาว','เสื้อแขนสั้น','เนคไท'].map(v => `<option value="${v}">`).join('')}</datalist>
+        </div>
+        <div class="form-group"><label>ขนาด</label>
+          <input name="size" list="dl-uni-sizes" value="${escapeHtml(i.size)}" placeholder="S, M, L, XL, 36 ฯลฯ"/>
+          <datalist id="dl-uni-sizes">${['S','M','L','XL','XXL','ฟรีไซส์','36','38','40','42'].map(v => `<option value="${v}">`).join('')}</datalist>
+        </div>
+        <div class="form-group"><label>จำนวนใน Stock</label><input name="stockQty" type="number" min="0" value="${i.stockQty}"/></div>
+        <div class="form-group"><label>ราคา/ชิ้น (บาท)</label><input name="unitCost" type="number" min="0" step="0.01" value="${i.unitCost}"/></div>
+        <div class="form-group span-2"><label>สถานะ</label>
+          <select name="active"><option value="true" ${i.active ? 'selected' : ''}>ใช้งาน</option><option value="false" ${!i.active ? 'selected' : ''}>ปิดใช้งาน</option></select>
+        </div>
+        <div class="form-group span-2"><label>หมายเหตุ</label><textarea name="note" rows="2">${escapeHtml(i.note)}</textarea></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" data-close>ยกเลิก</button>
+        <button type="submit" class="btn btn-primary">บันทึก</button>
+      </div>
+    </form>
+  `);
+  $('#uniItemForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const data = Object.fromEntries(new FormData(e.target).entries());
+      data.stockQty = Number(data.stockQty || 0);
+      data.unitCost = Number(data.unitCost || 0);
+      data.active = data.active === 'true';
+      if (id) data.id = id;
+      await DB.saveUniformItem(data);
+      modal.close();
+      toast(id ? 'บันทึกแล้ว' : 'เพิ่มรายการชุดแล้ว', 'success');
+      _uniformState.tab = 'items';
+      router.go('uniform');
+    } catch (ex) { toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
+  });
+}
+
+async function deleteUniformItem(id) {
+  if (!requireAdmin()) return;
+  const i = DB.getUniformItem(id);
+  if (!i) return;
+  if (!await modal.confirm('ลบรายการ', `ลบ "${i.name} (${i.size})" ใช่หรือไม่?`)) return;
+  try { await DB.deleteUniformItem(id); toast('ลบแล้ว', 'success'); router.go('uniform'); }
+  catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
+}
+
+async function deleteUniformIssue(id) {
+  if (!requireAdmin()) return;
+  if (!await modal.confirm('ลบรายการจัด', 'คืน stock + ลบประวัติ ใช่หรือไม่?')) return;
+  try { await DB.deleteUniformIssue(id); toast('ลบแล้ว', 'success'); router.go('uniform'); }
+  catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
+}
+
+// ─── EXCEL: export ประวัติการจัดชุด ───
+function exportUniformIssuesXLSX() {
+  if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(exportUniformIssuesXLSX, 800); return; }
+  const list = DB.getUniformIssues();
+  if (!list.length) { toast('ยังไม่มีข้อมูล', 'warning'); return; }
+  const cs = csvSafe;
+  const rows = list.map(i => {
+    const e = DB.getEmployee(i.employeeId) || {};
+    return {
+      'วันที่จัดส่ง': excelDate(i.issuedDate),
+      'รหัสพนักงาน': excelNum(i.employeeId),
+      'ชื่อ-นามสกุล': cs((e.firstName || '') + ' ' + (e.lastName || '')),
+      'รายการชุด': cs(i.itemName),
+      'ขนาด': cs(i.size),
+      'จำนวน': Number(i.qty || 0),
+      'ราคา/ชิ้น': Number(i.unitCost || 0),
+      'รวม': Number(i.totalCost || 0),
+      'HR ผู้จัด': cs(i.issuedBy),
+      'หมายเหตุ': cs(i.note)
+    };
+  });
+  const ws = XLSX.utils.json_to_sheet(rows, { cellDates: true, dateNF: 'dd mmm yyyy' });
+  const headerKeys = Object.keys(rows[0] || {});
+  const idIdx = headerKeys.indexOf('รหัสพนักงาน');
+  if (idIdx >= 0) setColumnFormat(ws, idIdx, '0');
+  for (const col of ['ราคา/ชิ้น', 'รวม']) {
+    const idx = headerKeys.indexOf(col);
+    if (idx >= 0) setColumnFormat(ws, idx, '#,##0');
+  }
+  ws['!cols'] = headerKeys.map(k => {
+    if (k === 'วันที่จัดส่ง') return { wch: 13 };
+    if (k === 'ชื่อ-นามสกุล' || k === 'รายการชุด') return { wch: 22 };
+    if (k === 'หมายเหตุ') return { wch: 26 };
+    return { wch: 12 };
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'การจัดชุด');
+  XLSX.writeFile(wb, `คชา-การจัดชุดพนักงาน-${tz.today()}.xlsx`);
+  toast('ส่งออกแล้ว — นำไปคิดค่าชุดกับพนักงานใหม่ได้', 'success');
 }
 
 // ═══════════════════════════════════════════════════════
