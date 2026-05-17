@@ -212,11 +212,20 @@ const DB = {
   _compFromDB: (r) => ({ name: r.name || '', nameEn: r.name_en || '', taxId: r.tax_id || '', address: r.address || '', phone: r.phone || '', email: r.email || '' }),
 
   // ─── EMPLOYEES ───
+  // สถานะที่แท้จริง (effective status) — คำนวณจาก terminationDate
+  // 'active'    = ปฏิบัติงาน (ไม่มีวันพ้นสภาพ)
+  // 'pending'   = นัดพ้นสภาพ (วันพ้นสภาพอยู่ในอนาคต — ยังทำงานอยู่)
+  // 'resigned'  = พ้นสภาพแล้ว (วันพ้นสภาพผ่านไปแล้ว)
+  empStatus(emp) {
+    if (!emp.terminationDate) return 'active';
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+    return emp.terminationDate > today ? 'pending' : 'resigned';
+  },
+
   getEmployees(filter = {}) {
     let list = this.data.employees.slice();
     if (filter.search) {
       const s = filter.search.toLowerCase();
-      // strip non-digit version of search สำหรับเทียบเลขประชาชน (ลบขีด/ช่องว่าง)
       const sDigits = s.replace(/\D/g, '');
       list = list.filter(e =>
         (e.firstName + ' ' + e.lastName).toLowerCase().includes(s) ||
@@ -228,7 +237,12 @@ const DB = {
     }
     if (filter.branch) list = list.filter(e => e.branch === filter.branch);
     if (filter.department) list = list.filter(e => e.department === filter.department);
-    if (filter.status) list = list.filter(e => e.status === filter.status);
+    if (filter.status) {
+      // ใช้ effective status — รองรับ "active" (รวม pending) และ "resigned"
+      if (filter.status === 'active') list = list.filter(e => this.empStatus(e) !== 'resigned');
+      else if (filter.status === 'pending') list = list.filter(e => this.empStatus(e) === 'pending');
+      else if (filter.status === 'resigned') list = list.filter(e => this.empStatus(e) === 'resigned');
+    }
     return list;
   },
 
@@ -243,6 +257,8 @@ const DB = {
   getEmployee(id) { return this.data.employees.find(e => e.id === id); },
 
   async saveEmployee(emp) {
+    // auto-set status จาก terminationDate
+    emp.status = this.empStatus(emp) === 'resigned' ? 'resigned' : 'active';
     const row = this._empToDB(emp);
     const { data, error } = await this.client.from('employees').upsert(row).select().single();
     if (error) throw error;

@@ -367,7 +367,8 @@ router.register('employees', () => {
         <select class="filter-select" id="empStatus">
           <option value="">ทุกสถานะ</option>
           <option value="active" ${empState.status === 'active' ? 'selected' : ''}>ปฏิบัติงาน</option>
-          <option value="resigned" ${empState.status === 'resigned' ? 'selected' : ''}>ลาออก</option>
+          <option value="pending" ${empState.status === 'pending' ? 'selected' : ''}>นัดพ้นสภาพ (ยังปฏิบัติงาน)</option>
+          <option value="resigned" ${empState.status === 'resigned' ? 'selected' : ''}>พ้นสภาพแล้ว</option>
         </select>
       </div>
       <div id="empList"></div>
@@ -447,7 +448,12 @@ function renderEmployeeList() {
               <td>${fmt.serviceYears(e.hireDate, e.terminationDate)}</td>
               <td class="num">${e.dob ? fmt.age(e.dob).replace(' ปี', '') : '-'}</td>
               <td class="num">${fmt.money(e.salary)}</td>
-              <td>${e.terminationDate ? `<span class="badge badge-danger">${fmt.date(e.terminationDate)}</span>` : '<span class="badge badge-success">ปฏิบัติงาน</span>'}</td>
+              <td>${(() => {
+                const st = DB.empStatus(e);
+                if (st === 'active') return '<span class="badge badge-success">ปฏิบัติงาน</span>';
+                if (st === 'pending') return `<span class="badge badge-warning" title="ยังปฏิบัติงาน — มีนัดพ้นสภาพ">นัด ${fmt.date(e.terminationDate)}</span>`;
+                return `<span class="badge badge-danger">${fmt.date(e.terminationDate)}</span>`;
+              })()}</td>
               <td class="actions">
                 <button class="btn btn-ghost btn-sm" onclick="viewEmployee('${e.id}')">ดู</button>
                 ${DB.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="openEmployeeForm('${e.id}')">แก้</button>
@@ -597,8 +603,11 @@ function openEmployeeForm(id = null) {
           <div class="form-group"><label>ตำแหน่ง</label><input name="positionTitle" value="${escapeHtml(emp.positionTitle)}" placeholder="เช่น ผู้จัดการฝ่ายบุคคล"/></div>
           <div class="form-group"><label>ประเภทพนักงาน</label><select name="employeeType">${opt(EMP_OPTIONS.empTypes, emp.employeeType)}</select></div>
           <div class="form-group"><label>วันเริ่มงาน *</label><input name="hireDate" type="date" value="${emp.hireDate || ''}" required/></div>
-          <div class="form-group"><label>วันพ้นสภาพ <span class="muted-2" style="font-weight:normal;font-size:11px">(ใส่เฉพาะถ้าลาออก/พ้นสภาพ)</span></label><input name="terminationDate" type="date" value="${emp.terminationDate || ''}"/></div>
-          <div class="form-group"><label>สถานะ</label><select name="status"><option value="active" ${emp.status === 'active' ? 'selected' : ''}>ปฏิบัติงาน</option><option value="resigned" ${emp.status === 'resigned' ? 'selected' : ''}>ลาออก/พ้นสภาพ</option></select></div>
+          <div class="form-group"><label>วันพ้นสภาพ <span class="muted-2" style="font-weight:normal;font-size:11px">(วันที่ลาออก/พ้นสภาพ — ใส่ล่วงหน้าได้)</span></label><input name="terminationDate" type="date" value="${emp.terminationDate || ''}"/></div>
+          <div class="form-group"><label>สถานะ <span class="muted-2" style="font-weight:normal;font-size:11px">(คำนวณจากวันพ้นสภาพอัตโนมัติ)</span></label>
+            <input type="text" id="empStatusDisplay" readonly value="${(() => { const st = DB.empStatus(emp); return st === 'active' ? 'ปฏิบัติงาน' : st === 'pending' ? 'นัดพ้นสภาพ (ยังปฏิบัติงาน)' : 'พ้นสภาพแล้ว'; })()}"/>
+            <input type="hidden" name="status" value="${emp.status || 'active'}"/>
+          </div>
         </div>
       </div>
 
@@ -651,6 +660,18 @@ function openEmployeeForm(id = null) {
   };
   $$('.income-input').forEach(i => i.addEventListener('input', updateTotal));
   updateTotal();
+
+  // ─── UPDATE STATUS DISPLAY เมื่อเปลี่ยนวันพ้นสภาพ ───
+  const updateStatusDisplay = () => {
+    const td = $('#empForm [name="terminationDate"]')?.value;
+    const today = tz.today();
+    let label = 'ปฏิบัติงาน';
+    if (td) label = td > today ? 'นัดพ้นสภาพ (ยังปฏิบัติงาน)' : 'พ้นสภาพแล้ว';
+    const el = $('#empStatusDisplay');
+    if (el) el.value = label;
+  };
+  $('#empForm [name="terminationDate"]')?.addEventListener('change', updateStatusDisplay);
+  $('#empForm [name="terminationDate"]')?.addEventListener('input', updateStatusDisplay);
 
   // ─── PHOTO HANDLING ───
   let pendingPhotoBlob = null;
@@ -782,7 +803,12 @@ function viewEmployee(id) {
         <div class="emp-info-row"><div class="label">ประเภทพนักงาน</div><div class="value">${escapeHtml(e.employeeType || '-')}</div></div>
         <div class="emp-info-row"><div class="label">วันเริ่มงาน</div><div class="value">${fmt.date(e.hireDate)}</div></div>
         <div class="emp-info-row"><div class="label">อายุงาน</div><div class="value">${e.hireDate ? fmt.serviceYears(e.hireDate, e.terminationDate) : '-'}</div></div>
-        <div class="emp-info-row"><div class="label">วันพ้นสภาพ</div><div class="value">${e.terminationDate ? fmt.date(e.terminationDate) + ' <span class="badge badge-danger" style="margin-left:6px">พ้นสภาพ</span>' : '<span class="badge badge-success">ยังปฏิบัติงาน</span>'}</div></div>
+        <div class="emp-info-row"><div class="label">วันพ้นสภาพ</div><div class="value">${(() => {
+          const st = DB.empStatus(e);
+          if (st === 'active') return '<span class="badge badge-success">ยังปฏิบัติงาน</span>';
+          if (st === 'pending') return fmt.date(e.terminationDate) + ' <span class="badge badge-warning" style="margin-left:6px">นัดพ้นสภาพ — ยังปฏิบัติงาน</span>';
+          return fmt.date(e.terminationDate) + ' <span class="badge badge-danger" style="margin-left:6px">พ้นสภาพแล้ว</span>';
+        })()}</div></div>
       </div>
     </div>
 
