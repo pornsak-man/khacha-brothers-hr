@@ -599,7 +599,7 @@ function openEmployeeForm(id = null) {
         <div class="form-grid">
           <div class="form-group"><label>ฝ่าย *</label><select name="department" required>${depts.map(d => `<option value="${d.id}" ${emp.department === d.id ? 'selected' : ''}>${escapeHtml(d.name)}</option>`).join('')}</select></div>
           <div class="form-group"><label>สาขา</label><input name="branch" value="${escapeHtml(emp.branch)}" placeholder="เช่น สำนักงานใหญ่"/></div>
-          <div class="form-group"><label>ระดับตำแหน่งงาน *</label><select name="position" required>${positions.map(p => `<option value="${p.id}" ${emp.position === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}</select></div>
+          <div class="form-group"><label>ระดับตำแหน่งงาน *</label><select name="position" required>${positions.slice().sort((a, b) => (b.level || 0) - (a.level || 0) || a.name.localeCompare(b.name)).map(p => `<option value="${p.id}" ${emp.position === p.id ? 'selected' : ''}>${escapeHtml(p.name)}${p.level ? ` — ระดับ ${p.level}` : ''}</option>`).join('')}</select></div>
           <div class="form-group"><label>ตำแหน่ง</label><input name="positionTitle" value="${escapeHtml(emp.positionTitle)}" placeholder="เช่น ผู้จัดการฝ่ายบุคคล"/></div>
           <div class="form-group"><label>ประเภทพนักงาน</label><select name="employeeType">${opt(EMP_OPTIONS.empTypes, emp.employeeType)}</select></div>
           <div class="form-group"><label>วันเริ่มงาน *</label><input name="hireDate" type="date" value="${emp.hireDate || ''}" required/></div>
@@ -1500,23 +1500,25 @@ async function deleteDept(id) {
 //  PAGE: POSITIONS
 // ═══════════════════════════════════════════════════════
 router.register('positions', () => {
-  const ps = DB.getPositions();
+  // เรียงตาม level desc แล้ว name asc — ระดับสูงอยู่บน
+  const ps = DB.getPositions().slice().sort((a, b) => (b.level || 0) - (a.level || 0) || a.name.localeCompare(b.name));
   const emps = DB.getEmployees({ status: 'active' });
   return `
     <div class="page-header">
       <h2>ระดับตำแหน่ง</h2>
-      <div class="actions">${DB.isAdmin ? '<button class="btn btn-primary" onclick="openPositionForm()">+ เพิ่มระดับ</button>' : ''}</div>
+      <div class="actions">${DB.isAdmin ? '<button class="btn btn-primary" onclick="openPositionForm()">+ เพิ่มตำแหน่ง</button>' : ''}</div>
     </div>
     <div class="card">
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>รหัส</th><th>ระดับ</th><th class="num">เงินเดือนต่ำสุด</th><th class="num">เงินเดือนสูงสุด</th><th class="num">จำนวนพนักงาน</th><th></th></tr></thead>
+          <thead><tr><th>รหัส</th><th>ตำแหน่ง</th><th class="num">ระดับ</th><th class="num">เงินเดือนต่ำสุด</th><th class="num">เงินเดือนสูงสุด</th><th class="num">จำนวนพนักงาน</th><th></th></tr></thead>
           <tbody>
             ${ps.map(p => `<tr>
                 <td><strong>${escapeHtml(p.id)}</strong></td>
                 <td>${escapeHtml(p.name)}</td>
-                <td class="num">${fmt.money(p.minSalary)}</td>
-                <td class="num">${fmt.money(p.maxSalary)}</td>
+                <td class="num"><span class="badge badge-info">${p.level || '-'}</span></td>
+                <td class="num">${p.minSalary ? fmt.money(p.minSalary) : '-'}</td>
+                <td class="num">${p.maxSalary ? fmt.money(p.maxSalary) : '-'}</td>
                 <td class="num">${emps.filter(e => e.position === p.id).length}</td>
                 <td class="actions">${DB.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="openPositionForm('${p.id}')">แก้ไข</button><button class="btn btn-ghost btn-sm" onclick="deletePosition('${p.id}')">ลบ</button>` : ''}</td>
               </tr>`).join('')}
@@ -1528,12 +1530,13 @@ router.register('positions', () => {
 
 function openPositionForm(id = null) {
   if (!requireAdmin()) return;
-  const p = id ? DB.getPosition(id) : { id: DB.nextPositionId(), name: '', minSalary: 0, maxSalary: 0 };
-  modal.open(id ? 'แก้ไขระดับตำแหน่ง' : 'เพิ่มระดับตำแหน่ง', `
+  const p = id ? DB.getPosition(id) : { id: DB.nextPositionId(), name: '', level: 1, minSalary: 0, maxSalary: 0 };
+  modal.open(id ? 'แก้ไขตำแหน่ง' : 'เพิ่มตำแหน่ง', `
     <form id="posForm">
       <div class="form-grid">
         <div class="form-group"><label>รหัส *</label><input name="id" value="${escapeHtml(p.id)}" required ${id ? 'readonly' : ''}/></div>
-        <div class="form-group"><label>ชื่อระดับ *</label><input name="name" value="${escapeHtml(p.name)}" required/></div>
+        <div class="form-group"><label>ชื่อตำแหน่ง *</label><input name="name" value="${escapeHtml(p.name)}" required placeholder="เช่น Senior Head Chef"/></div>
+        <div class="form-group"><label>ระดับ (1-8) *</label><input name="level" type="number" min="1" max="20" value="${p.level || 1}" required/></div>
         <div class="form-group"><label>เงินเดือนต่ำสุด</label><input name="minSalary" type="number" min="0" value="${p.minSalary || 0}"/></div>
         <div class="form-group"><label>เงินเดือนสูงสุด</label><input name="maxSalary" type="number" min="0" value="${p.maxSalary || 0}"/></div>
       </div>
@@ -1546,7 +1549,7 @@ function openPositionForm(id = null) {
     e.preventDefault();
     try {
       const data = Object.fromEntries(new FormData(e.target).entries());
-      data.minSalary = Number(data.minSalary); data.maxSalary = Number(data.maxSalary);
+      data.level = Number(data.level); data.minSalary = Number(data.minSalary); data.maxSalary = Number(data.maxSalary);
       await DB.savePosition(data);
       modal.close();
       toast('บันทึกแล้ว', 'success');

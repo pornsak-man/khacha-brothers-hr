@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS public.departments (
 CREATE TABLE IF NOT EXISTS public.position_levels (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
+  level       INTEGER DEFAULT 0,
   min_salary  NUMERIC(12,2) DEFAULT 0,
   max_salary  NUMERIC(12,2) DEFAULT 0,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -336,13 +337,23 @@ INSERT INTO public.departments (id, name) VALUES
   ('D005', 'ฝ่ายปฏิบัติการ')
 ON CONFLICT (id) DO NOTHING;
 
--- ── ระดับตำแหน่ง ──
-INSERT INTO public.position_levels (id, name, min_salary, max_salary) VALUES
-  ('P01', 'พนักงาน', 12000, 20000),
-  ('P02', 'พนักงานอาวุโส', 18000, 28000),
-  ('P03', 'หัวหน้าทีม', 25000, 40000),
-  ('P04', 'ผู้จัดการ', 35000, 60000),
-  ('P05', 'ผู้อำนวยการ', 55000, 120000)
+-- ── ระดับตำแหน่ง (คชา บราเธอร์ส — 15 ตำแหน่ง) ──
+INSERT INTO public.position_levels (id, name, level, min_salary, max_salary) VALUES
+  ('P01', 'RM',               8, 0, 0),
+  ('P02', 'Act.RM',            7, 0, 0),
+  ('P03', 'Asst.1',            6, 0, 0),
+  ('P04', 'Asst.2',            5, 0, 0),
+  ('P05', 'JM',                4, 0, 0),
+  ('P06', 'MT',                3, 0, 0),
+  ('P07', 'Service',           2, 0, 0),
+  ('P08', 'Senior Head Chef',  7, 0, 0),
+  ('P09', 'Head Chef',         6, 0, 0),
+  ('P10', 'Act.Head Chef',     5, 0, 0),
+  ('P11', 'Sous Chef',         4, 0, 0),
+  ('P12', 'Senior Chef',       3, 0, 0),
+  ('P13', 'Barista',           3, 0, 0),
+  ('P14', 'Chef',              2, 0, 0),
+  ('P15', 'Part-time',         1, 0, 0)
 ON CONFLICT (id) DO NOTHING;
 
 -- ── พนักงานตัวอย่าง ──
