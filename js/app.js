@@ -3268,7 +3268,7 @@ function renderUniformRequestsTable() {
             <td>${r.neededBy ? fmt.date(r.neededBy) : '-'}</td>
             <td><span class="badge ${s.cls}">${s.label}</span></td>
             <td class="num"><strong>${fmt.money(r.totalCost)}</strong></td>
-            <td style="max-width:240px;white-space:pre-wrap;font-size:12.5px">${escapeHtml(r.note || '-')}</td>
+            <td style="max-width:240px;white-space:pre-wrap;font-size:12.5px">${r.note ? escapeHtml(r.note) : '<span style="color:var(--warning);font-weight:600">⚠️ ยังไม่ระบุ</span>'}</td>
             <td class="actions">
               ${DB.isAdmin ? `<button class="btn btn-primary btn-sm" onclick="openIssueItemsForm('${r.id}')">จัดชุด</button>
               <button class="btn btn-ghost btn-sm" onclick="openUniformRequestForm('${r.id}')">แก้</button>
@@ -3448,13 +3448,28 @@ function openIssueItemsForm(requestId) {
   const existing = DB.getUniformIssues({ requestId });
   const issuedBy = DB.profile?.name || DB.user?.email || '';
 
+  const isFromApplicant = refLabel === 'ผู้สมัคร';
+  const editLink = isFromApplicant && req.applicantId
+    ? `<button type="button" class="btn btn-ghost btn-sm" onclick="modal.close(); openApplicantForm('${req.applicantId}')" style="margin-left:8px;font-size:11px">✏️ แก้ไขที่ recruit</button>`
+    : (req.employeeId ? `<button type="button" class="btn btn-ghost btn-sm" onclick="modal.close(); openUniformRequestForm('${req.id}')" style="margin-left:8px;font-size:11px">✏️ แก้ไขคำขอ</button>` : '');
+
   modal.open(`บันทึกการจัดชุด — ${escapeHtml(owner.firstName + ' ' + (owner.lastName || ''))}`, `
     <div class="form-section">
-      <h3>ข้อมูลคำขอ <span class="badge ${refLabel === 'ผู้สมัคร' ? 'badge-warning' : 'badge-success'}" style="margin-left:8px;font-size:11px">${refLabel}</span></h3>
+      <h3>ข้อมูลคำขอ <span class="badge ${isFromApplicant ? 'badge-warning' : 'badge-success'}" style="margin-left:8px;font-size:11px">${refLabel}</span>${editLink}</h3>
       <div class="form-grid">
         <div class="form-group"><label>เจ้าของคำขอ</label><input type="text" readonly value="${escapeHtml(ownerLabel)}"/></div>
         <div class="form-group"><label>ต้องการก่อน</label><input type="text" readonly value="${req.neededBy ? fmt.date(req.neededBy) : '-'}"/></div>
-        ${req.note ? `<div class="form-group span-2"><label>รายละเอียดที่ recruit แจ้ง</label><textarea readonly rows="3" style="white-space:pre-wrap">${escapeHtml(req.note)}</textarea></div>` : ''}
+        <div class="form-group span-2">
+          <label>รายละเอียดที่ recruit แจ้ง <span class="muted-2" style="font-weight:normal;font-size:11px">(size, ประเภท, จำนวน)</span></label>
+          ${req.note
+            ? `<textarea readonly rows="3" style="white-space:pre-wrap;background:var(--surface-2);font-size:13.5px;line-height:1.6">${escapeHtml(req.note)}</textarea>`
+            : `<div style="padding:14px 16px;background:var(--warning-soft);color:var(--warning-text);border-radius:8px;font-size:13px;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+                <div>⚠️ <strong>ยังไม่ระบุรายละเอียดชุด</strong> — recruit ยังไม่ได้กรอก size/ประเภท/จำนวน${isFromApplicant ? ' ที่ตอนเพิ่มผู้สมัคร' : ''}</div>
+                ${isFromApplicant && req.applicantId
+                  ? `<button type="button" class="btn btn-primary btn-sm" onclick="modal.close(); openApplicantForm('${req.applicantId}')">ไปแก้ไขที่ recruit</button>`
+                  : (req.employeeId ? `<button type="button" class="btn btn-primary btn-sm" onclick="modal.close(); openUniformRequestForm('${req.id}')">ไปกรอกรายละเอียด</button>` : '')}
+              </div>`}
+        </div>
       </div>
     </div>
 
