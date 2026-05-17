@@ -3657,6 +3657,7 @@ function renderUniformRequestsTable() {
         max-width: 260px;
         font-size: 12.5px;
         color: var(--text-2);
+        height: calc(1.5em * 3 + 28px);  /* 3 lines @ line-height 1.5 + td padding 14px*2 → row บังคับสูงเท่ากันทุกแถว */
       }
       .uniform-req-table .note-clamp {
         display: -webkit-box;
