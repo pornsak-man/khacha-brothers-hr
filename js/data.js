@@ -259,6 +259,19 @@ const DB = {
     newPosition: r.new_position || '', newPositionTitle: r.new_position_title || '',
     oldBranch: r.old_branch || '', newBranch: r.new_branch || '',
     oldDepartment: r.old_department || '', newDepartment: r.new_department || '',
+    // allowances (old + new) — null คือ "ไม่เปลี่ยน"
+    oldAllowancePosition: r.old_allowance_position != null ? Number(r.old_allowance_position) : null,
+    newAllowancePosition: r.new_allowance_position != null ? Number(r.new_allowance_position) : null,
+    oldAllowanceTravel:   r.old_allowance_travel   != null ? Number(r.old_allowance_travel)   : null,
+    newAllowanceTravel:   r.new_allowance_travel   != null ? Number(r.new_allowance_travel)   : null,
+    oldAllowanceFood:     r.old_allowance_food     != null ? Number(r.old_allowance_food)     : null,
+    newAllowanceFood:     r.new_allowance_food     != null ? Number(r.new_allowance_food)     : null,
+    oldAllowancePerDiem:  r.old_allowance_per_diem != null ? Number(r.old_allowance_per_diem) : null,
+    newAllowancePerDiem:  r.new_allowance_per_diem != null ? Number(r.new_allowance_per_diem) : null,
+    oldAllowanceLanguage: r.old_allowance_language != null ? Number(r.old_allowance_language) : null,
+    newAllowanceLanguage: r.new_allowance_language != null ? Number(r.new_allowance_language) : null,
+    oldAllowanceOther:    r.old_allowance_other    != null ? Number(r.old_allowance_other)    : null,
+    newAllowanceOther:    r.new_allowance_other    != null ? Number(r.new_allowance_other)    : null,
     changeType: r.change_type || '',
     reason: r.reason || ''
   }),
@@ -274,6 +287,18 @@ const DB = {
     new_branch: s.newBranch || null,
     old_department: s.oldDepartment || null,
     new_department: s.newDepartment || null,
+    old_allowance_position: s.oldAllowancePosition != null ? Number(s.oldAllowancePosition) : null,
+    new_allowance_position: s.newAllowancePosition != null ? Number(s.newAllowancePosition) : null,
+    old_allowance_travel:   s.oldAllowanceTravel   != null ? Number(s.oldAllowanceTravel)   : null,
+    new_allowance_travel:   s.newAllowanceTravel   != null ? Number(s.newAllowanceTravel)   : null,
+    old_allowance_food:     s.oldAllowanceFood     != null ? Number(s.oldAllowanceFood)     : null,
+    new_allowance_food:     s.newAllowanceFood     != null ? Number(s.newAllowanceFood)     : null,
+    old_allowance_per_diem:  s.oldAllowancePerDiem  != null ? Number(s.oldAllowancePerDiem)  : null,
+    new_allowance_per_diem:  s.newAllowancePerDiem  != null ? Number(s.newAllowancePerDiem)  : null,
+    old_allowance_language: s.oldAllowanceLanguage != null ? Number(s.oldAllowanceLanguage) : null,
+    new_allowance_language: s.newAllowanceLanguage != null ? Number(s.newAllowanceLanguage) : null,
+    old_allowance_other:    s.oldAllowanceOther    != null ? Number(s.oldAllowanceOther)    : null,
+    new_allowance_other:    s.newAllowanceOther    != null ? Number(s.newAllowanceOther)    : null,
     change_type: s.changeType || null,
     reason: s.reason || null
   }),
@@ -592,13 +617,20 @@ const DB = {
     if (!emp) throw new Error('ไม่พบพนักงาน: ' + rec.employeeId);
 
     // กรอก old_* จาก current state ของพนักงาน — ทำให้ประวัติเป็น snapshot ที่สมบูรณ์
+    // allowance เก่า: กรอกเฉพาะคู่ที่ new_* ระบุ (ไม่กรอกถ้า new_ = null = "ไม่เปลี่ยน")
     const enriched = {
       ...rec,
       oldSalary: rec.oldSalary != null ? rec.oldSalary : emp.salary,
       oldPosition: rec.oldPosition || emp.position || '',
       oldPositionTitle: rec.oldPositionTitle || emp.positionTitle || '',
       oldBranch: rec.oldBranch || emp.branch || '',
-      oldDepartment: rec.oldDepartment || emp.department || ''
+      oldDepartment: rec.oldDepartment || emp.department || '',
+      oldAllowancePosition: rec.newAllowancePosition != null ? (rec.oldAllowancePosition != null ? rec.oldAllowancePosition : emp.allowancePosition) : null,
+      oldAllowanceTravel:   rec.newAllowanceTravel   != null ? (rec.oldAllowanceTravel   != null ? rec.oldAllowanceTravel   : emp.allowanceTravel)   : null,
+      oldAllowanceFood:     rec.newAllowanceFood     != null ? (rec.oldAllowanceFood     != null ? rec.oldAllowanceFood     : emp.allowanceFood)     : null,
+      oldAllowancePerDiem:  rec.newAllowancePerDiem  != null ? (rec.oldAllowancePerDiem  != null ? rec.oldAllowancePerDiem  : emp.allowancePerDiem)  : null,
+      oldAllowanceLanguage: rec.newAllowanceLanguage != null ? (rec.oldAllowanceLanguage != null ? rec.oldAllowanceLanguage : emp.allowanceLanguage) : null,
+      oldAllowanceOther:    rec.newAllowanceOther    != null ? (rec.oldAllowanceOther    != null ? rec.oldAllowanceOther    : emp.allowanceOther)    : null
     };
 
     // คำนวณ change_type อัตโนมัติจากฟิลด์ที่เปลี่ยน
@@ -607,6 +639,15 @@ const DB = {
     if (enriched.newPosition && enriched.newPosition !== enriched.oldPosition) changed.push('position');
     if (enriched.newBranch && enriched.newBranch !== enriched.oldBranch) changed.push('branch');
     if (enriched.newDepartment && enriched.newDepartment !== enriched.oldDepartment) changed.push('department');
+    // allowance changes count as "allowance" change_type (single bucket)
+    if (
+      (enriched.newAllowancePosition != null && Number(enriched.newAllowancePosition) !== Number(enriched.oldAllowancePosition)) ||
+      (enriched.newAllowanceTravel   != null && Number(enriched.newAllowanceTravel)   !== Number(enriched.oldAllowanceTravel))   ||
+      (enriched.newAllowanceFood     != null && Number(enriched.newAllowanceFood)     !== Number(enriched.oldAllowanceFood))     ||
+      (enriched.newAllowancePerDiem  != null && Number(enriched.newAllowancePerDiem)  !== Number(enriched.oldAllowancePerDiem))  ||
+      (enriched.newAllowanceLanguage != null && Number(enriched.newAllowanceLanguage) !== Number(enriched.oldAllowanceLanguage)) ||
+      (enriched.newAllowanceOther    != null && Number(enriched.newAllowanceOther)    !== Number(enriched.oldAllowanceOther))
+    ) changed.push('allowance');
     enriched.changeType = changed.length > 1 ? 'multiple' : (changed[0] || 'salary');
 
     // Insert ประวัติ
@@ -621,6 +662,12 @@ const DB = {
     if (enriched.newPositionTitle) emp.positionTitle = enriched.newPositionTitle;
     if (enriched.newBranch) emp.branch = enriched.newBranch;
     if (enriched.newDepartment) emp.department = enriched.newDepartment;
+    if (enriched.newAllowancePosition != null) emp.allowancePosition = Number(enriched.newAllowancePosition);
+    if (enriched.newAllowanceTravel   != null) emp.allowanceTravel   = Number(enriched.newAllowanceTravel);
+    if (enriched.newAllowanceFood     != null) emp.allowanceFood     = Number(enriched.newAllowanceFood);
+    if (enriched.newAllowancePerDiem  != null) emp.allowancePerDiem  = Number(enriched.newAllowancePerDiem);
+    if (enriched.newAllowanceLanguage != null) emp.allowanceLanguage = Number(enriched.newAllowanceLanguage);
+    if (enriched.newAllowanceOther    != null) emp.allowanceOther    = Number(enriched.newAllowanceOther);
     await this.saveEmployee(emp);
 
     return mapped;

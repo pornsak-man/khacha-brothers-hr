@@ -2899,10 +2899,20 @@ function renderApplicantImportPreview(rows, errors) {
 // ═══════════════════════════════════════════════════════
 const CHANGE_TYPE_BADGE = {
   salary:     { label: 'ปรับเงินเดือน',  cls: 'badge-info' },
+  allowance:  { label: 'ปรับสวัสดิการ',   cls: 'badge-info' },
   position:   { label: 'ปรับตำแหน่ง',    cls: 'badge-success' },
   branch:     { label: 'ย้ายสาขา',       cls: 'badge-warning' },
   department: { label: 'ย้ายฝ่าย',        cls: 'badge-warning' },
   multiple:   { label: 'ปรับหลายอย่าง',  cls: 'badge-danger' }
+};
+// ฉลาก allowance สำหรับแสดงในประวัติ
+const ALLOWANCE_LABELS = {
+  AllowancePosition: 'ค่าตำแหน่ง',
+  AllowanceTravel:   'ค่าเดินทาง',
+  AllowanceFood:     'ค่าอาหาร',
+  AllowancePerDiem:  'ค่าเบี้ยเลี้ยง',
+  AllowanceLanguage: 'ค่าภาษา',
+  AllowanceOther:    'ค่าอื่นๆ'
 };
 
 router.register('salary-adjust', () => {
@@ -2928,6 +2938,16 @@ router.register('salary-adjust', () => {
       const oldD = DB.getDepartment(h.oldDepartment)?.name || h.oldDepartment || '-';
       const newD = DB.getDepartment(h.newDepartment)?.name || h.newDepartment;
       parts.push(`📋 ${escapeHtml(oldD)} → <strong>${escapeHtml(newD)}</strong>`);
+    }
+    // Allowance changes (6 fields)
+    for (const key of Object.keys(ALLOWANCE_LABELS)) {
+      const oldVal = h['old' + key];
+      const newVal = h['new' + key];
+      if (newVal != null && Number(newVal) !== Number(oldVal || 0)) {
+        const diff = Number(newVal) - Number(oldVal || 0);
+        const sign = diff > 0 ? '+' : '';
+        parts.push(`💵 ${ALLOWANCE_LABELS[key]} ${fmt.money(oldVal || 0)} → <strong>${fmt.money(newVal)}</strong> <span style="color:${diff > 0 ? 'var(--success)' : 'var(--danger)'}">(${sign}${fmt.money(diff)})</span>`);
+      }
     }
     return parts.length ? parts.join('<br>') : '-';
   };
@@ -3000,22 +3020,42 @@ function openSalaryAdjustForm() {
           <div class="form-group"><label>ตำแหน่งเก่า</label><input id="adjOldPosition" type="text" readonly/></div>
           <div class="form-group"><label>สาขาเก่า</label><input id="adjOldBranch" type="text" readonly/></div>
           <div class="form-group"><label>ฝ่ายเก่า</label><input id="adjOldDept" type="text" readonly/></div>
+          <div class="form-group"><label>ค่าตำแหน่งเก่า</label><input id="adjOldAlPos" type="text" readonly/></div>
+          <div class="form-group"><label>ค่าเดินทางเก่า</label><input id="adjOldAlTrv" type="text" readonly/></div>
+          <div class="form-group"><label>ค่าอาหารเก่า</label><input id="adjOldAlFood" type="text" readonly/></div>
+          <div class="form-group"><label>ค่าเบี้ยเลี้ยงเก่า</label><input id="adjOldAlPd" type="text" readonly/></div>
+          <div class="form-group"><label>ค่าภาษาเก่า</label><input id="adjOldAlLang" type="text" readonly/></div>
+          <div class="form-group"><label>ค่าอื่นๆ เก่า</label><input id="adjOldAlOther" type="text" readonly/></div>
+          <div class="form-group span-2"><label>รายได้รวมเก่า</label><input id="adjOldTotal" type="text" readonly style="font-weight:600;color:var(--primary)"/></div>
         </div>
       </div>
 
       <div class="form-section">
-        <h3>ค่าใหม่ <span class="muted-2" style="font-weight:normal;font-size:12px">(เปลี่ยนเฉพาะที่ต้องการ — ที่ไม่กรอกจะคงเดิม)</span></h3>
+        <h3>ค่าใหม่ — เงินเดือน + สวัสดิการ <span class="muted-2" style="font-weight:normal;font-size:12px">(เปลี่ยนเฉพาะที่ต้องการ — ที่ไม่กรอกจะคงเดิม)</span></h3>
         <div class="form-grid">
-          <div class="form-group"><label>เงินเดือนใหม่</label><input name="newSalary" type="number" min="0" step="100" placeholder="เว้นว่างถ้าไม่เปลี่ยน"/></div>
+          <div class="form-group"><label>เงินเดือนใหม่</label><input name="newSalary" type="number" min="0" step="100" placeholder="ไม่เปลี่ยน" class="adj-money"/></div>
+          <div class="form-group"><label>ค่าตำแหน่งใหม่</label><input name="newAllowancePosition" type="number" min="0" step="100" placeholder="ไม่เปลี่ยน" class="adj-money"/></div>
+          <div class="form-group"><label>ค่าเดินทางใหม่</label><input name="newAllowanceTravel" type="number" min="0" step="100" placeholder="ไม่เปลี่ยน" class="adj-money"/></div>
+          <div class="form-group"><label>ค่าอาหารใหม่</label><input name="newAllowanceFood" type="number" min="0" step="100" placeholder="ไม่เปลี่ยน" class="adj-money"/></div>
+          <div class="form-group"><label>ค่าเบี้ยเลี้ยงใหม่</label><input name="newAllowancePerDiem" type="number" min="0" step="100" placeholder="ไม่เปลี่ยน" class="adj-money"/></div>
+          <div class="form-group"><label>ค่าภาษาใหม่</label><input name="newAllowanceLanguage" type="number" min="0" step="100" placeholder="ไม่เปลี่ยน" class="adj-money"/></div>
+          <div class="form-group"><label>ค่าอื่นๆ ใหม่</label><input name="newAllowanceOther" type="number" min="0" step="100" placeholder="ไม่เปลี่ยน" class="adj-money"/></div>
+          <div class="form-group"><label>รายได้รวมใหม่</label><input id="adjNewTotal" type="text" readonly style="font-weight:600;color:var(--success)"/></div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>ค่าใหม่ — ตำแหน่ง / สังกัด</h3>
+        <div class="form-grid">
           <div class="form-group"><label>ระดับตำแหน่งใหม่</label>
             <select name="newPosition"><option value="">— ไม่เปลี่ยน —</option>${positions.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}</select>
           </div>
-          <div class="form-group"><label>ชื่อตำแหน่งใหม่</label><input name="newPositionTitle" placeholder="เว้นว่างถ้าไม่เปลี่ยน"/></div>
+          <div class="form-group"><label>ชื่อตำแหน่งใหม่</label><input name="newPositionTitle" placeholder="ไม่เปลี่ยน"/></div>
           <div class="form-group"><label>สาขาใหม่</label>
-            <input name="newBranch" list="dl-branches-adj" placeholder="เว้นว่างถ้าไม่ย้าย"/>
+            <input name="newBranch" list="dl-branches-adj" placeholder="ไม่ย้าย"/>
             <datalist id="dl-branches-adj">${branches.map(b => `<option value="${escapeHtml(b)}">`).join('')}</datalist>
           </div>
-          <div class="form-group span-2"><label>ฝ่ายใหม่</label>
+          <div class="form-group"><label>ฝ่ายใหม่</label>
             <select name="newDepartment"><option value="">— ไม่ย้าย —</option>${depts.map(d => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join('')}</select>
           </div>
         </div>
@@ -3034,14 +3074,53 @@ function openSalaryAdjustForm() {
       </div>
     </form>`, { size: 'lg' });
 
+  // helper: คำนวณรายได้รวม (ใช้ค่าใหม่ถ้ามี, ไม่งั้นใช้ค่าเก่า)
+  const currentEmp = () => DB.getEmployee($('#adjEmp').value);
+  const numOr = (v, fallback) => {
+    const s = (v ?? '').toString().trim();
+    if (s === '') return Number(fallback) || 0;
+    const n = Number(s);
+    return isNaN(n) ? Number(fallback) || 0 : n;
+  };
+  const calcNewTotal = () => {
+    const emp = currentEmp();
+    if (!emp) { $('#adjNewTotal').value = ''; return; }
+    const total =
+      numOr($('#adjForm [name="newSalary"]')?.value, emp.salary) +
+      numOr($('#adjForm [name="newAllowancePosition"]')?.value, emp.allowancePosition) +
+      numOr($('#adjForm [name="newAllowanceTravel"]')?.value, emp.allowanceTravel) +
+      numOr($('#adjForm [name="newAllowanceFood"]')?.value, emp.allowanceFood) +
+      numOr($('#adjForm [name="newAllowancePerDiem"]')?.value, emp.allowancePerDiem) +
+      numOr($('#adjForm [name="newAllowanceLanguage"]')?.value, emp.allowanceLanguage) +
+      numOr($('#adjForm [name="newAllowanceOther"]')?.value, emp.allowanceOther);
+    $('#adjNewTotal').value = fmt.money(total) + ' บาท';
+  };
+
   // เมื่อเลือกพนักงาน → เติม current state ลงในช่องอ่านอย่างเดียว
-  $('#adjEmp').addEventListener('change', (e) => {
-    const emp = DB.getEmployee(e.target.value);
-    $('#adjOldSalary').value = emp ? fmt.money(emp.salary) + ' บาท' : '';
-    $('#adjOldPosition').value = emp ? ((DB.getPosition(emp.position)?.name || '') + (emp.positionTitle ? ' · ' + emp.positionTitle : '')) : '';
-    $('#adjOldBranch').value = emp?.branch || '';
-    $('#adjOldDept').value = emp ? (DB.getDepartment(emp.department)?.name || '') : '';
+  $('#adjEmp').addEventListener('change', () => {
+    const emp = currentEmp();
+    if (!emp) {
+      ['#adjOldSalary','#adjOldPosition','#adjOldBranch','#adjOldDept',
+       '#adjOldAlPos','#adjOldAlTrv','#adjOldAlFood','#adjOldAlPd','#adjOldAlLang','#adjOldAlOther',
+       '#adjOldTotal','#adjNewTotal'].forEach(s => { const el = $(s); if (el) el.value = ''; });
+      return;
+    }
+    $('#adjOldSalary').value = fmt.money(emp.salary) + ' บาท';
+    $('#adjOldPosition').value = (DB.getPosition(emp.position)?.name || '') + (emp.positionTitle ? ' · ' + emp.positionTitle : '');
+    $('#adjOldBranch').value = emp.branch || '';
+    $('#adjOldDept').value = DB.getDepartment(emp.department)?.name || '';
+    $('#adjOldAlPos').value   = fmt.money(emp.allowancePosition);
+    $('#adjOldAlTrv').value   = fmt.money(emp.allowanceTravel);
+    $('#adjOldAlFood').value  = fmt.money(emp.allowanceFood);
+    $('#adjOldAlPd').value    = fmt.money(emp.allowancePerDiem);
+    $('#adjOldAlLang').value  = fmt.money(emp.allowanceLanguage);
+    $('#adjOldAlOther').value = fmt.money(emp.allowanceOther);
+    $('#adjOldTotal').value   = fmt.money(totalIncome(emp)) + ' บาท';
+    calcNewTotal();
   });
+
+  // recalculate รายได้รวมใหม่ทุกครั้งที่กรอก
+  $$('#adjForm .adj-money').forEach(el => el.addEventListener('input', calcNewTotal));
 
   $('#adjForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -3051,7 +3130,11 @@ function openSalaryAdjustForm() {
       if (!emp) { toast('กรุณาเลือกพนักงาน', 'error'); return; }
 
       // ต้องเปลี่ยนอย่างน้อย 1 อย่าง
-      const hasChange = data.newSalary !== '' || data.newPosition || data.newPositionTitle || data.newBranch || data.newDepartment;
+      const hasChange = data.newSalary !== '' || data.newPosition || data.newPositionTitle ||
+        data.newBranch || data.newDepartment ||
+        data.newAllowancePosition !== '' || data.newAllowanceTravel !== '' ||
+        data.newAllowanceFood !== '' || data.newAllowancePerDiem !== '' ||
+        data.newAllowanceLanguage !== '' || data.newAllowanceOther !== '';
       if (!hasChange) { toast('กรุณากรอกค่าใหม่อย่างน้อย 1 อย่าง', 'warning'); return; }
 
       const rec = {
@@ -3064,6 +3147,12 @@ function openSalaryAdjustForm() {
       if (data.newPositionTitle) rec.newPositionTitle = data.newPositionTitle;
       if (data.newBranch) rec.newBranch = data.newBranch;
       if (data.newDepartment) rec.newDepartment = data.newDepartment;
+      if (data.newAllowancePosition !== '') rec.newAllowancePosition = Number(data.newAllowancePosition);
+      if (data.newAllowanceTravel   !== '') rec.newAllowanceTravel   = Number(data.newAllowanceTravel);
+      if (data.newAllowanceFood     !== '') rec.newAllowanceFood     = Number(data.newAllowanceFood);
+      if (data.newAllowancePerDiem  !== '') rec.newAllowancePerDiem  = Number(data.newAllowancePerDiem);
+      if (data.newAllowanceLanguage !== '') rec.newAllowanceLanguage = Number(data.newAllowanceLanguage);
+      if (data.newAllowanceOther    !== '') rec.newAllowanceOther    = Number(data.newAllowanceOther);
 
       await DB.addSalaryAdjustment(rec);
       modal.close();
@@ -3076,7 +3165,10 @@ function openSalaryAdjustForm() {
 // ─── EMPLOYEE CHANGES: Excel import / export / template ───
 const CHANGE_IMPORT_COLUMNS = [
   'รหัสพนักงาน', 'วันที่มีผล',
-  'เงินเดือนใหม่', 'รหัสตำแหน่งใหม่', 'ชื่อตำแหน่งใหม่',
+  'เงินเดือนใหม่',
+  'ค่าตำแหน่งใหม่', 'ค่าเดินทางใหม่', 'ค่าอาหารใหม่',
+  'ค่าเบี้ยเลี้ยงใหม่', 'ค่าภาษาใหม่', 'ค่าอื่นๆใหม่',
+  'รหัสตำแหน่งใหม่', 'ชื่อตำแหน่งใหม่',
   'สาขาใหม่', 'รหัสฝ่ายใหม่', 'เหตุผล'
 ];
 
@@ -3086,21 +3178,30 @@ function downloadEmployeeChangesTemplate() {
   const sample = [
     {
       'รหัสพนักงาน': 1001, 'วันที่มีผล': '01/06/2026',
-      'เงินเดือนใหม่': 35000, 'รหัสตำแหน่งใหม่': 'P04', 'ชื่อตำแหน่งใหม่': 'หัวหน้าฝ่ายอาวุโส',
+      'เงินเดือนใหม่': 35000,
+      'ค่าตำแหน่งใหม่': '', 'ค่าเดินทางใหม่': '', 'ค่าอาหารใหม่': '',
+      'ค่าเบี้ยเลี้ยงใหม่': '', 'ค่าภาษาใหม่': '', 'ค่าอื่นๆใหม่': '',
+      'รหัสตำแหน่งใหม่': 'P04', 'ชื่อตำแหน่งใหม่': 'หัวหน้าฝ่ายอาวุโส',
       'สาขาใหม่': '', 'รหัสฝ่ายใหม่': '',
       'เหตุผล': 'โปรโมทประจำปี'
     },
     {
       'รหัสพนักงาน': 1002, 'วันที่มีผล': '01/06/2026',
-      'เงินเดือนใหม่': '', 'รหัสตำแหน่งใหม่': '', 'ชื่อตำแหน่งใหม่': '',
-      'สาขาใหม่': 'สาขาเซ็นทรัล', 'รหัสฝ่ายใหม่': '',
-      'เหตุผล': 'ย้ายมาช่วยสาขาใหม่'
+      'เงินเดือนใหม่': '',
+      'ค่าตำแหน่งใหม่': 2000, 'ค่าเดินทางใหม่': '', 'ค่าอาหารใหม่': '',
+      'ค่าเบี้ยเลี้ยงใหม่': '', 'ค่าภาษาใหม่': '', 'ค่าอื่นๆใหม่': '',
+      'รหัสตำแหน่งใหม่': '', 'ชื่อตำแหน่งใหม่': '',
+      'สาขาใหม่': '', 'รหัสฝ่ายใหม่': '',
+      'เหตุผล': 'เพิ่มค่าตำแหน่งเป็นหัวหน้าทีม'
     },
     {
       'รหัสพนักงาน': 1003, 'วันที่มีผล': '15/06/2026',
-      'เงินเดือนใหม่': 20000, 'รหัสตำแหน่งใหม่': '', 'ชื่อตำแหน่งใหม่': '',
-      'สาขาใหม่': '', 'รหัสฝ่ายใหม่': 'D002',
-      'เหตุผล': 'ปรับขึ้น + ย้ายฝ่าย'
+      'เงินเดือนใหม่': 20000,
+      'ค่าตำแหน่งใหม่': '', 'ค่าเดินทางใหม่': 1500, 'ค่าอาหารใหม่': 1000,
+      'ค่าเบี้ยเลี้ยงใหม่': '', 'ค่าภาษาใหม่': '', 'ค่าอื่นๆใหม่': '',
+      'รหัสตำแหน่งใหม่': '', 'ชื่อตำแหน่งใหม่': '',
+      'สาขาใหม่': 'สาขาเซ็นทรัล', 'รหัสฝ่ายใหม่': '',
+      'เหตุผล': 'ย้ายสาขา + ปรับเงิน + เพิ่มเบี้ยเลี้ยง'
     }
   ];
   const ws = XLSX.utils.json_to_sheet(sample, { header: CHANGE_IMPORT_COLUMNS });
@@ -3117,6 +3218,7 @@ function downloadEmployeeChangesTemplate() {
     [''],
     ['ฟิลด์ค่าใหม่ (กรอกอย่างน้อย 1 อย่าง — ที่ไม่กรอกระบบจะคงเดิม):'],
     ['• เงินเดือนใหม่ — ตัวเลข ไม่ใส่ comma'],
+    ['• ค่าตำแหน่งใหม่ / ค่าเดินทางใหม่ / ค่าอาหารใหม่ / ค่าเบี้ยเลี้ยงใหม่ / ค่าภาษาใหม่ / ค่าอื่นๆใหม่ — ตัวเลข'],
     ['• รหัสตำแหน่งใหม่ — เช่น P03, P04 (ดูรหัสด้านล่าง)'],
     ['• ชื่อตำแหน่งใหม่ — ข้อความ'],
     ['• สาขาใหม่ — ชื่อสาขาที่ต้องการย้ายไป'],
@@ -3154,7 +3256,8 @@ function exportEmployeeChangesXLSX() {
   const list = DB.getSalaryHistory();
   if (!list.length) { toast('ยังไม่มีประวัติการปรับ', 'warning'); return; }
   const cs = csvSafe;
-  const typeLabel = { salary: 'ปรับเงินเดือน', position: 'ปรับตำแหน่ง', branch: 'ย้ายสาขา', department: 'ย้ายฝ่าย', multiple: 'ปรับหลายอย่าง' };
+  const typeLabel = { salary: 'ปรับเงินเดือน', allowance: 'ปรับสวัสดิการ', position: 'ปรับตำแหน่ง', branch: 'ย้ายสาขา', department: 'ย้ายฝ่าย', multiple: 'ปรับหลายอย่าง' };
+  const numOrEmpty = (v) => v != null ? Number(v) : '';
   const rows = list.map(h => {
     const e = DB.getEmployee(h.employeeId) || {};
     return {
@@ -3164,7 +3267,19 @@ function exportEmployeeChangesXLSX() {
       'ประเภท': cs(typeLabel[h.changeType] || '-'),
       'เงินเดือนเก่า': Number(h.oldSalary || 0),
       'เงินเดือนใหม่': Number(h.newSalary || 0),
-      'ส่วนต่าง': Number((h.newSalary || 0) - (h.oldSalary || 0)),
+      'ส่วนต่างเงินเดือน': Number((h.newSalary || 0) - (h.oldSalary || 0)),
+      'ค่าตำแหน่งเก่า': numOrEmpty(h.oldAllowancePosition),
+      'ค่าตำแหน่งใหม่': numOrEmpty(h.newAllowancePosition),
+      'ค่าเดินทางเก่า': numOrEmpty(h.oldAllowanceTravel),
+      'ค่าเดินทางใหม่': numOrEmpty(h.newAllowanceTravel),
+      'ค่าอาหารเก่า': numOrEmpty(h.oldAllowanceFood),
+      'ค่าอาหารใหม่': numOrEmpty(h.newAllowanceFood),
+      'ค่าเบี้ยเลี้ยงเก่า': numOrEmpty(h.oldAllowancePerDiem),
+      'ค่าเบี้ยเลี้ยงใหม่': numOrEmpty(h.newAllowancePerDiem),
+      'ค่าภาษาเก่า': numOrEmpty(h.oldAllowanceLanguage),
+      'ค่าภาษาใหม่': numOrEmpty(h.newAllowanceLanguage),
+      'ค่าอื่นๆเก่า': numOrEmpty(h.oldAllowanceOther),
+      'ค่าอื่นๆใหม่': numOrEmpty(h.newAllowanceOther),
       'รหัสตำแหน่งเก่า': cs(h.oldPosition),
       'ชื่อตำแหน่งเก่า': cs(h.oldPositionTitle),
       'รหัสตำแหน่งใหม่': cs(h.newPosition),
@@ -3180,7 +3295,12 @@ function exportEmployeeChangesXLSX() {
   const headerKeys = Object.keys(rows[0] || {});
   const idIdx = headerKeys.indexOf('รหัสพนักงาน');
   if (idIdx >= 0) setColumnFormat(ws, idIdx, '0');
-  for (const col of ['เงินเดือนเก่า', 'เงินเดือนใหม่', 'ส่วนต่าง']) {
+  // คอลัมน์เงินทุกตัว → format #,##0
+  const moneyCols = ['เงินเดือนเก่า','เงินเดือนใหม่','ส่วนต่างเงินเดือน',
+    'ค่าตำแหน่งเก่า','ค่าตำแหน่งใหม่','ค่าเดินทางเก่า','ค่าเดินทางใหม่',
+    'ค่าอาหารเก่า','ค่าอาหารใหม่','ค่าเบี้ยเลี้ยงเก่า','ค่าเบี้ยเลี้ยงใหม่',
+    'ค่าภาษาเก่า','ค่าภาษาใหม่','ค่าอื่นๆเก่า','ค่าอื่นๆใหม่'];
+  for (const col of moneyCols) {
     const idx = headerKeys.indexOf(col);
     if (idx >= 0) setColumnFormat(ws, idx, '#,##0');
   }
@@ -3222,6 +3342,12 @@ function parseImportChangeRow(row) {
     employeeId: get('รหัสพนักงาน'),
     date: parseDate('วันที่มีผล') || tz.today(),
     newSalary: num('เงินเดือนใหม่'),
+    newAllowancePosition: num('ค่าตำแหน่งใหม่'),
+    newAllowanceTravel:   num('ค่าเดินทางใหม่'),
+    newAllowanceFood:     num('ค่าอาหารใหม่'),
+    newAllowancePerDiem:  num('ค่าเบี้ยเลี้ยงใหม่'),
+    newAllowanceLanguage: num('ค่าภาษาใหม่'),
+    newAllowanceOther:    num('ค่าอื่นๆใหม่'),
     newPosition: get('รหัสตำแหน่งใหม่'),
     newPositionTitle: get('ชื่อตำแหน่งใหม่'),
     newBranch: get('สาขาใหม่'),
@@ -3241,8 +3367,10 @@ function validateImportChangeRows(rows) {
     if (!empIds.has(String(r.employeeId))) errors.push({ row: rowNum, msg: `ไม่พบรหัสพนักงาน: ${r.employeeId}` });
     if (r.newPosition && !posIds.has(r.newPosition)) errors.push({ row: rowNum, msg: `รหัสตำแหน่งไม่มีในระบบ: ${r.newPosition}` });
     if (r.newDepartment && !deptIds.has(r.newDepartment)) errors.push({ row: rowNum, msg: `รหัสฝ่ายไม่มีในระบบ: ${r.newDepartment}` });
-    // ต้องมี new_* อย่างน้อย 1 อย่าง
-    const hasChange = r.newSalary != null || r.newPosition || r.newPositionTitle || r.newBranch || r.newDepartment;
+    // ต้องมี new_* อย่างน้อย 1 อย่าง (รวม allowances)
+    const hasChange = r.newSalary != null || r.newPosition || r.newPositionTitle || r.newBranch || r.newDepartment ||
+      r.newAllowancePosition != null || r.newAllowanceTravel != null || r.newAllowanceFood != null ||
+      r.newAllowancePerDiem != null || r.newAllowanceLanguage != null || r.newAllowanceOther != null;
     if (!hasChange) errors.push({ row: rowNum, msg: 'ไม่มีค่าใหม่อย่างน้อย 1 อย่าง' });
   });
   return errors;

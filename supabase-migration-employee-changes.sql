@@ -11,7 +11,20 @@ ALTER TABLE public.salary_history
   ADD COLUMN IF NOT EXISTS new_branch          TEXT,
   ADD COLUMN IF NOT EXISTS old_department      TEXT,
   ADD COLUMN IF NOT EXISTS new_department      TEXT,
-  ADD COLUMN IF NOT EXISTS change_type         TEXT;
+  ADD COLUMN IF NOT EXISTS change_type         TEXT,
+  -- allowances: ค่าตำแหน่ง / เดินทาง / อาหาร / เบี้ยเลี้ยง / ภาษา / อื่นๆ
+  ADD COLUMN IF NOT EXISTS old_allowance_position  NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS new_allowance_position  NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS old_allowance_travel    NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS new_allowance_travel    NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS old_allowance_food      NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS new_allowance_food      NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS old_allowance_per_diem  NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS new_allowance_per_diem  NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS old_allowance_language  NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS new_allowance_language  NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS old_allowance_other     NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS new_allowance_other     NUMERIC(12,2);
 
 -- change_type: salary | position | branch | department | multiple
 -- (computed on insert from non-null new_* fields)
