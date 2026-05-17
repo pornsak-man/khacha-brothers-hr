@@ -931,21 +931,74 @@ const empState = { search: '', branch: '', position: '', status: 'active', sortB
 let _empSearchTimer = null;
 
 router.register('employees', () => {
+  const kpi = DB.getDashboardKPI();
+  const allEmps = DB.data.employees;
+  const active = allEmps.filter(e => DB.empStatus(e) === 'active');
+  const pending = allEmps.filter(e => DB.empStatus(e) === 'pending');
+  const resigned = allEmps.filter(e => DB.empStatus(e) === 'resigned');
+  // อายุงานเฉลี่ย (เดือน) ของ active
+  const avgMonths = active.length ? Math.round(active.reduce((s, e) => {
+    if (!e.hireDate) return s;
+    const m = String(e.hireDate).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!m) return s;
+    const hire = new Date(+m[1], +m[2] - 1, +m[3]);
+    const months = (Date.now() - hire.getTime()) / (30.44 * 86400000);
+    return s + months;
+  }, 0) / active.length) : 0;
+  const avgY = Math.floor(avgMonths / 12), avgM = avgMonths % 12;
+
   return `
-    <div class="page-header">
-      <h2>ทะเบียนพนักงาน</h2>
-      <div class="actions">
+    <div class="sw-page-header">
+      <div>
+        <div class="sw-page-title">ทะเบียนพนักงาน</div>
+        <div class="sw-page-subtitle">ข้อมูลพนักงานทั้งหมดในระบบ · ${fmt.num(allEmps.length)} คน</div>
+      </div>
+      <div class="sw-page-actions">
         <button class="btn btn-secondary" onclick="exportEmployeesXLSX()">${ICON.download}Export Excel</button>
         ${DB.isAdmin ? `<button class="btn btn-secondary" onclick="openImportEmployees()">${ICON.upload}นำเข้า Excel</button>
-        <button class="btn btn-secondary" onclick="openBulkPhotoUpload()">${ICON.upload}อัปโหลดรูปหลายรูป</button>
+        <button class="btn btn-secondary" onclick="openBulkPhotoUpload()">${ICON.upload}อัปโหลดรูป</button>
         <button class="btn btn-primary" onclick="openEmployeeForm()">+ เพิ่มพนักงาน</button>` : ''}
       </div>
     </div>
-    <div class="card">
-      <div class="toolbar">
-        <input class="search-input" id="empSearch" placeholder="ค้นหา ชื่อ / รหัส / ชื่อเล่น / ตำแหน่ง / เลขประชาชน..." value="${escapeHtml(empState.search)}" />
-        <select class="filter-select" id="empBranch">
-          <option value="">ทุกสาขา</option>
+
+    <div class="sw-stats-grid" style="margin-bottom:28px">
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(30,58,138,0.12);color:var(--primary)">${ICON.users}</div>
+        <div class="sw-stat-label">พนักงานปัจจุบัน</div>
+        <div class="sw-stat-value">${fmt.num(active.length)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">ที่ปฏิบัติงานอยู่</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(217,119,6,0.12);color:var(--warning)">⏳</div>
+        <div class="sw-stat-label">นัดพ้นสภาพ</div>
+        <div class="sw-stat-value" style="color:${pending.length > 0 ? 'var(--warning)' : 'var(--text)'}">${fmt.num(pending.length)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">มีกำหนดวันออก</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(22,163,74,0.12);color:var(--success)">${ICON.trendUp}</div>
+        <div class="sw-stat-label">เข้าใหม่เดือนนี้</div>
+        <div class="sw-stat-value" style="color:var(--success)">${fmt.num(kpi.newThisMonth)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">รวมปี ${kpi.year}: ${fmt.num(kpi.hireYTD)} คน</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(124,58,237,0.12);color:#7c3aed">⏱️</div>
+        <div class="sw-stat-label">อายุงานเฉลี่ย</div>
+        <div class="sw-stat-value">${avgY}<span style="font-size:18px;color:var(--text-2);font-weight:500"> ปี </span>${avgM}<span style="font-size:18px;color:var(--text-2);font-weight:500"> เดือน</span></div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">เฉพาะที่ยังปฏิบัติงาน</div>
+      </div>
+    </div>
+
+    <div class="sw-chart-card">
+      <div class="sw-chart-header">
+        <div>
+          <div class="sw-chart-title">รายชื่อพนักงาน</div>
+          <div class="sw-chart-sub">ค้นหา กรอง และจัดเรียงได้ทุกคอลัมน์ · คลิก "ดู" เพื่อดูประวัติเงินเดือน/การกู้/ประเมิน</div>
+        </div>
+      </div>
+      <div class="sw-filter-bar">
+        <input id="empSearch" type="text" class="sw-filter-input" placeholder="🔍 ค้นชื่อ / รหัส / ชื่อเล่น / ตำแหน่ง / เลขประชาชน" value="${escapeHtml(empState.search)}" />
+        <select class="sw-filter-select" id="empBranch">
+          <option value="">— ทุกสาขา —</option>
           ${DB.getBranches().map(b => `<option value="${escapeHtml(b)}" ${empState.branch === b ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
         </select>
         ${(() => {
@@ -960,17 +1013,17 @@ router.register('employees', () => {
           const byLv = (a, b) => (b.level || 0) - (a.level || 0) || (a.name || '').localeCompare(b.name || '');
           ops.sort(byLv); kitchen.sort(byLv); common.sort(byLv);
           const opt = (arr) => arr.map(p => `<option value="${p.id}" ${empState.position === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
-          return `<select class="filter-select" id="empPosition">
-            <option value="">ทุกตำแหน่ง</option>
+          return `<select class="sw-filter-select" id="empPosition">
+            <option value="">— ทุกตำแหน่ง —</option>
             ${ops.length ? `<optgroup label="ฝ่ายปฏิบัติการ">${opt(ops)}</optgroup>` : ''}
             ${kitchen.length ? `<optgroup label="ฝ่ายครัว">${opt(kitchen)}</optgroup>` : ''}
             ${common.length ? `<optgroup label="อื่นๆ">${opt(common)}</optgroup>` : ''}
           </select>`;
         })()}
-        <select class="filter-select" id="empStatus">
-          <option value="">ทุกสถานะ</option>
-          <option value="active" ${empState.status === 'active' ? 'selected' : ''}>ปฏิบัติงาน</option>
-          <option value="pending" ${empState.status === 'pending' ? 'selected' : ''}>นัดพ้นสภาพ</option>
+        <select class="sw-filter-select" id="empStatus">
+          <option value="">— ทุกสถานะ —</option>
+          <option value="active"   ${empState.status === 'active'   ? 'selected' : ''}>ปฏิบัติงาน</option>
+          <option value="pending"  ${empState.status === 'pending'  ? 'selected' : ''}>นัดพ้นสภาพ</option>
           <option value="resigned" ${empState.status === 'resigned' ? 'selected' : ''}>พ้นสภาพแล้ว</option>
         </select>
       </div>
@@ -1077,57 +1130,67 @@ function renderEmployeeList() {
   const container = $('#empList');
   if (!container) return;
   if (!total) {
-    container.innerHTML = `<div class="empty-state"><div class="icon">${ICON.users}</div><div class="title">ไม่พบพนักงาน</div><div class="hint">ลองเปลี่ยนตัวกรอง หรือเพิ่มพนักงานใหม่</div></div>`;
+    container.innerHTML = `<div class="empty-state" style="padding:60px 20px">
+      <div style="font-size:42px;margin-bottom:12px;opacity:0.35">👥</div>
+      <div class="title" style="font-size:16px;font-weight:600">ไม่พบพนักงานที่ตรงกับเงื่อนไข</div>
+      <div class="hint" style="margin-top:6px">ลองเปลี่ยนตัวกรอง หรือเพิ่มพนักงานใหม่</div>
+    </div>`;
     return;
   }
   container.innerHTML = `
     <div class="table-wrap">
-      <table class="table table-compact">
+      <table class="table table-compact sw-emp-table">
         <thead>
           <tr>
-            <th class="num">ลำดับ</th>
-            <th class="sortable" data-sort="id">รหัสพนักงาน ${sortIcon('id')}</th>
-            <th class="sortable" data-sort="firstName">ชื่อ ${sortIcon('firstName')}</th>
-            <th class="sortable" data-sort="lastName">สกุล ${sortIcon('lastName')}</th>
-            <th>ชื่อเล่น</th>
+            <th class="num">#</th>
+            <th class="sortable" data-sort="id">รหัส ${sortIcon('id')}</th>
+            <th class="sortable" data-sort="firstName">พนักงาน ${sortIcon('firstName')}</th>
             <th class="sortable" data-sort="positionTitle">ตำแหน่ง ${sortIcon('positionTitle')}</th>
             <th class="sortable" data-sort="branch">สาขา ${sortIcon('branch')}</th>
             <th>ฝ่าย</th>
-            <th class="sortable" data-sort="hireDate">วันเริ่มงาน ${sortIcon('hireDate')}</th>
+            <th class="sortable" data-sort="hireDate">เริ่มงาน ${sortIcon('hireDate')}</th>
             <th class="sortable" data-sort="serviceMonths">อายุงาน ${sortIcon('serviceMonths')}</th>
             <th class="num sortable" data-sort="age">อายุ ${sortIcon('age')}</th>
             <th class="num sortable" data-sort="salary">เงินเดือน ${sortIcon('salary')}</th>
-            <th class="sortable" data-sort="terminationDate">วันพ้นสภาพ ${sortIcon('terminationDate')}</th>
+            <th>สถานะ</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
-          ${list.map((e, i) => `
-            <tr>
+          ${list.map((e, i) => {
+            const g = DB.genderCode(e.gender);
+            const genderMark = g ? `<span class="sw-gender ${g === 'M' ? 'sw-gender-m' : 'sw-gender-f'}">${g === 'M' ? '♂' : '♀'}</span>` : '';
+            const fullName = ((e.title || '') + e.firstName + ' ' + (e.lastName || '')).trim();
+            const nickname = e.nickname ? `<span class="muted-2"> · ${escapeHtml(e.nickname)}</span>` : '';
+            const st = DB.empStatus(e);
+            let statusCell;
+            if (st === 'active') statusCell = '<span class="badge badge-success">ปฏิบัติงาน</span>';
+            else if (st === 'pending') statusCell = `<span class="badge badge-warning" title="ยังปฏิบัติงาน — มีนัดพ้นสภาพ">นัด ${fmt.date(e.terminationDate)}</span>`;
+            else statusCell = `<span class="badge badge-danger">พ้น ${fmt.date(e.terminationDate)}</span>`;
+            return `<tr>
               <td class="num muted-2">${start + i + 1}</td>
-              <td><strong>${escapeHtml(e.id)}</strong></td>
-              <td>${escapeHtml((e.title || '') + e.firstName)}</td>
-              <td>${escapeHtml(e.lastName)}</td>
-              <td>${escapeHtml(e.nickname || '-')}</td>
-              <td>${escapeHtml(e.positionTitle || '-')}</td>
-              <td>${escapeHtml(e.branch || '-')}</td>
-              <td>${escapeHtml((DB.getDepartment(e.department) || {}).name || '-')}</td>
-              <td>${fmt.date(e.hireDate)}</td>
-              <td>${fmt.serviceYears(e.hireDate, e.terminationDate)}</td>
-              <td class="num">${e.dob ? fmt.age(e.dob).replace(' ปี', '') : '-'}</td>
-              <td class="num">${fmt.money(e.salary)}</td>
-              <td>${(() => {
-                const st = DB.empStatus(e);
-                if (st === 'active') return '<span class="badge badge-success">ปฏิบัติงาน</span>';
-                if (st === 'pending') return `<span class="badge badge-warning" title="ยังปฏิบัติงาน — มีนัดพ้นสภาพ">นัด ${fmt.date(e.terminationDate)}</span>`;
-                return `<span class="badge badge-danger">${fmt.date(e.terminationDate)}</span>`;
-              })()}</td>
+              <td><code style="font-size:11.5px;font-weight:600">${escapeHtml(e.id)}</code></td>
+              <td>
+                <div class="sw-emp-cell">
+                  <strong>${escapeHtml(fullName)} ${genderMark}</strong>
+                  <span class="muted-2">${escapeHtml(e.nickname || '—')}</span>
+                </div>
+              </td>
+              <td class="sw-cell-meta">${escapeHtml(e.positionTitle || '—')}</td>
+              <td class="sw-cell-meta">${escapeHtml(e.branch || '—')}</td>
+              <td class="sw-cell-meta">${escapeHtml((DB.getDepartment(e.department) || {}).name || '—')}</td>
+              <td class="sw-cell-meta">${fmt.date(e.hireDate)}</td>
+              <td class="sw-cell-meta">${fmt.serviceYears(e.hireDate, e.terminationDate)}</td>
+              <td class="num">${e.dob ? fmt.age(e.dob).replace(' ปี', '') : '—'}</td>
+              <td class="num"><strong>${fmt.money(e.salary)}</strong></td>
+              <td>${statusCell}</td>
               <td class="actions">
                 <button class="btn btn-ghost btn-sm" onclick="viewEmployee('${e.id}')">ดู</button>
                 ${DB.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="openEmployeeForm('${e.id}')">แก้</button>
                 <button class="btn btn-ghost btn-sm" onclick="deleteEmployee('${e.id}')">ลบ</button>` : ''}
               </td>
-            </tr>`).join('')}
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
     </div>

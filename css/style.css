@@ -626,15 +626,23 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 }
 .sw-tab.active .sw-tab-pill { background: rgba(46,116,255,0.14); color: var(--primary); }
 
-/* Leave table — refined typography */
+/* Refined data tables — applies to leave, employee, balance, etc. */
 .sw-leave-table td,
-.sw-balance-table td { vertical-align: middle; padding: 14px 12px; }
+.sw-balance-table td,
+.sw-emp-table td { vertical-align: middle; padding: 14px 12px; }
 .sw-leave-table th,
-.sw-balance-table th {
+.sw-balance-table th,
+.sw-emp-table th {
   font-size: 11px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.08em;
   color: var(--text-3);
 }
+.sw-emp-table .sw-emp-cell { line-height: 1.4; }
+.sw-emp-table .sw-emp-cell strong { font-size: 13.5px; }
+.sw-emp-table .sw-emp-cell .muted-2 { font-size: 11.5px; }
+.sw-emp-table code { background: var(--surface-2); padding: 2px 8px; border-radius: 6px; color: var(--text-2); }
+.sw-emp-table tbody tr:hover { background: var(--surface-2); }
+.sw-emp-table tbody tr:hover td { background: transparent; }
 .sw-cell-meta { font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
 .sw-emp-cell { display: flex; flex-direction: column; gap: 2px; }
 .sw-emp-cell strong { font-size: 13.5px; color: var(--text); }
