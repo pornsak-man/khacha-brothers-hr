@@ -1309,7 +1309,14 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .table tbody tr:hover td { background: var(--surface-2); }
 .table tbody tr:last-child td { border-bottom: 0; }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
-.table .actions { display: flex; gap: 2px; justify-content: flex-end; }
+.table .actions {
+  display: flex;
+  gap: 2px;
+  justify-content: flex-end;
+  align-items: center; /* prevent button stretch */
+}
+/* ปุ่มในตาราง — padding บางกว่า btn-sm ปกติ เพื่อให้ row height คงที่กับ badge */
+.table .actions .btn-sm { padding: 4px 9px; font-size: 12px; }
 .table strong { font-weight: 600; color: var(--text); }
 
 /* Compact variant สำหรับตารางคอลัมน์เยอะ */
