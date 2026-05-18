@@ -114,18 +114,12 @@ const DB = {
 
   // ─── SCOPE FILTER (สาขาที่ดูแลได้) ───
   // คืน array ของ branch IDs ที่ user ดูแล หรือ null = ทุกสาขา (no filter)
+  // นโยบาย: ผู้บังคับบัญชาทุกระดับ (operation/area/branch manager) เห็นพนักงานได้ทุกคน
+  //         แต่ edit/delete ยังจำกัด canEdit() = admin + hr เท่านั้น
   scopedBranches() {
-    if (this.role === 'admin' || this.role === 'hr' || this.role === 'operation_manager') return null;
-    if (this.role === 'area_manager') {
-      // override: ถ้า admin กำหนด managed_branches → ใช้ตามนั้น
-      if (this._managedBranches.length) return this._managedBranches;
-      // auto: ใช้สาขาของตัวเอง (Area Manager ที่ยังไม่ override จะดูได้สาขาเดียวก่อน)
-      const myBranch = this._myBranch();
-      return myBranch ? [myBranch] : [];
-    }
-    if (this.role === 'branch_manager') {
-      const myBranch = this._myBranch();
-      return myBranch ? [myBranch] : [];
+    if (this.role === 'admin' || this.role === 'hr' ||
+        this.role === 'operation_manager' || this.role === 'area_manager' || this.role === 'branch_manager') {
+      return null; // ไม่ scope — เห็นทุกคน
     }
     // branch_staff / viewer → ดูได้เฉพาะตัวเอง — return empty array → caller จัดการเอง
     return [];
