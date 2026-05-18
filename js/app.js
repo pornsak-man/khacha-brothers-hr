@@ -272,7 +272,10 @@ const auth = {
   init() {
     $('#loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const email = $('#loginEmail').value.trim();
+      const raw = $('#loginEmail').value.trim();
+      // ถ้า user กรอกรหัสพนักงาน (ไม่มี @) → แปลงเป็น email pattern ของระบบ
+      // ถ้ามี @ อยู่แล้ว → ใช้ตรงๆ (เผื่อ admin บัญชีพิเศษ)
+      const email = raw.includes('@') ? raw.toLowerCase() : `${raw.toLowerCase()}@kacha.local`;
       const password = $('#loginPass').value;
       const btn = $('#loginBtn');
       const err = $('#loginError');
@@ -288,7 +291,7 @@ const auth = {
         this.showApp();
       } catch (ex) {
         err.textContent = ex.message === 'Invalid login credentials'
-          ? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง'
+          ? 'รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง'
           : (ex.message || 'เข้าสู่ระบบไม่สำเร็จ');
       } finally {
         btn.disabled = false; btn.textContent = 'เข้าสู่ระบบ';

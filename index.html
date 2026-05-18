@@ -50,8 +50,8 @@
     </div>
     <form id="loginForm" class="login-form">
       <label>
-        <span>อีเมล</span>
-        <input type="email" id="loginEmail" autocomplete="username" required />
+        <span>รหัสพนักงาน</span>
+        <input type="text" id="loginEmail" autocomplete="username" required placeholder="เช่น 121 หรือ EMP001" autocapitalize="off" autocorrect="off" spellcheck="false" />
       </label>
       <label>
         <span>รหัสผ่าน</span>
@@ -59,7 +59,7 @@
       </label>
       <div class="login-error" id="loginError"></div>
       <button type="submit" class="btn btn-primary btn-block" id="loginBtn">เข้าสู่ระบบ</button>
-      <div class="login-hint">ใช้ email + password ที่ตั้งไว้ใน Supabase</div>
+      <div class="login-hint">กรอกรหัสพนักงาน (หรืออีเมลถ้าเป็นบัญชีพิเศษ)</div>
     </form>
   </div>
 </div>
