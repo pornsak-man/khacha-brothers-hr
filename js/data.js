@@ -583,6 +583,20 @@ const DB = {
       else if (filter.status === 'pending') list = list.filter(e => this.empStatus(e) === 'pending');
       else if (filter.status === 'resigned') list = list.filter(e => this.empStatus(e) === 'resigned');
     }
+    // ─── Auto-scope ตามสิทธิ์ user ปัจจุบัน (RBAC Phase 2) ───
+    // ผ่าน filter._noScope = true เพื่อ bypass (ใช้ใน internal aggregator เช่น getStats, dashboard KPI ของ admin)
+    if (!filter._noScope && this.role) {
+      const scoped = this.scopedBranches();
+      if (scoped === null) {
+        // admin / hr / operation_manager → no filter (เห็นทุกคน)
+      } else if (this.role === 'branch_staff' || this.role === 'viewer') {
+        // ดูได้เฉพาะตัวเอง
+        list = list.filter(e => e.id === this.profile?.employee_id);
+      } else {
+        // area_manager / branch_manager → filter ตาม managed branches
+        list = list.filter(e => scoped.includes(e.branch));
+      }
+    }
     return list;
   },
 
@@ -1762,7 +1776,8 @@ const DB = {
     const [ty, tm] = today.split('-').map(Number);
     const thisYM = `${ty}-${String(tm).padStart(2, '0')}`;
     const yearStart = `${ty}-01-01`;
-    const emps = this.data.employees;
+    // ใช้ getEmployees() เพื่อ auto-scope ตาม RBAC (admin/hr เห็นทั้งหมด, manager เห็นเฉพาะสาขา)
+    const emps = this.getEmployees();
     const active = emps.filter(e => this.empStatus(e) !== 'resigned');
     const newThisMonth = emps.filter(e => e.hireDate && String(e.hireDate).startsWith(thisYM)).length;
     const exitThisMonth = emps.filter(e => e.terminationDate && String(e.terminationDate).startsWith(thisYM)).length;
@@ -1927,7 +1942,8 @@ const DB = {
 
   // ─── STATS ───
   getStats() {
-    const emps = this.data.employees;
+    // ใช้ getEmployees() เพื่อ auto-scope ตาม RBAC
+    const emps = this.getEmployees();
     // ใช้ effective status (ตามวันพ้นสภาพ — ไม่ใช่ field 'status' ที่อาจ stale)
     const active = emps.filter(e => this.empStatus(e) !== 'resigned');
     const totalSalary = active.reduce((s, e) => s + (e.salary || 0), 0);

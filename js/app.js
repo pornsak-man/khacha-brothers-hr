@@ -317,8 +317,11 @@ const auth = {
     if (typeof updateUniformBadge === 'function') updateUniformBadge();
     if (typeof updateLeaveBadge === 'function') updateLeaveBadge();
     if (typeof updateSSOBadge === 'function') updateSSOBadge();
-    // ซ่อนเมนูเฉพาะ admin ถ้าไม่ใช่ admin
+    // ซ่อนเมนูตาม role:
+    //   .nav-admin-only → เฉพาะ admin (ตั้งค่าระบบ)
+    //   .nav-hr-only    → admin + hr (ปรับค่าจ้าง, กู้, audit log)
     $$('.nav-admin-only').forEach(el => { el.style.display = DB.isAdmin ? '' : 'none'; });
+    $$('.nav-hr-only').forEach(el => { el.style.display = DB.isHR ? '' : 'none'; });
     router.go('dashboard');
   }
 };
@@ -327,6 +330,15 @@ const auth = {
 function requireAdmin() {
   if (!DB.isAdmin) {
     toast('คุณไม่มีสิทธิ์ทำรายการนี้ (admin เท่านั้น)', 'error');
+    return false;
+  }
+  return true;
+}
+
+// admin + hr — สำหรับ action ที่ HR ทำได้ (เพิ่ม/แก้พนักงาน, loans, advances, allowance ฯลฯ)
+function requireHR() {
+  if (!DB.isHR) {
+    toast('คุณไม่มีสิทธิ์ทำรายการนี้ (เฉพาะ HR/Admin)', 'error');
     return false;
   }
   return true;
@@ -1272,12 +1284,12 @@ function renderEmployeeList() {
               <td class="sw-cell-meta">${fmt.date(e.hireDate)}</td>
               <td class="sw-cell-meta">${fmt.serviceYears(e.hireDate, e.terminationDate)}</td>
               <td class="num">${e.dob ? fmt.age(e.dob).replace(' ปี', '') : '—'}</td>
-              <td class="num"><strong>${fmt.money(e.salary)}</strong></td>
+              <td class="num"><strong>${maskMoney(e.salary, e.id)}</strong></td>
               <td>${statusCell}</td>
               <td class="actions">
                 <button class="btn btn-ghost btn-sm" onclick="viewEmployee('${e.id}')">ดู</button>
-                ${DB.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="openEmployeeForm('${e.id}')">แก้</button>
-                <button class="btn btn-ghost btn-sm" onclick="deleteEmployee('${e.id}')">ลบ</button>` : ''}
+                ${DB.canEdit() ? `<button class="btn btn-ghost btn-sm" onclick="openEmployeeForm('${e.id}')">แก้</button>` : ''}
+                ${DB.canDelete() ? `<button class="btn btn-ghost btn-sm" onclick="deleteEmployee('${e.id}')">ลบ</button>` : ''}
               </td>
             </tr>`;
           }).join('')}
@@ -1385,8 +1397,18 @@ const totalIncome = (e) => Number(e.salary || 0) + Number(e.allowancePosition ||
   Number(e.allowancePerDiem || 0) + Number(e.allowanceLanguage || 0) +
   Number(e.allowanceOther || 0);
 
+// ─── SALARY MASKING ───
+// แสดง "•••" สำหรับ user ที่ไม่มีสิทธิ์ดูเงินเดือน (ใช้ใน table cells/labels)
+// • canSeeSalary() = admin หรือ hr (กำหนดที่ data.js)
+// • ยกเว้น: ดูเงินเดือนของตัวเองได้เสมอ (Branch Staff self-service ในอนาคต)
+const maskMoney = (v, ownerEmpId = null) => {
+  if (DB.canSeeSalary?.()) return fmt.money(v);
+  if (ownerEmpId && DB.profile?.employee_id === ownerEmpId) return fmt.money(v);
+  return '•••';
+};
+
 function openEmployeeForm(id = null, init = null, onSaved = null) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   // init: pre-fill values (เช่นจาก applicant). ถ้า init.skipAutoId = true → ID ว่าง (user กรอกเอง)
   // onSaved(savedEmp): callback หลัง save สำเร็จ (เช่น update applicant status)
   const defaults = {
@@ -1865,7 +1887,7 @@ function openEmployeeForm(id = null, init = null, onSaved = null) {
 }
 
 async function deleteEmployee(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const emp = DB.getEmployee(id);
   if (!emp) return;
   if (!await modal.confirm('ลบพนักงาน', `ต้องการลบ ${emp.firstName} ${emp.lastName} ใช่หรือไม่?`)) return;
@@ -1920,7 +1942,7 @@ function viewEmployee(id) {
     <div class="emp-stats-row">
       <div class="emp-stat-card">
         <div class="emp-stat-label">รายได้รวม/เดือน</div>
-        <div class="emp-stat-value">${fmt.money(totalIncome(e))}</div>
+        <div class="emp-stat-value">${maskMoney(totalIncome(e), e.id)}</div>
       </div>
       <div class="emp-stat-card">
         <div class="emp-stat-label">อายุงาน</div>
@@ -2027,6 +2049,7 @@ function viewEmployee(id) {
       `;
     })()}
 
+    ${(DB.canSeeSalary?.() || DB.profile?.employee_id === e.id) ? `
     <div class="form-section">
       <h3>เงินเดือนและสวัสดิการ</h3>
       <div class="emp-info-grid">
@@ -2042,7 +2065,7 @@ function viewEmployee(id) {
         <div style="font-size:13px;color:var(--text-2);font-weight:500">รวมรายได้ต่อเดือน</div>
         <div style="font-size:18px;font-weight:700;color:var(--primary)">${fmt.money(totalIncome(e))}</div>
       </div>
-    </div>
+    </div>` : ''}
 
     ${e.note ? `
     <div class="form-section">
@@ -2092,8 +2115,12 @@ const IMPORT_COLUMNS = [
   'วันพ้นสภาพ', 'เหตุผลพ้นสภาพ', 'รายละเอียดพ้นสภาพ',
   'ธนาคาร', 'เลขบัญชี',
   'เงินเดือน', 'ค่าตำแหน่ง', 'ค่าเดินทาง', 'ค่าอาหาร', 'ค่าเบี้ยเลี้ยง', 'ค่าภาษา', 'ค่าอื่นๆ',
-  'สถานะ', 'หมายเหตุ'
+  'เลข สปส.', 'วันที่แจ้งเข้า สปส.', 'วันที่แจ้งออก สปส.', 'สถานพยาบาล สปส.',
+  'สิทธิ์ใช้งานระบบ', 'สถานะ', 'หมายเหตุ'
 ];
+
+// Role keys ที่ระบบรองรับ (ใช้ใน Excel import) — ตรงกับ user_profiles.role ใน DB
+const ROLE_KEYS_FOR_IMPORT = ['admin', 'hr', 'operation_manager', 'area_manager', 'branch_manager', 'branch_staff', 'viewer'];
 
 function downloadEmployeeTemplate() {
   if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(downloadEmployeeTemplate, 800); return; }
@@ -2114,6 +2141,8 @@ function downloadEmployeeTemplate() {
       'ธนาคาร': 'ธนาคารกสิกรไทย (KBANK)', 'เลขบัญชี': '123-4-56789-0',
       'เงินเดือน': 30000, 'ค่าตำแหน่ง': 3000, 'ค่าเดินทาง': 2000, 'ค่าอาหาร': 1500,
       'ค่าเบี้ยเลี้ยง': 0, 'ค่าภาษา': 0, 'ค่าอื่นๆ': 0,
+      'เลข สปส.': '', 'วันที่แจ้งเข้า สปส.': '', 'วันที่แจ้งออก สปส.': '', 'สถานพยาบาล สปส.': '',
+      'สิทธิ์ใช้งานระบบ': 'branch_staff',
       'สถานะ': 'active', 'หมายเหตุ': ''
     }
   ];
@@ -2147,6 +2176,23 @@ function downloadEmployeeTemplate() {
     ['• ลาออก / ครบสัญญาจ้าง / ถูกเลิกจ้าง / ไล่ออก (ผิดวินัย)'],
     ['• เกษียณอายุ / เสียชีวิต / พ้นทดลองงาน (ไม่ผ่าน) / ย้ายไปบริษัทในเครือ / อื่นๆ'],
     ['• รายละเอียดพ้นสภาพ: บันทึกเพิ่มเติม เช่น สาเหตุเฉพาะ, last working day, รับกลับได้/ไม่ได้'],
+    [''],
+    ['ประกันสังคม (สปส.):'],
+    ['• เลข สปส. — มักเป็นเลขบัตร ปชช. 13 หลัก (เว้นว่างได้)'],
+    ['• วันที่แจ้งเข้า สปส. — วันที่ยื่นแบบ สปส.1-03 (ภายใน 30 วันจากวันเริ่มงาน)'],
+    ['• วันที่แจ้งออก สปส. — วันที่ยื่นแบบ สปส.6-09 (ภายในวันที่ 15 ของเดือนถัดจากเดือนพ้นสภาพ)'],
+    ['• สถานพยาบาล สปส. — ชื่อ รพ. ที่พนักงานเลือก (เว้นว่างได้)'],
+    [''],
+    ['สิทธิ์ใช้งานระบบ (Role) — ใช้คีย์ภาษาอังกฤษด้านล่าง:'],
+    ['• admin             — ผู้ดูแลระบบ (ทำได้ทุกอย่าง รวมจัดการ user + ตั้งค่า)'],
+    ['• hr                — HR ฝ่ายบุคคล (จัดการพนักงาน + เงินเดือน ทุกสาขา)'],
+    ['• operation_manager — ผู้จัดการฝ่ายปฏิบัติการ (ดูทุกสาขา)'],
+    ['• area_manager      — ผู้จัดการเขต (ดูเฉพาะสาขาที่ดูแล — กำหนดในระบบทีหลัง)'],
+    ['• branch_manager    — ผู้จัดการสาขา (ดูเฉพาะสาขาตัวเอง)'],
+    ['• branch_staff      — พนักงานสาขา (default — เห็นแค่ตัวเอง)'],
+    ['• viewer            — ผู้ใช้ทั่วไป (อ่านได้อย่างเดียว)'],
+    ['• เว้นว่าง = ระบบจะ auto-detect จากตำแหน่ง (positionTitle) ตอนสร้างบัญชี login'],
+    ['• Admin import: ระบบจะ auto-create บัญชี login + ตั้ง role ให้ตามที่ระบุ (password = เลข ปชช)'],
     [''],
     ['รหัสฝ่ายที่มีในระบบ:'],
     ...depts.split('\n').map(s => ['• ' + s]),
@@ -2239,6 +2285,15 @@ function parseImportRow(row) {
     allowancePerDiem: num('ค่าเบี้ยเลี้ยง'),
     allowanceLanguage: num('ค่าภาษา'),
     allowanceOther: num('ค่าอื่นๆ'),
+    ssoNo: get('เลข สปส.'),
+    ssoEnrolledDate: parseDate('วันที่แจ้งเข้า สปส.') || '',
+    ssoTerminatedDate: parseDate('วันที่แจ้งออก สปส.') || '',
+    ssoHospital: get('สถานพยาบาล สปส.'),
+    // _role: เก็บแบบ underscore prefix → ไม่ใช่ column ของ employees table — จะถูก extract ใน processImportRows
+    _role: (() => {
+      const v = get('สิทธิ์ใช้งานระบบ').toLowerCase().trim();
+      return ROLE_KEYS_FOR_IMPORT.includes(v) ? v : '';
+    })(),
     // sync status — priority: terminationDate ก่อน, ถ้าไม่มีถึงดู Excel "สถานะ"
     // เคารพ status='resigned' จาก Excel (ใช้กับ legacy data ที่ลืมกรอกวันพ้นสภาพ)
     status: (() => {
@@ -2298,7 +2353,7 @@ async function readExcelFile(file) {
 }
 
 function openImportEmployees() {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   modal.open('นำเข้าทะเบียนพนักงาน (Excel)', `
     <div class="import-flow">
       <div class="import-step">
@@ -2361,18 +2416,72 @@ function openImportEmployees() {
     });
     const elapsed = ((performance.now() - start) / 1000).toFixed(1);
 
+    // ── หลัง upsert พนักงานสำเร็จ → สร้างบัญชี + ตั้ง role (admin เท่านั้น) ──
+    // เกณฑ์: row ที่มี _role specified (หรือ auto-detect ถ้าไม่ระบุ) → create account
+    let accSuccess = 0, accSkip = 0, accFail = 0;
+    const accErrors = [];
+    if (DB.isAdmin) {
+      // โหลด profile list มาดูว่ามี user_account อยู่แล้วของใครบ้าง
+      let existingProfiles = [];
+      try { existingProfiles = await DB.getUserProfilesList(); } catch {}
+      const existingEmpIds = new Set(existingProfiles.filter(p => p.employee_id).map(p => p.employee_id));
+
+      $('#importBody').innerHTML = `
+        <div class="card mt-4">
+          <div style="margin-bottom:10px">กำลังสร้างบัญชี login + ตั้งสิทธิ์ <strong id="accProgress">0</strong> / <strong>${parsedRows.length.toLocaleString()}</strong></div>
+          <div class="progress-bar"><div class="progress-fill" id="accFill" style="width:0%"></div></div>
+        </div>
+      `;
+      for (let i = 0; i < parsedRows.length; i++) {
+        const r = parsedRows[i];
+        try {
+          // สร้างบัญชีถ้ายังไม่มี
+          if (!existingEmpIds.has(r.id)) {
+            await DB.createEmployeeAccount(r.id);
+            accSuccess++;
+          } else {
+            accSkip++;
+          }
+          // ตั้ง role — ถ้าระบุใน Excel ใช้ค่านั้น, ถ้าไม่ระบุ ใช้ auto-detect
+          const emp = DB.getEmployee(r.id);
+          const targetRole = r._role || DB.autoDetectRole(emp);
+          if (targetRole && targetRole !== 'viewer') {
+            await DB.setEmployeeRole(r.id, targetRole, []);
+          }
+        } catch (ex) {
+          accFail++;
+          accErrors.push({ id: r.id, message: ex.message || String(ex) });
+        }
+        const fill = $('#accFill');
+        const text = $('#accProgress');
+        if (fill) fill.style.width = (((i + 1) / parsedRows.length) * 100) + '%';
+        if (text) text.textContent = (i + 1).toLocaleString();
+      }
+    }
+
     $('#importBody').innerHTML = `
       <div class="card mt-4">
         <div style="font-size:16px;font-weight:600;color:var(--success);margin-bottom:8px">✓ นำเข้าสำเร็จ</div>
         <div style="font-size:14px;line-height:1.8">
-          • นำเข้าสำเร็จ: <strong>${result.inserted.toLocaleString()}</strong> คน<br>
-          ${result.failed ? `• ผิดพลาด: <strong style="color:var(--danger)">${result.failed.toLocaleString()}</strong> คน<br>` : ''}
+          • นำเข้าพนักงาน: <strong>${result.inserted.toLocaleString()}</strong> คน<br>
+          ${result.failed ? `• ผิดพลาด (พนักงาน): <strong style="color:var(--danger)">${result.failed.toLocaleString()}</strong> คน<br>` : ''}
+          ${DB.isAdmin ? `
+            • สร้างบัญชี login ใหม่: <strong style="color:var(--success)">${accSuccess.toLocaleString()}</strong> คน<br>
+            ${accSkip ? `• ข้าม (มีบัญชีอยู่แล้ว): <strong>${accSkip.toLocaleString()}</strong> คน<br>` : ''}
+            ${accFail ? `• สร้างบัญชีไม่สำเร็จ: <strong style="color:var(--danger)">${accFail.toLocaleString()}</strong> คน<br>` : ''}
+          ` : '• <span class="muted-2">บัญชี login: ต้องเป็น admin จึงจะสร้างให้อัตโนมัติ → ไปที่ "ตั้งค่าระบบ → บัญชีผู้ใช้"</span><br>'}
           • ใช้เวลา: <strong>${elapsed}</strong> วินาที
         </div>
         ${result.errors.length ? `
           <details class="mt-2" style="font-size:13px">
             <summary style="cursor:pointer;color:var(--danger)">ดูข้อผิดพลาด ${result.errors.length} batch</summary>
             <ul style="margin-top:6px;padding-left:20px">${result.errors.map(e => `<li>Batch ${e.chunk}: ${escapeHtml(e.message)}</li>`).join('')}</ul>
+          </details>
+        ` : ''}
+        ${accErrors.length ? `
+          <details class="mt-2" style="font-size:13px">
+            <summary style="cursor:pointer;color:var(--warning)">ดูข้อผิดพลาดบัญชี ${accErrors.length} รายการ</summary>
+            <ul style="margin-top:6px;padding-left:20px">${accErrors.slice(0, 20).map(e => `<li>${escapeHtml(e.id)}: ${escapeHtml(e.message)}</li>`).join('')}${accErrors.length > 20 ? `<li>... อีก ${accErrors.length - 20} รายการ</li>` : ''}</ul>
           </details>
         ` : ''}
       </div>
@@ -2448,7 +2557,7 @@ function buildEmpDigitsIndex() {
 }
 
 function openBulkPhotoUpload() {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   modal.open('อัปโหลดรูปพนักงานจำนวนมาก', `
     <div class="import-flow">
       <div class="import-step">
@@ -2635,6 +2744,10 @@ function exportEmployeesXLSX() {
     'ค่าภาษา': Number(e.allowanceLanguage || 0),
     'ค่าอื่นๆ': Number(e.allowanceOther || 0),
     'รวมรายได้': totalIncome(e),
+    'เลข สปส.': cs(e.ssoNo),
+    'วันที่แจ้งเข้า สปส.': excelDate(e.ssoEnrolledDate),
+    'วันที่แจ้งออก สปส.': excelDate(e.ssoTerminatedDate),
+    'สถานพยาบาล สปส.': cs(e.ssoHospital),
     'สถานะ': e.status === 'active' ? 'ปฏิบัติงาน' : 'ลาออก',
     'หมายเหตุ': cs(e.note)
   }));
@@ -2658,8 +2771,8 @@ function exportEmployeesXLSX() {
 
   // กำหนดความกว้างคอลัมน์ — เลขประชาชน 16 ตัวอักษรเพื่อให้เห็น 13 หลักเต็ม
   ws['!cols'] = headerKeys.map(k => {
-    if (k === 'เลขประชาชน') return { wch: 16 };
-    if (k === 'วันเกิด' || k === 'วันเริ่มงาน' || k === 'วันพ้นสภาพ') return { wch: 13 };
+    if (k === 'เลขประชาชน' || k === 'เลข สปส.') return { wch: 16 };
+    if (k === 'วันเกิด' || k === 'วันเริ่มงาน' || k === 'วันพ้นสภาพ' || k === 'วันที่แจ้งเข้า สปส.' || k === 'วันที่แจ้งออก สปส.') return { wch: 14 };
     if (k === 'รหัส') return { wch: 8 };
     if (k === 'ชื่อ' || k === 'นามสกุล') return { wch: 14 };
     if (k === 'ตำแหน่ง' || k === 'ฝ่าย') return { wch: 22 };
@@ -2774,7 +2887,7 @@ router.register('branches', () => {
 });
 
 function openBranchForm(id = null) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const b = id ? DB.getBranch(id) : { id: '', name: '', active: true, note: '' };
   if (id && !b) { toast('ไม่พบสาขา', 'error'); return; }
   modal.open(id ? `แก้ไขสาขา "${id}"` : 'เพิ่มสาขาใหม่', `
@@ -2815,7 +2928,7 @@ function openBranchForm(id = null) {
 }
 
 async function deleteBranch(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const b = DB.getBranch(id);
   if (!b) return;
   const count = DB.getBranchEmployeeCount(id);
@@ -2876,7 +2989,7 @@ router.register('departments', () => {
 });
 
 function openDeptForm(id = null) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const d = id ? DB.getDepartment(id) : { id: DB.nextDepartmentId(), name: '', manager: '', note: '' };
   const emps = DB.getEmployees({ status: 'active' });
   modal.open(id ? 'แก้ไขฝ่าย' : 'เพิ่มฝ่าย', `
@@ -2906,7 +3019,7 @@ function openDeptForm(id = null) {
 }
 
 async function deleteDept(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const d = DB.getDepartment(id);
   if (!await modal.confirm('ลบฝ่าย', `ต้องการลบฝ่าย "${d.name}" ใช่หรือไม่?`)) return;
   try {
@@ -2965,7 +3078,7 @@ router.register('positions', () => {
 });
 
 function openPositionForm(id = null) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const p = id ? DB.getPosition(id) : { id: DB.nextPositionId(), name: '', level: 1, minSalary: 0, maxSalary: 0 };
   modal.open(id ? 'แก้ไขตำแหน่ง' : 'เพิ่มตำแหน่ง', `
     <form id="posForm">
@@ -2995,7 +3108,7 @@ function openPositionForm(id = null) {
 }
 
 async function deletePosition(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const p = DB.getPosition(id);
   if (!await modal.confirm('ลบระดับ', `ต้องการลบระดับ "${p.name}" ใช่หรือไม่?`)) return;
   try {
@@ -3160,7 +3273,7 @@ function renderApplicantList() {
 }
 
 function openApplicantForm(id = null) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const a = id ? DB.getApplicant(id) : {
     firstName: '', lastName: '', nickname: '', phone: '', email: '',
     position: '', positionTitle: '', department: '', branch: '',
@@ -3450,7 +3563,7 @@ function openApplicantForm(id = null) {
 }
 
 async function deleteApplicant(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const a = DB.getApplicant(id);
   if (!a) return;
   if (!await modal.confirm('ลบผู้สมัคร', `ลบ "${a.firstName} ${a.lastName || ''}" ใช่หรือไม่?`)) return;
@@ -3464,7 +3577,7 @@ async function deleteApplicant(id) {
 // รับเข้าทำงาน — เปิด form พนักงานพร้อม pre-fill จาก applicant
 // ผู้ใช้ต้องกรอกรหัสพนักงานเอง (ไม่ auto) + ตรวจ/แก้ไขฟิลด์อื่น ก่อนบันทึก
 function hireApplicant(applicantId) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const a = DB.getApplicant(applicantId);
   if (!a) return;
 
@@ -3730,7 +3843,7 @@ async function readApplicantExcelFile(file) {
 }
 
 function openImportApplicants() {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   modal.open('นำเข้าผู้สมัครงาน (Excel)', `
     <div class="import-flow">
       <div class="import-step">
@@ -4045,7 +4158,7 @@ function setSSOTab(tab) {
 }
 
 async function markSSO(empId, tab) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const emp = DB.getEmployee(empId);
   if (!emp) return;
   const isEnroll = tab === 'enroll';
@@ -4226,7 +4339,7 @@ function renderUniformScheduleTable() {
 }
 
 function openUniformScheduleForm(id = null) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const s = id ? DB.getUniformSchedule(id) : { id: '', branchCode: '', dayOfWeek: 1, active: true, note: '' };
   const branches = DB.getBranches();
   modal.open(id ? 'แก้ไขรอบการจัดส่ง' : 'เพิ่มรอบการจัดส่ง', `
@@ -4272,7 +4385,7 @@ function openUniformScheduleForm(id = null) {
 }
 
 async function deleteUniformSchedule(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const s = DB.getUniformSchedule(id);
   if (!s) return;
   if (!await modal.confirm('ลบรอบการจัดส่ง', `ลบ "${s.branchCode} · ${DAY_NAMES_TH[s.dayOfWeek]}" ใช่หรือไม่?`)) return;
@@ -4454,7 +4567,7 @@ function renderUniformIssuesTable() {
 
 // ─── คำขอจัดชุด ───
 function openUniformRequestForm(id = null) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const r = id ? DB.getUniformRequest(id) : {
     id: '', employeeId: '', requestedBy: DB.profile?.name || DB.user?.email || '',
     requestedDate: tz.today(), neededBy: '', status: 'pending', note: ''
@@ -4522,7 +4635,7 @@ function openUniformRequestForm(id = null) {
 }
 
 async function deleteUniformRequest(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   if (!await modal.confirm('ลบคำขอ', 'ลบคำขอนี้ + รายการชุดที่จัดทั้งหมด ใช่หรือไม่?')) return;
   try { await DB.deleteUniformRequest(id); toast('ลบแล้ว', 'success'); router.go('uniform'); }
   catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
@@ -4530,7 +4643,7 @@ async function deleteUniformRequest(id) {
 
 // Mark request as issued without itemizing — สำหรับกรณีจัดส่งครบแล้วไม่ต้องลงรายการรายชิ้น
 async function markUniformRequestIssued(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const req = DB.getUniformRequest(id);
   if (!req) return;
   if (!await modal.confirm('ยืนยัน', 'ทำเครื่องหมายคำขอนี้ว่า "จัดส่งครบแล้ว" ใช่หรือไม่?\n\n— สถานะจะเปลี่ยนเป็น "จัดส่งแล้ว"\n— ถ้ายังไม่ได้ลงรายการรายชิ้น stock จะไม่ถูกตัด')) return;
@@ -4593,7 +4706,7 @@ function matchUniformItemFromStock(parsed, masterItems) {
 
 // กดทีเดียวสร้าง issue ทุกรายการตามที่ recruit แจ้ง
 async function issueAllFromRecruit(requestId) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const req = DB.getUniformRequest(requestId);
   if (!req) return;
   const parsed = parseUniformNoteToItems(req.note);
@@ -4634,7 +4747,7 @@ async function issueAllFromRecruit(requestId) {
 
 // ─── จัดชุด: เพิ่มรายการ issue ทีละหลายรายการพร้อมกัน ───
 function openIssueItemsForm(requestId) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const req = DB.getUniformRequest(requestId);
   if (!req) return;
   // หาเจ้าของคำขอ — รองรับทั้ง employee และ applicant
@@ -4825,7 +4938,7 @@ function openIssueItemsForm(requestId) {
 
 // ─── รายการชุด (master) ───
 function openUniformItemForm(id = null) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const i = id ? DB.getUniformItem(id) : { id: '', name: '', size: '', stockQty: 0, unitCost: 0, active: true, note: '' };
   modal.open(id ? 'แก้ไขรายการชุด' : 'เพิ่มรายการชุด', `
     <form id="uniItemForm">
@@ -4869,7 +4982,7 @@ function openUniformItemForm(id = null) {
 }
 
 async function deleteUniformItem(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const i = DB.getUniformItem(id);
   if (!i) return;
   if (!await modal.confirm('ลบรายการ', `ลบ "${i.name} (${i.size})" ใช่หรือไม่?`)) return;
@@ -4878,7 +4991,7 @@ async function deleteUniformItem(id) {
 }
 
 async function deleteUniformIssue(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   if (!await modal.confirm('ลบรายการจัด', 'คืน stock + ลบประวัติ ใช่หรือไม่?')) return;
   try { await DB.deleteUniformIssue(id); toast('ลบแล้ว', 'success'); router.go('uniform'); }
   catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
@@ -5023,7 +5136,7 @@ router.register('salary-adjust', () => {
 });
 
 function openSalaryAdjustForm() {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const emps = DB.getEmployees({ status: 'active' });
   const positions = DB.getPositions();
   const depts = DB.getDepartments();
@@ -5453,7 +5566,7 @@ async function readChangesExcelFile(file) {
 }
 
 function openImportEmployeeChanges() {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   modal.open('นำเข้าการปรับ (Excel)', `
     <div class="import-flow">
       <div class="import-step">
@@ -5658,7 +5771,7 @@ router.register('loans', () => {
 });
 
 function openLoanForm(id = null) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const l = id ? DB.getLoans().find(x => x.id === id) : { id: '', employeeId: '', date: tz.today(), amount: 0, monthlyPayment: 0, remaining: 0, status: 'active', reason: '' };
   const emps = DB.getEmployees({ status: 'active' });
   modal.open(id ? 'แก้ไขการกู้' : 'บันทึกการกู้', `
@@ -5690,7 +5803,7 @@ function openLoanForm(id = null) {
 }
 
 async function deleteLoanRec(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   if (!await modal.confirm('ลบรายการกู้', 'ยืนยันการลบ?')) return;
   try { await DB.deleteLoan(id); toast('ลบแล้ว', 'success'); router.go('loans'); }
   catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
@@ -5775,7 +5888,7 @@ router.register('advances', () => {
 });
 
 function openAdvanceForm(id = null) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const a = id ? DB.getAdvances().find(x => x.id === id) : { employeeId: '', date: tz.today(), amount: 0, reason: '', status: 'pending' };
   const emps = DB.getEmployees({ status: 'active' });
   modal.open(id ? 'แก้ไข' : 'บันทึกการเบิกล่วงหน้า', `
@@ -5805,7 +5918,7 @@ function openAdvanceForm(id = null) {
 }
 
 async function deleteAdvRec(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   if (!await modal.confirm('ลบ', 'ยืนยัน?')) return;
   try { await DB.deleteAdvance(id); toast('ลบแล้ว', 'success'); router.go('advances'); }
   catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
@@ -5892,7 +6005,7 @@ router.register('allowance', () => {
 });
 
 function openAllowanceForm(id = null) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const a = id ? DB.getAllowances().find(x => x.id === id) : { employeeId: '', month: tz.thisMonth(), type: 'ค่าเดินทาง', amount: 0, note: '' };
   const emps = DB.getEmployees({ status: 'active' });
   modal.open(id ? 'แก้ไข' : 'บันทึกเบี้ยเลี้ยง', `
@@ -5922,7 +6035,7 @@ function openAllowanceForm(id = null) {
 }
 
 async function deleteAllowRec(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   if (!await modal.confirm('ลบ', 'ยืนยัน?')) return;
   try { await DB.deleteAllowance(id); toast('ลบแล้ว', 'success'); router.go('allowance'); }
   catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
@@ -6016,7 +6129,7 @@ function scoreToGrade(s) {
 }
 
 function openEvalForm(id = null) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const v = id ? DB.getEvaluations().find(x => x.id === id) : { employeeId: '', date: tz.today(), period: 'ครึ่งปี ' + tz.thisYear(), score: 0, grade: 'C', note: '' };
   const emps = DB.getEmployees({ status: 'active' });
   modal.open(id ? 'แก้ไข' : 'บันทึกการประเมิน', `
@@ -6048,7 +6161,7 @@ function openEvalForm(id = null) {
 }
 
 async function deleteEvalRec(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   if (!await modal.confirm('ลบ', 'ยืนยัน?')) return;
   try { await DB.deleteEvaluation(id); toast('ลบแล้ว', 'success'); router.go('evaluations'); }
   catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
@@ -6290,7 +6403,7 @@ router.register('calendar', () => {
 });
 
 function openCalForm(id = null) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const c = id ? DB.getCalendar().find(x => x.id === id) : { date: tz.today(), title: '', type: 'holiday' };
   modal.open(id ? 'แก้ไข' : 'เพิ่มกิจกรรม / วันหยุด', `
     <form id="calForm">
@@ -6315,7 +6428,7 @@ function openCalForm(id = null) {
 }
 
 async function deleteCalRec(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   if (!await modal.confirm('ลบ', 'ยืนยัน?')) return;
   try { await DB.deleteCalendarItem(id); toast('ลบแล้ว', 'success'); router.go('calendar'); }
   catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
@@ -6888,7 +7001,7 @@ function renderLeaveTypesTable() {
 }
 
 function openLeaveTypeForm(id = null) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const t = id ? DB.getLeaveType(id) : { id: '', label: '', maxDays: '', rule: null, gender: null, allowBackdate: false, badge: 'badge-info', sortOrder: 100, active: true, note: '' };
   modal.open(id ? `แก้ไขประเภทการลา — ${escapeHtml(t.label)}` : 'เพิ่มประเภทการลาใหม่', `
     <form id="leaveTypeForm">
@@ -6961,7 +7074,7 @@ function openLeaveTypeForm(id = null) {
 }
 
 async function deleteLeaveType(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   if (!await modal.confirm('ลบประเภทการลา', `ลบ "${id}" ใช่หรือไม่? (ถ้ามีคำขอลาใช้อยู่จะลบไม่ได้ — ต้องปิด active แทน)`)) return;
   try {
     await DB.deleteLeaveType(id);
@@ -7097,7 +7210,7 @@ function openLeaveRequestForm(id = null) {
 }
 
 async function approveLeave(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const note = await modal.prompt('อนุมัติคำขอลา', 'หมายเหตุ (ถ้ามี):', '');
   if (note === null) return;
   try {
@@ -7108,7 +7221,7 @@ async function approveLeave(id) {
 }
 
 async function rejectLeave(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   const note = await modal.prompt('ปฏิเสธคำขอลา', 'เหตุผลที่ปฏิเสธ:', '');
   if (note === null) return;
   try {
@@ -7129,7 +7242,7 @@ async function cancelLeave(id) {
 }
 
 async function deleteLeave(id) {
-  if (!requireAdmin()) return;
+  if (!requireHR()) return;
   if (!await modal.confirm('ลบคำขอ', 'ลบรายการนี้ถาวร? ไม่สามารถกู้คืนได้')) return;
   try {
     await DB.deleteLeaveRequest(id);
