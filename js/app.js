@@ -2244,17 +2244,26 @@ function viewEmployee(id) {
       <div style="padding:4px 0;color:var(--text-2)">${escapeHtml(e.note)}</div>
     </div>` : ''}
 
-    <div class="tabs mt-4">
-      <button class="tab active" data-tab="history">ประวัติเงินเดือน (${history.length})</button>
-      <button class="tab" data-tab="loans">การกู้ (${loans.length})</button>
-      <button class="tab" data-tab="advances">เบิกล่วงหน้า (${advances.length})</button>
-      <button class="tab" data-tab="evals">ประเมิน (${evals.length})</button>
-    </div>
-    <div id="tabContent"></div>
+    ${(() => {
+      // pre-fetch leaves สำหรับพนักงานคนนี้ (auto-scope ผ่าน RBAC — แต่ HR/Admin/Manager เห็นได้ตามสิทธิ์ของตัวเอง)
+      const leaves = DB.getLeaveRequests({ employeeId: e.id });
+      return `
+        <div class="tabs mt-4">
+          <button class="tab active" data-tab="history">ประวัติเงินเดือน (${history.length})</button>
+          <button class="tab" data-tab="loans">การกู้ (${loans.length})</button>
+          <button class="tab" data-tab="advances">เบิกล่วงหน้า (${advances.length})</button>
+          <button class="tab" data-tab="evals">ประเมิน (${evals.length})</button>
+          <button class="tab" data-tab="leaves">การลา (${leaves.length})</button>
+        </div>
+        <div id="tabContent"></div>
+      `;
+    })()}
   `, {
     size: 'lg',
     footer: `<button class="btn btn-secondary" data-close>ปิด</button><button class="btn btn-primary" onclick="window.print()">พิมพ์</button>`
   });
+
+  const leaves = DB.getLeaveRequests({ employeeId: e.id });
 
   const renderTab = (tab) => {
     const c = $('#tabContent');
@@ -2266,6 +2275,44 @@ function viewEmployee(id) {
       c.innerHTML = advances.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>วันที่</th><th>จำนวน</th><th>เหตุผล</th><th>สถานะ</th></tr></thead><tbody>${advances.map(a => `<tr><td>${fmt.date(a.date)}</td><td class="num">${fmt.money(a.amount)}</td><td>${escapeHtml(a.reason || '-')}</td><td>${a.status === 'paid' ? '<span class="badge badge-success">จ่ายแล้ว</span>' : '<span class="badge badge-warning">รอจ่าย</span>'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty-state"><div class="hint">ยังไม่มีการเบิกล่วงหน้า</div></div>';
     } else if (tab === 'evals') {
       c.innerHTML = evals.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>วันที่</th><th>คะแนน</th><th>เกรด</th><th>หมายเหตุ</th></tr></thead><tbody>${evals.map(v => `<tr><td>${fmt.date(v.date)}</td><td class="num">${v.score}/100</td><td><span class="badge badge-info">${escapeHtml(v.grade || '-')}</span></td><td>${escapeHtml(v.note || '-')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty-state"><div class="hint">ยังไม่มีการประเมิน</div></div>';
+    } else if (tab === 'leaves') {
+      // สรุปการลาตามประเภท + ตารางรายการ
+      const year = new Date().getFullYear();
+      const totalApprovedYear = leaves
+        .filter(l => l.status === 'approved' && (l.startDate || '').startsWith(String(year)))
+        .reduce((s, l) => s + Number(l.days || 0), 0);
+      const pendingCount = leaves.filter(l => l.status === 'pending').length;
+      c.innerHTML = leaves.length ? `
+        <div style="display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap">
+          <div class="badge badge-info" style="padding:8px 14px;font-size:13px">ใช้ลาไปแล้วปี ${year}: <strong>${totalApprovedYear}</strong> วัน</div>
+          ${pendingCount ? `<div class="badge badge-warning" style="padding:8px 14px;font-size:13px">รออนุมัติ: <strong>${pendingCount}</strong> คำขอ</div>` : ''}
+        </div>
+        <div class="table-wrap"><table class="table">
+          <thead><tr>
+            <th>ประเภท</th>
+            <th>วันที่</th>
+            <th class="num">จำนวนวัน</th>
+            <th>เหตุผล</th>
+            <th>ผู้อนุมัติ</th>
+            <th>สถานะ</th>
+          </tr></thead>
+          <tbody>
+            ${leaves.map(l => {
+              const typeCfg = DB.LEAVE_TYPES[l.leaveType] || { label: l.leaveType, badge: 'badge-info' };
+              const statusCfg = LEAVE_STATUS_BADGE[l.status] || { label: l.status, cls: 'badge' };
+              const approver = l.approvedBy ? '✓ อนุมัติแล้ว' : (l.status === 'pending' ? 'รอ' : '-');
+              return `<tr>
+                <td><span class="badge ${typeCfg.badge}">${escapeHtml(typeCfg.label)}</span></td>
+                <td>${fmt.date(l.startDate)}${l.endDate && l.endDate !== l.startDate ? ' – ' + fmt.date(l.endDate) : ''}</td>
+                <td class="num">${l.days}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(l.reason || '')}">${escapeHtml(l.reason || '-')}</td>
+                <td class="muted-2" style="font-size:12px">${escapeHtml(approver)}</td>
+                <td><span class="badge ${statusCfg.cls}">${statusCfg.label}</span></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table></div>
+      ` : '<div class="empty-state"><div class="hint">ยังไม่มีประวัติการลา</div></div>';
     }
   };
   renderTab('history');

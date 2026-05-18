@@ -231,6 +231,14 @@ const DB = {
     this.data.leaveRequests = (leaves || []).map(this._leaveFromDB);
     this.data.leaveTypes = (lvTypes || []).map(this._leaveTypeFromDB);
     if (comp.data) this.data.company = this._compFromDB(comp.data);
+
+    // Pre-fetch user_profiles cache — RLS อนุญาต admin เห็นทั้งหมด, ผู้ใช้ทั่วไปเห็นแค่ของตัวเอง
+    // ใช้สำหรับ getLeaveApprover() escalation logic (Branch Mgr → Area Mgr)
+    try {
+      const { data: ups } = await this.client.from('user_profiles').select('*');
+      this._userProfiles = ups || [];
+    } catch (e) { this._userProfiles = []; }
+
     this._invalidateIndex();
   },
 
@@ -1712,26 +1720,56 @@ const DB = {
     return { quota, used, remaining: Math.max(0, quota - used) };
   },
 
-  // หาผู้อนุมัติของพนักงานคนนี้ = คนที่มี position_level สูงสุดในสาขาเดียวกัน
-  // (ไม่นับคนลาออกแล้ว) — ถ้าเสมอกันใช้ id แรก
+  // หาผู้อนุมัติของพนักงานคนนี้
+  // - พนักงานทั่วไป → ผู้จัดการสาขา (= position_level สูงสุดในสาขา)
+  // - ถ้า requester เอง = ผู้จัดการสาขา → escalate ไปหา Area Manager ที่ดูแลสาขานั้น
+  // - ถ้าไม่มี Area Manager → fallback ไป HR (คนแรกที่เจอ)
   getLeaveApprover(empId) {
     const emp = this.getEmployee(empId);
     if (!emp || !emp.branch) return null;
     const sameBranch = this.data.employees
       .filter(e => e.branch === emp.branch && this.empStatus(e) !== 'resigned');
     if (!sameBranch.length) return null;
-    // เพิ่ม level จาก position_levels (default 0)
+
+    // ลำดับชั้นในสาขา (level สูง → ต่ำ)
     const withLevel = sameBranch.map(e => {
       const pos = this.getPosition(e.position);
       return { emp: e, level: pos ? Number(pos.level || 0) : 0 };
     });
     withLevel.sort((a, b) => b.level - a.level || a.emp.id.localeCompare(b.emp.id));
-    return withLevel[0].emp;
+    const topInBranch = withLevel[0].emp;
+
+    // ถ้า requester ≠ ผู้จัดการสาขา → ผู้จัดการสาขาคืออนุมัติ
+    if (topInBranch.id !== empId) return topInBranch;
+
+    // requester = ผู้จัดการสาขา → escalate หา Area Manager
+    // (1) หา user_profiles ที่ role='area_manager' + managed_branches มี branch นี้
+    const profiles = this._userProfiles || [];
+    const amCandidates = profiles.filter(p =>
+      p.role === 'area_manager' &&
+      Array.isArray(p.managed_branches) &&
+      p.managed_branches.includes(emp.branch) &&
+      p.employee_id
+    );
+    if (amCandidates.length) {
+      const amEmp = this.getEmployee(amCandidates[0].employee_id);
+      if (amEmp && this.empStatus(amEmp) !== 'resigned') return amEmp;
+    }
+
+    // (2) Fallback หา HR (คนแรกที่เจอ)
+    const hrProfile = profiles.find(p => p.role === 'hr' && p.employee_id);
+    if (hrProfile) {
+      const hrEmp = this.getEmployee(hrProfile.employee_id);
+      if (hrEmp && this.empStatus(hrEmp) !== 'resigned') return hrEmp;
+    }
+
+    // (3) ไม่มี — คืน null (admin override only)
+    return null;
   },
 
   // current user สามารถอนุมัติของ empId นี้ได้ไหม
   canApproveLeaveFor(empId) {
-    if (this.isAdmin) return true;
+    if (this.isHR) return true; // admin + hr อนุมัติทุกคำขอ
     const approver = this.getLeaveApprover(empId);
     if (!approver) return false;
     return this.profile?.employee_id === approver.id;
@@ -1775,8 +1813,18 @@ const DB = {
     return mapped;
   },
 
+  // ตรวจสิทธิ์อนุมัติ: admin/hr → ทุกคำขอ, area_manager/branch_manager → เฉพาะคนที่ตัวเองเป็น approver ของ
+  _ensureCanApproveLeave(requestId) {
+    if (this.isHR) return; // admin + hr override ได้
+    const req = this.getLeaveRequest(requestId);
+    if (!req) throw new Error('ไม่พบคำขอลา');
+    if (!this.canApproveLeaveFor(req.employeeId)) {
+      throw new Error('คุณไม่ใช่ผู้อนุมัติของคำขอนี้');
+    }
+  },
+
   async approveLeaveRequest(id, note = '') {
-    if (!this.isAdmin) throw new Error('ต้องเป็น admin');
+    this._ensureCanApproveLeave(id);
     const { data, error } = await this.client.from('leave_requests')
       .update({ status: 'approved', approved_by: this.user?.id || null, approved_at: new Date().toISOString(), approver_note: note || null })
       .eq('id', id).select().single();
@@ -1785,7 +1833,7 @@ const DB = {
   },
 
   async rejectLeaveRequest(id, note = '') {
-    if (!this.isAdmin) throw new Error('ต้องเป็น admin');
+    this._ensureCanApproveLeave(id);
     const { data, error } = await this.client.from('leave_requests')
       .update({ status: 'rejected', approved_by: this.user?.id || null, approved_at: new Date().toISOString(), approver_note: note || null })
       .eq('id', id).select().single();
