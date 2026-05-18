@@ -4,37 +4,44 @@
    ═══════════════════════════════════════════════════════════ */
 
 :root {
-  /* Brand — Deep Luxury Navy */
-  --navy-50:  #f0f4fa;
-  --navy-100: #dce5f0;
-  --navy-200: #b3c5e0;
-  --navy-300: #7c9bc4;
-  --navy-400: #4a72a8;
-  --navy-500: #1e3a8a;
-  --navy-600: #182d6e;
-  --navy-700: #122254;
-  --navy-800: #0d1840;
-  --navy-900: #08102a;
+  /* ─── Brand — Refined Royal Navy (deeper, more saturated for premium feel) ─── */
+  --navy-50:  #eef3fa;
+  --navy-100: #dbe4f3;
+  --navy-200: #b3c5e6;
+  --navy-300: #7e9bcc;
+  --navy-400: #4870b0;
+  --navy-500: #1d3f8f;   /* Primary — slightly cooler & richer than before */
+  --navy-600: #163073;
+  --navy-700: #102458;
+  --navy-800: #0a1840;
+  --navy-900: #050d2a;
 
   --primary:       var(--navy-500);
   --primary-hover: var(--navy-600);
   --primary-soft:  var(--navy-50);
   --primary-text:  var(--navy-700);
 
-  /* Neutrals — Warm cream (editorial paper feel) */
+  /* ─── Premium accent — Champagne gold (subtle luxury hint) ─── */
+  --gold:        #c9a961;
+  --gold-soft:   #f9f4e6;
+  --gold-text:   #8a6f2c;
+  --gold-dark:   #a68a3d;
+
+  /* ─── Neutrals — Refined editorial cream (cooler, less yellow tint) ─── */
   --neutral-0:   #ffffff;
-  --neutral-50:  #f4efe6;   /* warm cream bg — cards float visibly */
-  --neutral-100: #ece6da;
-  --neutral-150: #e4ddce;
-  --neutral-200: #ddd5c4;
-  --neutral-300: #d1d1c8;
-  --neutral-400: #9e9e93;
-  --neutral-500: #6f6f66;
-  --neutral-600: #525249;
-  --neutral-700: #3a3a33;
-  --neutral-800: #26261f;
-  --neutral-900: #14140f;
-  --neutral-950: #0a0a06;
+  --neutral-25:  #fbfaf6;   /* faintly tinted surface — for hero blocks */
+  --neutral-50:  #f6f3ed;   /* main page bg — refined editorial cream */
+  --neutral-100: #efebe2;
+  --neutral-150: #e6e0d2;
+  --neutral-200: #d8d2c2;
+  --neutral-300: #c6c0b2;
+  --neutral-400: #8c8a82;
+  --neutral-500: #5e5d57;
+  --neutral-600: #46453f;
+  --neutral-700: #2f2e28;
+  --neutral-800: #1c1c18;
+  --neutral-900: #0e0e0c;
+  --neutral-950: #050504;
 
   /* Semantic */
   --bg:           var(--neutral-50);
@@ -47,26 +54,26 @@
   --text-2:       var(--neutral-600);
   --text-3:       var(--neutral-400);
 
-  /* Sidebar */
-  --sidebar-bg:    #0a0a06;
-  --sidebar-bg-2:  #14140f;
-  --sidebar-text:  #c9c9bc;
-  --sidebar-text-2: #8a8a7f;
-  --sidebar-hover: rgba(30, 58, 138, 0.08);
+  /* ─── Sidebar — Deep onyx with navy undertone (more luxe) ─── */
+  --sidebar-bg:    #07090f;
+  --sidebar-bg-2:  #0e1118;
+  --sidebar-text:  #cdcdc0;
+  --sidebar-text-2: #8c8c80;
+  --sidebar-hover: rgba(78, 110, 175, 0.10);
 
-  /* Status */
-  --success:        #16a34a;
-  --success-soft:   #ecfdf5;
-  --success-text:   #14532d;
-  --danger:         #dc2626;
-  --danger-soft:    #fef2f2;
-  --danger-text:    #7f1d1d;
-  --warning:        #d97706;
-  --warning-soft:   #fffbeb;
-  --warning-text:   #78350f;
-  --info:           #0284c7;
-  --info-soft:      #f0f9ff;
-  --info-text:      #0c4a6e;
+  /* ─── Status — Refined semantic palette ─── */
+  --success:        #15923f;   /* slightly deeper emerald */
+  --success-soft:   #ebfaf0;
+  --success-text:   #0e5226;
+  --danger:         #d72626;
+  --danger-soft:    #fdf0f0;
+  --danger-text:    #7a1818;
+  --warning:        #c97706;   /* slightly less orange, more amber */
+  --warning-soft:   #fdf8eb;
+  --warning-text:   #6d3e08;
+  --info:           #1e7fc4;   /* refined cool blue */
+  --info-soft:      #ebf5fc;
+  --info-text:      #0e466f;
 
   /* Shadows */
   --shadow-xs: 0 1px 2px rgba(20, 20, 15, 0.04);
@@ -94,25 +101,28 @@
 }
 
 [data-theme="dark"] {
-  --bg:           #0d0d0a;
-  --surface:      #161613;
-  --surface-2:    #1d1d19;
-  --surface-hover: #232320;
-  --border:       #2a2a26;
-  --border-strong: #3a3a33;
+  /* Deeper, richer onyx with cool undertone — feels more "after hours luxe" */
+  --bg:           #0a0a0d;
+  --surface:      #14141a;
+  --surface-2:    #1c1c23;
+  --surface-hover: #23232b;
+  --border:       #2a2a32;
+  --border-strong: #3a3a42;
   --text:         #f5f5f0;
-  --text-2:       #a8a89e;
-  --text-3:       #6f6f66;
-  --sidebar-bg:   #050503;
-  --sidebar-bg-2: #0d0d0a;
-  --sidebar-text: #c9c9bc;
-  --primary-soft: rgba(30, 58, 138, 0.08);
+  --text-2:       #adada4;
+  --text-3:       #74746c;
+  --sidebar-bg:   #050508;
+  --sidebar-bg-2: #0a0a10;
+  --sidebar-text: #d0d0c4;
+  --sidebar-text-2: #8e8e83;
+  --primary-soft: rgba(78, 112, 176, 0.12);
+  --gold-soft:    rgba(201, 169, 97, 0.08);
 
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
-  --shadow:    0 4px 16px rgba(0, 0, 0, 0.35), 0 2px 4px rgba(0, 0, 0, 0.2);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45), 0 4px 8px rgba(0, 0, 0, 0.3);
-  --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.5);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.40), 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow:    0 4px 16px rgba(0, 0, 0, 0.45), 0 2px 4px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55), 0 4px 8px rgba(0, 0, 0, 0.35);
+  --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.65);
 
   --success-soft: rgba(22, 163, 74, 0.12);
   --danger-soft:  rgba(220, 38, 38, 0.12);
@@ -517,20 +527,23 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   min-height: 100vh;
 }
 
-/* ═════════════ SIDEBAR ═════════════ */
+/* ═════════════ SIDEBAR — Onyx luxe ═════════════ */
 .sidebar {
   background: var(--sidebar-bg);
   background-image:
-    radial-gradient(ellipse at top, rgba(30, 58, 138, 0.06), transparent 50%),
+    radial-gradient(ellipse at 50% 0%, rgba(78, 112, 176, 0.10), transparent 55%),
+    radial-gradient(ellipse at 0% 100%, rgba(201, 169, 97, 0.04), transparent 50%),
     linear-gradient(180deg, var(--sidebar-bg-2) 0%, var(--sidebar-bg) 100%);
   color: var(--sidebar-text);
   display: flex; flex-direction: column;
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
   padding: 20px 0 12px;
   z-index: 50;
-  border-right: 1px solid rgba(255,255,255,0.04);
+  border-right: 1px solid rgba(255,255,255,0.05);
+  box-shadow: inset -1px 0 0 rgba(255,255,255,0.02);
 }
-.sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border: none; }
+.sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); border: none; }
+.sidebar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
 
 .sidebar-logo {
   display: flex; align-items: center; gap: 12px;
@@ -570,13 +583,15 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 }
 .nav-item:hover { background: var(--sidebar-hover); color: #fff; }
 .nav-item.active {
-  background: linear-gradient(90deg, rgba(30, 58, 138, 0.18), rgba(30, 58, 138, 0.08));
-  color: #fff; font-weight: 500;
+  background: linear-gradient(90deg, rgba(78, 112, 176, 0.22), rgba(78, 112, 176, 0.08) 60%, transparent);
+  color: #fff; font-weight: 600;
+  letter-spacing: 0.01em;
 }
 .nav-item.active::before {
-  content: ''; position: absolute; left: -14px; top: 8px; bottom: 8px; width: 3px;
-  background: var(--navy-400); border-radius: 0 2px 2px 0;
-  box-shadow: 0 0 12px rgba(30, 58, 138, 0.5);
+  content: ''; position: absolute; left: -14px; top: 7px; bottom: 7px; width: 3px;
+  background: linear-gradient(180deg, var(--navy-300), var(--navy-500));
+  border-radius: 0 3px 3px 0;
+  box-shadow: 0 0 16px rgba(78, 112, 176, 0.6), 0 0 4px rgba(78, 112, 176, 0.8);
 }
 .nav-icon { width: 18px; height: 18px; flex-shrink: 0; }
 .nav-icon svg { width: 100%; height: 100%; stroke-width: 1.75; }
@@ -1314,20 +1329,24 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .table th.sortable:hover .sort-icon.active { opacity: 1; }
 
 .badge {
-  display: inline-flex; align-items: center; padding: 3px 10px;
+  display: inline-flex; align-items: center; padding: 4px 11px;
   border-radius: var(--radius-full);
-  font-size: 11.5px; font-weight: 500; letter-spacing: 0.01em;
+  font-size: 11.5px; font-weight: 600; letter-spacing: 0.015em;
   border: 1px solid transparent;
+  font-feature-settings: "tnum";
+  line-height: 1.3;
 }
-.badge-success { background: var(--success-soft); color: var(--success-text); border-color: rgba(22,163,74,0.18); }
-.badge-warning { background: var(--warning-soft); color: var(--warning-text); border-color: rgba(217,119,6,0.18); }
-.badge-danger { background: var(--danger-soft); color: var(--danger-text); border-color: rgba(220,38,38,0.18); }
-.badge-info { background: var(--info-soft); color: var(--info-text); border-color: rgba(2,132,199,0.18); }
-.badge-neutral { background: var(--surface-2); color: var(--text-2); border-color: var(--border); }
-[data-theme="dark"] .badge-success { color: #86efac; }
-[data-theme="dark"] .badge-warning { color: #fcd34d; }
-[data-theme="dark"] .badge-danger { color: #fca5a5; }
-[data-theme="dark"] .badge-info { color: #93c5fd; }
+.badge-success { background: var(--success-soft); color: var(--success-text); border-color: rgba(21, 146, 63, 0.22); }
+.badge-warning { background: var(--warning-soft); color: var(--warning-text); border-color: rgba(201, 119, 6, 0.22); }
+.badge-danger  { background: var(--danger-soft);  color: var(--danger-text);  border-color: rgba(215, 38, 38, 0.22); }
+.badge-info    { background: var(--info-soft);    color: var(--info-text);    border-color: rgba(30, 127, 196, 0.22); }
+.badge-neutral { background: var(--surface-2);    color: var(--text-2);       border-color: var(--border); }
+.badge-gold    { background: var(--gold-soft);    color: var(--gold-text);    border-color: rgba(201, 169, 97, 0.30); }
+[data-theme="dark"] .badge-success { background: rgba(21, 146, 63, 0.16); color: #86efac; border-color: rgba(21, 146, 63, 0.30); }
+[data-theme="dark"] .badge-warning { background: rgba(201, 119, 6, 0.16); color: #fcd34d; border-color: rgba(201, 119, 6, 0.30); }
+[data-theme="dark"] .badge-danger  { background: rgba(215, 38, 38, 0.16); color: #fca5a5; border-color: rgba(215, 38, 38, 0.30); }
+[data-theme="dark"] .badge-info    { background: rgba(30, 127, 196, 0.16); color: #93c5fd; border-color: rgba(30, 127, 196, 0.30); }
+[data-theme="dark"] .badge-gold    { background: rgba(201, 169, 97, 0.14); color: #fcd34d; border-color: rgba(201, 169, 97, 0.30); }
 
 /* ═════════════ FORMS ═════════════ */
 .form-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
@@ -1945,10 +1964,48 @@ html { scroll-behavior: smooth; }
 /* Refined selection — uses brand color subtly */
 ::selection { background: rgba(30, 58, 138, 0.18); color: var(--text); }
 
-/* Body — subtle radial accent for editorial depth */
+/* Body — refined editorial backdrop with subtle navy halo + warm bottom tint */
 body {
-  background-image: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(30, 58, 138, 0.020), transparent 60%);
+  background-image:
+    radial-gradient(ellipse 70% 50% at 50% -8%, rgba(29, 63, 143, 0.030), transparent 65%),
+    radial-gradient(ellipse 90% 70% at 50% 110%, rgba(201, 169, 97, 0.022), transparent 55%);
   background-attachment: fixed;
+}
+[data-theme="dark"] body {
+  background-image:
+    radial-gradient(ellipse 75% 55% at 50% -10%, rgba(78, 112, 176, 0.14), transparent 60%),
+    radial-gradient(ellipse 90% 70% at 50% 110%, rgba(201, 169, 97, 0.04), transparent 55%);
+}
+
+/* Refined card surfaces — subtle warmth via faint inner-top highlight */
+.sw-chart-card {
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface) 100%);
+  position: relative;
+}
+.sw-chart-card::before {
+  content: '';
+  position: absolute; top: 0; left: 24px; right: 24px; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+  pointer-events: none;
+  opacity: 0.5;
+  border-radius: 1px;
+}
+[data-theme="dark"] .sw-chart-card::before {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  opacity: 1;
+}
+
+/* KPI stat cards — premium top-edge highlight */
+.sw-stat-card::before {
+  content: '';
+  position: absolute; top: 0; left: 20px; right: 20px; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.7), transparent);
+  pointer-events: none;
+  opacity: 0.6;
+}
+[data-theme="dark"] .sw-stat-card::before {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+  opacity: 1;
 }
 
 /* Page enter animation — ON navigation only (router applies .sw-anim-enter)
