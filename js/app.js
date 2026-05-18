@@ -7593,6 +7593,7 @@ function updateLeaveBadge() {
 //  PAGE: USER ROLES (จัดการบัญชี + สิทธิ์ผู้ใช้) — admin + HR
 // ═══════════════════════════════════════════════════════
 router.register('user-roles', () => {
+  const rows = DB.getRoleMatrix();
   return `
     <div class="sw-page-header">
       <div>
@@ -7601,13 +7602,14 @@ router.register('user-roles', () => {
       </div>
     </div>
 
-    <!-- Reference matrix -->
+    <!-- Editable reference matrix -->
     <div class="sw-chart-card" style="margin-bottom:20px">
-      <div class="sw-chart-header">
+      <div class="sw-chart-header" style="align-items:flex-start">
         <div>
           <div class="sw-chart-title">ตารางสิทธิ์ตาม Role</div>
-          <div class="sw-chart-sub">อ้างอิงสิทธิ์ของแต่ละ role ในระบบ (read-only)</div>
+          <div class="sw-chart-sub">เอกสารอ้างอิง — admin/HR แก้ไข + เพิ่มแถวได้ <span class="badge badge-warning" style="font-size:10.5px;margin-left:6px">⚠️ ไม่กระทบ permission จริงในระบบ</span></div>
         </div>
+        ${DB.isHR ? `<button class="btn btn-primary btn-sm" onclick="openRoleMatrixEditor()">${ICON.plus}แก้ไข / เพิ่มแถว</button>` : ''}
       </div>
       <div class="table-wrap"><table class="table table-compact">
         <thead><tr>
@@ -7618,20 +7620,17 @@ router.register('user-roles', () => {
           <th class="num">Area Mgr</th>
           <th class="num">Branch Mgr</th>
           <th class="num">Branch Staff</th>
+          <th>หมายเหตุ</th>
         </tr></thead>
         <tbody>
-          ${[
-            ['Dashboard',              'Org',    'Org',    'Org',    'Scoped', 'Scoped', 'Personal'],
-            ['ทะเบียนพนักงาน',          'ทั้งหมด', 'ทั้งหมด', 'ทั้งหมด', 'สาขา',   'สาขา',   '— ซ่อน'],
-            ['สาขา / ตำแหน่ง / รับสมัคร', '✓',      '✓',      '✓',      '✓',      '✓',      '—'],
-            ['ปรับค่าจ้าง / กู้ / audit',  '✓',      '✓',      '—',      '—',      '—',      '—'],
-            ['การลา',                  'ทั้งหมด', 'ทั้งหมด', 'ทั้งหมด', 'สาขา',   'สาขา',   'ตัวเอง'],
-            ['ผู้ใช้และสิทธิ์',             '✓ ทุก',  '✓ ยกเว้น admin', '—',  '—',      '—',      '—'],
-            ['ตั้งค่าระบบ (company)',     '✓',      '—',      '—',      '—',      '—',      '—'],
-          ].map(row => `<tr>
-            <td><strong>${escapeHtml(row[0])}</strong></td>
-            ${row.slice(1).map(cell => `<td class="num" style="color:${cell === '—' || cell === '— ซ่อน' ? 'var(--text-3)' : 'var(--text)'}">${escapeHtml(cell)}</td>`).join('')}
-          </tr>`).join('')}
+          ${rows.length ? rows.map(r => {
+            const cells = [r.admin, r.hr, r.opMgr, r.areaMgr, r.branchMgr, r.branchStaff];
+            return `<tr>
+              <td><strong>${escapeHtml(r.menuLabel)}</strong></td>
+              ${cells.map(cell => `<td class="num" style="color:${(cell === '—' || cell === '— ซ่อน' || !cell) ? 'var(--text-3)' : 'var(--text)'}">${escapeHtml(cell || '—')}</td>`).join('')}
+              <td class="sw-cell-meta">${escapeHtml(r.note || '')}</td>
+            </tr>`;
+          }).join('') : `<tr><td colspan="8" class="muted-2" style="text-align:center;padding:20px">ยังไม่มีข้อมูลในตาราง — กด "แก้ไข / เพิ่มแถว" เพื่อเริ่ม</td></tr>`}
         </tbody>
       </table></div>
     </div>
@@ -7650,6 +7649,118 @@ router.register('user-roles', () => {
     </div>
   `;
 });
+
+// Modal แก้ไขตาราง role matrix (admin/HR)
+async function openRoleMatrixEditor() {
+  if (!requireHR()) return;
+  const rows = DB.getRoleMatrix();
+  // Use deep-copy เพื่อ allow editing in modal ก่อน save
+  const draft = rows.map(r => ({ ...r }));
+
+  const renderTable = () => {
+    return `<div class="table-wrap"><table class="table table-compact" id="matrixEditTable">
+      <thead><tr>
+        <th style="width:160px">เมนู / สิทธิ์</th>
+        <th>Admin</th>
+        <th>HR</th>
+        <th>Op Mgr</th>
+        <th>Area Mgr</th>
+        <th>Branch Mgr</th>
+        <th>Branch Staff</th>
+        <th>หมายเหตุ</th>
+        <th style="width:50px"></th>
+      </tr></thead>
+      <tbody>
+        ${draft.map((r, i) => `<tr data-idx="${i}">
+          <td><input class="mtx-in" data-k="menuLabel" value="${escapeHtml(r.menuLabel)}" placeholder="ชื่อเมนู"/></td>
+          <td><input class="mtx-in" data-k="admin" value="${escapeHtml(r.admin)}" placeholder="—"/></td>
+          <td><input class="mtx-in" data-k="hr" value="${escapeHtml(r.hr)}" placeholder="—"/></td>
+          <td><input class="mtx-in" data-k="opMgr" value="${escapeHtml(r.opMgr)}" placeholder="—"/></td>
+          <td><input class="mtx-in" data-k="areaMgr" value="${escapeHtml(r.areaMgr)}" placeholder="—"/></td>
+          <td><input class="mtx-in" data-k="branchMgr" value="${escapeHtml(r.branchMgr)}" placeholder="—"/></td>
+          <td><input class="mtx-in" data-k="branchStaff" value="${escapeHtml(r.branchStaff)}" placeholder="—"/></td>
+          <td><input class="mtx-in" data-k="note" value="${escapeHtml(r.note)}" placeholder="(ทางเลือก)"/></td>
+          <td><button type="button" class="btn btn-ghost btn-sm" onclick="window._mtxDeleteRow(${i})" title="ลบแถว">🗑</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+  };
+
+  modal.open('แก้ไขตารางสิทธิ์ตาม Role',
+    `<div style="margin-bottom:12px;padding:10px 14px;background:rgba(245,158,11,0.08);border-left:3px solid var(--warning);border-radius:6px;font-size:12.5px;line-height:1.6">
+       ⚠️ <strong>หมายเหตุ:</strong> ตารางนี้เป็นเอกสารอ้างอิงเท่านั้น — การแก้ค่าในตารางจะไม่ไปแก้สิทธิ์จริงในระบบโดยอัตโนมัติ (สิทธิ์จริงยังอยู่ที่ code/RLS)
+     </div>
+     <div id="matrixEditBox">${renderTable()}</div>
+     <div style="margin-top:12px;display:flex;gap:8px">
+       <button type="button" class="btn btn-secondary btn-sm" onclick="window._mtxAddRow()">${ICON.plus}เพิ่มแถวใหม่</button>
+     </div>`,
+    {
+      size: 'lg',
+      footer: `<button class="btn btn-secondary" data-close>ยกเลิก</button><button class="btn btn-primary" id="mtxSave">บันทึก</button>`
+    }
+  );
+
+  // Bind global helpers (modal scope)
+  window._mtxAddRow = () => {
+    const maxSort = draft.reduce((m, r) => Math.max(m, r.sortOrder || 0), 0);
+    draft.push({ menuLabel: '', admin: '', hr: '', opMgr: '', areaMgr: '', branchMgr: '', branchStaff: '', sortOrder: maxSort + 10, note: '' });
+    rebind();
+  };
+  window._mtxDeleteRow = (idx) => {
+    // ถ้าเป็น row ที่มี id (จาก DB) — เก็บ id ใน _toDelete
+    const row = draft[idx];
+    if (row && row.id) {
+      draft._toDelete = draft._toDelete || [];
+      draft._toDelete.push(row.id);
+    }
+    draft.splice(idx, 1);
+    rebind();
+  };
+  const collectFromInputs = () => {
+    const rows = $$('#matrixEditTable tbody tr');
+    rows.forEach((tr, i) => {
+      const inputs = $$('.mtx-in', tr);
+      inputs.forEach(inp => {
+        draft[i][inp.dataset.k] = inp.value;
+      });
+    });
+  };
+  const rebind = () => {
+    collectFromInputs();
+    const box = $('#matrixEditBox');
+    if (box) box.innerHTML = renderTable();
+  };
+
+  $('#mtxSave').addEventListener('click', async () => {
+    collectFromInputs();
+    const btn = $('#mtxSave'); btn.disabled = true; btn.textContent = 'กำลังบันทึก...';
+    try {
+      // ลบ rows ที่ user remove
+      const toDelete = draft._toDelete || [];
+      for (const id of toDelete) {
+        try { await DB.deleteRoleMatrixRow(id); } catch (e) { console.warn('Delete failed', id, e); }
+      }
+      // Save remaining rows (sort_order = order ใน list)
+      for (let i = 0; i < draft.length; i++) {
+        const r = draft[i];
+        if (!r.menuLabel || !r.menuLabel.trim()) continue; // ข้าม row ว่าง
+        r.sortOrder = (i + 1) * 10;
+        await DB.saveRoleMatrixRow(r);
+      }
+      // refresh data + router
+      try {
+        const { data: rm } = await DB.client.from('role_permission_matrix').select('*').order('sort_order');
+        DB.data.roleMatrix = (rm || []).map(DB._matrixFromDB);
+      } catch {}
+      modal.close();
+      toast('บันทึกตารางสิทธิ์แล้ว', 'success');
+      router.refresh();
+    } catch (ex) {
+      toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error');
+      btn.disabled = false; btn.textContent = 'บันทึก';
+    }
+  });
+}
 
 router.register('settings', () => {
   const c = DB.data.company;

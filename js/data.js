@@ -239,6 +239,12 @@ const DB = {
       this._userProfiles = ups || [];
     } catch (e) { this._userProfiles = []; }
 
+    // Role matrix (เอกสารอ้างอิงสิทธิ์) — ทุกคนอ่านได้
+    try {
+      const { data: rm } = await this.client.from('role_permission_matrix').select('*').order('sort_order');
+      this.data.roleMatrix = (rm || []).map(this._matrixFromDB);
+    } catch (e) { this.data.roleMatrix = []; }
+
     this._invalidateIndex();
   },
 
@@ -539,6 +545,47 @@ const DB = {
     active: s.active !== false,
     note: s.note || null
   }),
+  // ─── ROLE MATRIX (เอกสารอ้างอิงสิทธิ์ — admin/HR แก้ได้) ───
+  _matrixFromDB: (r) => ({
+    id: r.id,
+    menuLabel: r.menu_label || '',
+    admin: r.admin_val || '',
+    hr: r.hr_val || '',
+    opMgr: r.op_mgr_val || '',
+    areaMgr: r.area_mgr_val || '',
+    branchMgr: r.branch_mgr_val || '',
+    branchStaff: r.branch_staff_val || '',
+    sortOrder: Number(r.sort_order || 0),
+    note: r.note || ''
+  }),
+  _matrixToDB: (m) => ({
+    menu_label: m.menuLabel || '',
+    admin_val: m.admin || '',
+    hr_val: m.hr || '',
+    op_mgr_val: m.opMgr || '',
+    area_mgr_val: m.areaMgr || '',
+    branch_mgr_val: m.branchMgr || '',
+    branch_staff_val: m.branchStaff || '',
+    sort_order: Number(m.sortOrder || 0),
+    note: m.note || null
+  }),
+  getRoleMatrix() {
+    return (this.data.roleMatrix || []).slice().sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+  },
+  async saveRoleMatrixRow(row) {
+    if (!this.isHR) throw new Error('ต้องเป็น admin หรือ HR');
+    const r = this._matrixToDB(row);
+    if (row.id) r.id = row.id;
+    const { data, error } = await this.client.from('role_permission_matrix').upsert(r).select().single();
+    if (error) throw error;
+    return this._matrixFromDB(data);
+  },
+  async deleteRoleMatrixRow(id) {
+    if (!this.isHR) throw new Error('ต้องเป็น admin หรือ HR');
+    const { error } = await this.client.from('role_permission_matrix').delete().eq('id', id);
+    if (error) throw error;
+  },
+
   _branchFromDB: (r) => ({
     id: r.id,
     name: r.name || '',
