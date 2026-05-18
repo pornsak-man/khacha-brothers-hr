@@ -919,7 +919,7 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .sw-emp-table tbody tr:hover { background: var(--surface-2); }
 .sw-emp-table tbody tr:hover td { background: transparent; }
 .sw-cell-meta { font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
-.sw-emp-cell { display: flex; flex-direction: column; gap: 2px; }
+.sw-emp-cell { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; }
 .sw-emp-cell strong { font-size: 13.5px; color: var(--text); }
 .sw-emp-cell .muted-2 { font-size: 11.5px; }
 .sw-leave-type { font-size: 11.5px; padding: 4px 10px; font-weight: 600; }

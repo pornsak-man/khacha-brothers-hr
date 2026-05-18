@@ -1443,8 +1443,7 @@ function renderEmployeeList() {
               <td><code style="font-size:11.5px;font-weight:600">${escapeHtml(e.id)}</code></td>
               <td>
                 <div class="sw-emp-cell">
-                  <strong>${escapeHtml(fullName)} ${genderMark}</strong>
-                  <span class="muted-2">${escapeHtml(e.nickname || '—')}</span>
+                  <strong>${escapeHtml(fullName)} ${genderMark}</strong>${e.nickname ? `<span class="muted-2" style="margin-left:6px">· ${escapeHtml(e.nickname)}</span>` : ''}
                 </div>
               </td>
               <td class="sw-cell-meta">${escapeHtml(e.positionTitle || '—')}</td>
