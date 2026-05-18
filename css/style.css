@@ -1318,8 +1318,11 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   padding: 9px 10px;
   font-size: 12.5px;
   white-space: nowrap;
+  vertical-align: middle;
 }
 .table.table-compact th { font-size: 10.5px; padding: 10px 10px; }
+/* บังคับทุกแถวสูงเท่ากัน — แถวที่ไม่มี nickname จะ stretch ขึ้นเทียบเท่าแถวที่มี */
+.table.table-compact tbody tr { height: 52px; }
 
 /* ── Sortable headers ── */
 .table th.sortable {
