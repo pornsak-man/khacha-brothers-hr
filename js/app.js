@@ -318,10 +318,13 @@ const auth = {
     if (typeof updateLeaveBadge === 'function') updateLeaveBadge();
     if (typeof updateSSOBadge === 'function') updateSSOBadge();
     // ซ่อนเมนูตาม role:
-    //   .nav-admin-only → เฉพาะ admin (ตั้งค่าระบบ)
-    //   .nav-hr-only    → admin + hr (ปรับค่าจ้าง, กู้, audit log)
+    //   .nav-admin-only  → เฉพาะ admin (ตั้งค่าระบบ)
+    //   .nav-hr-only     → admin + hr (ปรับค่าจ้าง, กู้, audit log)
+    //   .nav-staff-hide  → ซ่อนสำหรับ branch_staff / viewer (เมนูที่ไม่จำเป็นต่อพนักงานสาขา)
     $$('.nav-admin-only').forEach(el => { el.style.display = DB.isAdmin ? '' : 'none'; });
     $$('.nav-hr-only').forEach(el => { el.style.display = DB.isHR ? '' : 'none'; });
+    const isStaffOnly = (DB.role === 'branch_staff' || DB.role === 'viewer');
+    $$('.nav-staff-hide').forEach(el => { if (isStaffOnly) el.style.display = 'none'; });
     router.go('dashboard');
   }
 };
@@ -488,7 +491,173 @@ window.onRealtimeChange = (payload) => {
 // ═══════════════════════════════════════════════════════
 //  PAGE: DASHBOARD
 // ═══════════════════════════════════════════════════════
+// ─── PERSONAL DASHBOARD (Self-Service) ───
+// แสดง dashboard ของ user ที่ login (branch_staff / viewer) — เห็นข้อมูลของตัวเอง
+function renderPersonalDashboard() {
+  const empId = DB.profile?.employee_id;
+  const e = empId ? DB.getEmployee(empId) : null;
+  if (!e) {
+    return `<div class="empty-state" style="margin-top:60px">
+      <div class="icon">${ICON.users}</div>
+      <div class="title">ไม่พบข้อมูลพนักงาน</div>
+      <div class="hint">บัญชีของคุณยังไม่ได้ผูกกับพนักงานในระบบ — กรุณาติดต่อ admin เพื่อผูกข้อมูล</div>
+    </div>`;
+  }
+  const dept = DB.getDepartment(e.department) || {};
+  const pos = DB.getPosition(e.position) || {};
+  const today = tz.today();
+  const year = new Date().getFullYear();
+  const initials = (e.firstName || '?').charAt(0);
+
+  // คำนวณ leave balance ทุก type
+  const leaveTypes = (DB.getLeaveTypesList?.() || []).filter(t => t.active !== false);
+  const balances = leaveTypes
+    .map(lt => ({ type: lt, ...DB.calcLeaveBalance(e.id, lt.id, year) }))
+    .filter(b => b.quota > 0); // แสดงเฉพาะ type ที่มี quota (กรณีเพศ/อายุงาน)
+
+  // คำขอลาของฉัน
+  const myLeaves = DB.getLeaveRequests({ employeeId: e.id });
+  const pending = myLeaves.filter(l => l.status === 'pending');
+  const recent = myLeaves.slice().sort((a, b) => (b.startDate || '').localeCompare(a.startDate || '')).slice(0, 5);
+  const totalUsedYear = myLeaves
+    .filter(l => l.status === 'approved' && (l.startDate || '').startsWith(String(year)))
+    .reduce((s, l) => s + Number(l.days || 0), 0);
+
+  return `
+    <div class="sw-page-header">
+      <div>
+        <div class="sw-page-title">หน้าหลักของฉัน</div>
+        <div class="sw-page-subtitle">สวัสดี ${escapeHtml(e.firstName || '')} — ข้อมูลส่วนตัว · คำขอลา · ประกันสังคม</div>
+      </div>
+      <div class="sw-page-actions">
+        <button class="btn btn-primary" onclick="openLeaveRequestForm()">+ ขอลา</button>
+      </div>
+    </div>
+
+    <!-- Hero card — รูป + ข้อมูลสรุป -->
+    <div class="emp-hero">
+      <div class="emp-hero-avatar">
+        ${e.photoUrl
+          ? `<img src="${escapeHtml(e.photoUrl)}" alt="" loading="lazy"/>`
+          : `<div class="emp-avatar-fallback">${escapeHtml(initials)}</div>`}
+      </div>
+      <div class="emp-hero-info">
+        <div class="emp-hero-id">รหัส ${escapeHtml(e.id)}</div>
+        <h2 class="emp-hero-name">${escapeHtml((e.title || '') + e.firstName + ' ' + (e.lastName || ''))}</h2>
+        <div class="emp-hero-title">${escapeHtml(e.positionTitle || pos.name || '-')}${pos.level ? ' · ระดับ ' + pos.level : ''}</div>
+        <div class="emp-hero-chips">
+          ${dept.name ? `<span class="emp-chip">${escapeHtml(dept.name)}</span>` : ''}
+          ${e.branch ? `<span class="emp-chip">📍 ${escapeHtml(e.branch)}</span>` : ''}
+          ${e.employeeType ? `<span class="emp-chip">${escapeHtml(e.employeeType)}</span>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats row -->
+    <div class="sw-stats-grid" style="margin-top:18px">
+      <div class="sw-stat-card sw-accent-primary">
+        <div class="sw-stat-icon">${ICON.money}</div>
+        <div class="sw-stat-label">รายได้รวม/เดือน</div>
+        <div class="sw-stat-value">${fmt.money(totalIncome(e))}</div>
+        <div class="sw-stat-change">เงินเดือน + ค่าตำแหน่ง + เบี้ยเลี้ยง</div>
+      </div>
+      <div class="sw-stat-card sw-accent-green">
+        <div class="sw-stat-icon">${ICON.calendar}</div>
+        <div class="sw-stat-label">อายุงาน</div>
+        <div class="sw-stat-value">${e.hireDate ? fmt.serviceYears(e.hireDate, e.terminationDate) : '-'}</div>
+        <div class="sw-stat-change">เริ่มงาน ${fmt.date(e.hireDate)}</div>
+      </div>
+      <div class="sw-stat-card sw-accent-amber">
+        <div class="sw-stat-icon">${ICON.clipboard}</div>
+        <div class="sw-stat-label">คำขอลารออนุมัติ</div>
+        <div class="sw-stat-value" style="color:${pending.length ? 'var(--warning)' : 'var(--text)'}">${fmt.num(pending.length)}</div>
+        <div class="sw-stat-change">ใช้ลาไปแล้วปีนี้: ${fmt.num(totalUsedYear)} วัน</div>
+      </div>
+      <div class="sw-stat-card sw-accent-red">
+        <div class="sw-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div>
+        <div class="sw-stat-label">ประกันสังคม</div>
+        <div class="sw-stat-value" style="font-size:18px">${e.ssoEnrolledDate ? '<span style="color:var(--success)">✓ แจ้งเข้าแล้ว</span>' : '<span style="color:var(--warning)">รอแจ้งเข้า</span>'}</div>
+        <div class="sw-stat-change">${e.ssoNo ? 'เลข สปส.: ' + escapeHtml(e.ssoNo) : 'ยังไม่มีเลข สปส.'}</div>
+      </div>
+    </div>
+
+    <!-- Leave balance table -->
+    ${balances.length ? `
+    <div class="sw-section-label" style="margin-top:24px">วันลาคงเหลือ — ปี ${year}</div>
+    <div class="sw-chart-card">
+      <div class="table-wrap"><table class="table table-compact">
+        <thead><tr>
+          <th>ประเภทการลา</th>
+          <th class="num">โควต้า (วัน)</th>
+          <th class="num">ใช้ไปแล้ว</th>
+          <th class="num">คงเหลือ</th>
+          <th></th>
+        </tr></thead>
+        <tbody>
+          ${balances.map(b => {
+            const usedPct = b.quota > 0 ? Math.min(100, (b.used / b.quota) * 100) : 0;
+            const pctColor = usedPct >= 80 ? 'var(--danger)' : usedPct >= 50 ? 'var(--warning)' : 'var(--success)';
+            return `<tr>
+              <td><span class="badge ${b.type.badge || 'badge-info'}">${escapeHtml(b.type.label || b.type.id)}</span></td>
+              <td class="num">${b.quota}</td>
+              <td class="num" style="color:${pctColor}">${b.used}</td>
+              <td class="num"><strong>${b.remaining}</strong></td>
+              <td style="width:140px">
+                <div style="height:6px;background:var(--surface-2);border-radius:3px;overflow:hidden">
+                  <div style="height:100%;width:${usedPct}%;background:${pctColor};transition:width .3s"></div>
+                </div>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table></div>
+    </div>
+    ` : ''}
+
+    <!-- Recent leave requests -->
+    <div class="sw-section-label" style="margin-top:24px">คำขอลาของฉัน — 5 รายการล่าสุด</div>
+    <div class="sw-chart-card">
+      ${recent.length ? `
+        <div class="table-wrap"><table class="table table-compact">
+          <thead><tr>
+            <th>ประเภท</th>
+            <th>วันที่</th>
+            <th class="num">จำนวนวัน</th>
+            <th>เหตุผล</th>
+            <th>สถานะ</th>
+          </tr></thead>
+          <tbody>
+            ${recent.map(l => {
+              const typeCfg = DB.LEAVE_TYPES[l.leaveType] || { label: l.leaveType, badge: 'badge-info' };
+              const statusCfg = LEAVE_STATUS_BADGE[l.status] || { label: l.status, cls: 'badge' };
+              return `<tr>
+                <td><span class="badge ${typeCfg.badge}">${escapeHtml(typeCfg.label)}</span></td>
+                <td>${fmt.date(l.startDate)}${l.endDate && l.endDate !== l.startDate ? ' – ' + fmt.date(l.endDate) : ''}</td>
+                <td class="num">${l.days}</td>
+                <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(l.reason || '')}">${escapeHtml(l.reason || '-')}</td>
+                <td><span class="badge ${statusCfg.cls}">${statusCfg.label}</span></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table></div>
+        <div style="text-align:right;margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="router.go('leave')">ดูทั้งหมด →</button></div>
+      ` : `
+        <div class="empty-state" style="padding:30px">
+          <div class="title">ยังไม่มีคำขอลา</div>
+          <div class="hint">กดปุ่ม "+ ขอลา" ด้านบนเพื่อสร้างคำขอแรกของคุณ</div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
 router.register('dashboard', () => {
+  // ─── PERSONAL DASHBOARD (Self-Service) สำหรับ branch_staff / viewer ───
+  // ถ้าเป็นพนักงานปกติ (ไม่ใช่ admin/hr/manager) → แสดง dashboard ส่วนตัวแทน
+  if ((DB.role === 'branch_staff' || DB.role === 'viewer') && DB.profile?.employee_id) {
+    return renderPersonalDashboard();
+  }
+
   const s = DB.getStats();
   const kpi = DB.getDashboardKPI();
   const yearly = DB.getYearlyHireExit();
@@ -6692,7 +6861,8 @@ function switchLeaveTab(t) { _leaveState.tab = t; router.go('leave'); }
 router.register('leave', () => {
   const today = tz.today();
   const thisMonth = today.slice(0, 7);
-  const all = DB.data.leaveRequests;
+  // ใช้ getLeaveRequests() เพื่อ auto-scope ตาม RBAC (branch_staff เห็นเฉพาะของตัวเอง)
+  const all = DB.getLeaveRequests();
   const pending = all.filter(r => r.status === 'pending');
   const approvedThisMonth = all.filter(r => r.status === 'approved' && (r.startDate || '').startsWith(thisMonth));
   const totalDaysThisMonth = approvedThisMonth.reduce((s, r) => s + Number(r.days || 0), 0);

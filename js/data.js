@@ -1688,11 +1688,24 @@ const DB = {
     return this.profile?.employee_id === approver.id;
   },
 
-  getLeaveRequests({ employeeId = null, status = null, year = null } = {}) {
+  getLeaveRequests({ employeeId = null, status = null, year = null, _noScope = false } = {}) {
     let list = this.data.leaveRequests.slice();
     if (employeeId) list = list.filter(r => r.employeeId === employeeId);
     if (status)     list = list.filter(r => r.status === status);
     if (year)       list = list.filter(r => String(r.startDate).startsWith(String(year)));
+    // ─── Auto-scope ตาม RBAC (Phase 3) ───
+    // branch_staff / viewer → เห็นเฉพาะของตัวเอง
+    // branch_manager / area_manager → เห็นเฉพาะของพนักงานในสาขาที่ดูแล
+    if (!_noScope && this.role && !employeeId) {
+      if (this.role === 'branch_staff' || this.role === 'viewer') {
+        const myId = this.profile?.employee_id;
+        list = list.filter(r => r.employeeId === myId);
+      } else if (this.role === 'branch_manager' || this.role === 'area_manager') {
+        const scoped = this.scopedBranches() || [];
+        const scopedEmpIds = new Set(this.data.employees.filter(e => scoped.includes(e.branch)).map(e => e.id));
+        list = list.filter(r => scopedEmpIds.has(r.employeeId));
+      }
+    }
     return list.sort((a, b) => (b.startDate || '').localeCompare(a.startDate || '') || (b.requestedAt || '').localeCompare(a.requestedAt || ''));
   },
 
