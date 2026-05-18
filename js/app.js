@@ -376,6 +376,7 @@ const router = {
       reports: 'รายงาน / Export',
       calendar: 'ปฏิทิน HR',
       sso: 'ประกันสังคม',
+      'branch-managers': 'ผู้บังคับบัญชาสาขา',
       'user-roles': 'ผู้ใช้และสิทธิ์',
       settings: 'ตั้งค่าระบบ'
     };
@@ -3012,6 +3013,65 @@ function exportEmployeesXLSX() {
 // ═══════════════════════════════════════════════════════
 const _branchPageState = { showClosed: false };
 function toggleShowClosedBranches() { _branchPageState.showClosed = !_branchPageState.showClosed; router.go('branches'); }
+
+// ═══════════════════════════════════════════════════════
+//  PAGE: BRANCH MANAGERS (ผู้บังคับบัญชาสาขา — ทุกคนเห็นได้)
+// ═══════════════════════════════════════════════════════
+router.register('branch-managers', () => {
+  // ใช้ getBranchMaster แบบไม่ scope — แสดงสาขาทั้งหมดที่ active
+  const allBranches = (DB.getBranchMaster({ activeOnly: true }) || []);
+  const myBranch = DB.profile?.employee_id ? (DB.getEmployee(DB.profile.employee_id)?.branch || '') : '';
+
+  return `
+    <div class="sw-page-header">
+      <div>
+        <div class="sw-page-title">ผู้บังคับบัญชาสาขา</div>
+        <div class="sw-page-subtitle">ติดต่อหัวหน้าและสำนักงานของแต่ละสาขา — อิงตามระดับตำแหน่งสูงสุด (auto-detect)</div>
+      </div>
+    </div>
+
+    <div class="sw-chart-card">
+      ${allBranches.length ? `
+        <div class="table-wrap"><table class="table table-compact">
+          <thead><tr>
+            <th style="width:80px">รหัสสาขา</th>
+            <th>ผู้บังคับบัญชา</th>
+            <th>ตำแหน่ง</th>
+            <th>เบอร์มือถือ</th>
+            <th>เบอร์สาขา</th>
+            <th>Email สาขา</th>
+          </tr></thead>
+          <tbody>
+            ${allBranches.map(b => {
+              const mgr = DB.getBranchManager(b.id);
+              const pos = mgr ? (DB.getPosition(mgr.position) || {}) : {};
+              const mgrName = mgr ? `${(mgr.title || '') + mgr.firstName} ${mgr.lastName || ''}`.trim() : '';
+              const mgrPos = mgr ? (mgr.positionTitle || pos.name || '') : '';
+              const levelBadge = pos.level ? ` <span class="badge badge-info" style="font-size:10px;margin-left:4px">ระดับ ${pos.level}</span>` : '';
+              const isMyBranch = b.id === myBranch;
+              return `<tr ${isMyBranch ? 'style="background:rgba(78,112,176,0.06)"' : ''}>
+                <td>
+                  <code style="font-size:12px;font-weight:700">${escapeHtml(b.id)}</code>
+                  ${isMyBranch ? '<span class="badge badge-success" style="font-size:10px;margin-left:6px">สาขาของฉัน</span>' : ''}
+                </td>
+                <td>${mgr
+                  ? `<strong>${escapeHtml(mgrName)}</strong>${mgr.nickname ? `<span class="muted-2" style="margin-left:6px">· ${escapeHtml(mgr.nickname)}</span>` : ''}`
+                  : '<span class="muted-2">—</span>'}</td>
+                <td class="sw-cell-meta">${escapeHtml(mgrPos)}${levelBadge}</td>
+                <td>${mgr?.phone ? `<a href="tel:${escapeHtml(mgr.phone)}" style="color:var(--primary);text-decoration:none">${escapeHtml(mgr.phone)}</a>` : '<span class="muted-2">—</span>'}</td>
+                <td>${b.phone ? `<a href="tel:${escapeHtml(b.phone)}" style="color:var(--primary);text-decoration:none">${escapeHtml(b.phone)}</a>` : '<span class="muted-2">—</span>'}</td>
+                <td>${b.email ? `<a href="mailto:${escapeHtml(b.email)}" style="color:var(--primary);text-decoration:none">${escapeHtml(b.email)}</a>` : '<span class="muted-2">—</span>'}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table></div>
+      ` : `<div class="empty-state" style="padding:60px 20px">
+        <div style="font-size:42px;margin-bottom:12px;opacity:0.35">🏢</div>
+        <div class="title">ไม่มีข้อมูลสาขา</div>
+      </div>`}
+    </div>
+  `;
+});
 
 router.register('branches', () => {
   const allBranches = DB.getBranchMaster();
