@@ -696,14 +696,55 @@ function destroyAllCharts() {
   _chartInstances.clear();
 }
 
+// ─── Premium Chart Palette ─────────────────────────────────
+// Cohesive editorial palette — navy + gold + refined semantics
+const CHART_PALETTE = {
+  primary:   '#1d3f8f',  primaryHover:   '#163073',  primaryLight:   'rgba(29, 63, 143, 0.10)',
+  emerald:   '#15923f',  emeraldHover:   '#0e6b2c',  emeraldLight:   'rgba(21, 146, 63, 0.10)',
+  crimson:   '#d72626',  crimsonHover:   '#b91c1c',  crimsonLight:   'rgba(215, 38, 38, 0.10)',
+  amber:     '#c97706',  amberHover:     '#a66305',  amberLight:     'rgba(201, 119, 6, 0.10)',
+  gold:      '#c9a961',  goldHover:      '#a68a3d',  goldLight:      'rgba(201, 169, 97, 0.12)',
+  // Slate ramp — older = darker (intuitive for age)
+  slateRamp: ['#cbd5e1', '#94a3b8', '#64748b', '#475569', '#334155', '#1e293b'],
+  slateRampDark: ['#475569', '#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0', '#f1f5f9'],
+  slateMuted: '#e2e8f0'
+};
+
+// Build a vertical canvas gradient (Chart.js compatible)
+function makeChartGradient(ctx, colorTop, colorBottom = 'rgba(255,255,255,0)') {
+  const canvas = ctx.canvas;
+  const height = canvas.height || 400;
+  const g = ctx.createLinearGradient(0, 0, 0, height);
+  g.addColorStop(0, colorTop);
+  g.addColorStop(1, colorBottom);
+  return g;
+}
+
 function renderDashboardCharts(s, monthly, trailing12) {
   if (typeof Chart === 'undefined') { setTimeout(() => renderDashboardCharts(s, monthly, trailing12), 200); return; }
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  Chart.defaults.color = isDark ? '#c9cfd6' : '#525249';
+  const P = CHART_PALETTE;
+  Chart.defaults.color = isDark ? '#adada4' : '#5e5d57';
   Chart.defaults.font.family = 'Inter, "IBM Plex Sans Thai", system-ui, sans-serif';
-  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+  Chart.defaults.font.size = 12;
+  const gridColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(20,20,15,0.04)';
+  const tooltipStyle = {
+    backgroundColor: isDark ? 'rgba(20, 20, 24, 0.96)' : 'rgba(14, 14, 12, 0.96)',
+    titleColor: '#fff',
+    bodyColor: '#e8e8e0',
+    borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    cornerRadius: 8,
+    padding: 12,
+    titleFont: { size: 12.5, weight: '600' },
+    bodyFont: { size: 12.5 },
+    boxPadding: 6,
+    displayColors: true,
+    usePointStyle: true,
+    caretSize: 0
+  };
 
-  // ── Monthly hire/exit chart — smooth line chart (Jan-Dec ของปีปัจจุบัน) ──
+  // ── Monthly hire/exit — premium line chart with gradient fills ──
   if ($('#chartMonthly') && monthly) {
     const labels = monthly.map(m => {
       const d = new Date(m.year, m.month - 1, 1);
@@ -717,30 +758,40 @@ function renderDashboardCharts(s, monthly, trailing12) {
           {
             label: 'เข้าใหม่',
             data: monthly.map(m => m.hires),
-            borderColor: '#16a34a',
-            backgroundColor: '#16a34a',
+            borderColor: P.emerald,
+            backgroundColor: (ctx) => {
+              const c = ctx.chart.ctx;
+              if (!c) return 'transparent';
+              return makeChartGradient(c, 'rgba(21, 146, 63, 0.18)', 'rgba(21, 146, 63, 0)');
+            },
             borderWidth: 2.5,
-            tension: 0.35,
+            tension: 0.38,
             pointRadius: 0,
-            pointHoverRadius: 5,
-            pointHoverBackgroundColor: '#16a34a',
-            pointHoverBorderColor: '#fff',
-            pointHoverBorderWidth: 2,
-            fill: false
+            pointHoverRadius: 6,
+            pointHoverBackgroundColor: '#fff',
+            pointHoverBorderColor: P.emerald,
+            pointHoverBorderWidth: 2.5,
+            fill: true,
+            cubicInterpolationMode: 'monotone'
           },
           {
             label: 'พ้นสภาพ',
             data: monthly.map(m => m.exits),
-            borderColor: '#dc2626',
-            backgroundColor: '#dc2626',
+            borderColor: P.crimson,
+            backgroundColor: (ctx) => {
+              const c = ctx.chart.ctx;
+              if (!c) return 'transparent';
+              return makeChartGradient(c, 'rgba(215, 38, 38, 0.15)', 'rgba(215, 38, 38, 0)');
+            },
             borderWidth: 2.5,
-            tension: 0.35,
+            tension: 0.38,
             pointRadius: 0,
-            pointHoverRadius: 5,
-            pointHoverBackgroundColor: '#dc2626',
-            pointHoverBorderColor: '#fff',
-            pointHoverBorderWidth: 2,
-            fill: false
+            pointHoverRadius: 6,
+            pointHoverBackgroundColor: '#fff',
+            pointHoverBorderColor: P.crimson,
+            pointHoverBorderWidth: 2.5,
+            fill: true,
+            cubicInterpolationMode: 'monotone'
           }
         ]
       },
@@ -749,69 +800,86 @@ function renderDashboardCharts(s, monthly, trailing12) {
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: {
-            position: 'top', align: 'center',
-            labels: { usePointStyle: true, pointStyle: 'rectRounded', padding: 18, boxWidth: 14, boxHeight: 14, font: { size: 13 } }
+            position: 'top', align: 'end',
+            labels: { usePointStyle: true, pointStyle: 'circle', padding: 18, boxWidth: 8, boxHeight: 8, font: { size: 12.5, weight: '500' } }
           },
-          tooltip: { mode: 'index', intersect: false }
+          tooltip: tooltipStyle
         },
         scales: {
-          x: { grid: { display: false }, ticks: { font: { size: 12 } } },
-          y: { beginAtZero: true, ticks: { stepSize: 2, precision: 0, font: { size: 12 } }, grid: { color: gridColor } }
+          x: { grid: { display: false }, ticks: { font: { size: 12 } }, border: { display: false } },
+          y: { beginAtZero: true, ticks: { stepSize: 2, precision: 0, font: { size: 12 } }, grid: { color: gridColor }, border: { display: false } }
         }
       }
     });
   }
 
-  // (Branch distribution ใช้ HTML list — ไม่ใช้ Chart.js แล้ว)
-
-  // ── พนักงานตามตำแหน่งงาน (แทน chartByDept เดิม) ──
+  // ── พนักงานตามตำแหน่งงาน — navy gradient bars ──
   if ($('#chartByPosition') && s.byPosition?.length) {
     makeChart('chartByPosition', {
       type: 'bar',
       data: {
         labels: s.byPosition.map(p => p.name),
-        datasets: [{ label: 'จำนวน', data: s.byPosition.map(p => p.count), backgroundColor: '#1e3a8a', hoverBackgroundColor: '#1e40af', borderRadius: 3, borderSkipped: false, barPercentage: 0.6, categoryPercentage: 0.8 }]
+        datasets: [{
+          label: 'จำนวน',
+          data: s.byPosition.map(p => p.count),
+          backgroundColor: (ctx) => {
+            const c = ctx.chart.ctx;
+            if (!c) return P.primary;
+            return makeChartGradient(c, P.primary, 'rgba(29, 63, 143, 0.45)');
+          },
+          hoverBackgroundColor: (ctx) => {
+            const c = ctx.chart.ctx;
+            if (!c) return P.primaryHover;
+            return makeChartGradient(c, P.primaryHover, 'rgba(22, 48, 115, 0.55)');
+          },
+          borderRadius: 5, borderSkipped: false, barPercentage: 0.62, categoryPercentage: 0.82
+        }]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `${ctx.parsed.y} คน` } } },
+        plugins: {
+          legend: { display: false },
+          tooltip: { ...tooltipStyle, callbacks: { label: (ctx) => `  ${ctx.parsed.y.toLocaleString('th-TH')} คน` } }
+        },
         scales: {
-          x: { grid: { display: false }, ticks: { font: { size: 11 }, maxRotation: 45, minRotation: 30, autoSkip: false } },
-          y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: gridColor } }
+          x: { grid: { display: false }, ticks: { font: { size: 11 }, maxRotation: 45, minRotation: 30, autoSkip: false }, border: { display: false } },
+          y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: gridColor }, border: { display: false } }
         }
       }
     });
   }
 
+  // ── เพศ — navy + champagne gold (editorial luxe) ──
   if ($('#chartByGender')) makeChart('chartByGender', {
     type: 'doughnut',
     data: {
       labels: ['ชาย', 'หญิง'],
       datasets: [{
         data: [s.byGender.male, s.byGender.female],
-        // Editorial palette: navy + warm gold (no pink/blue cliché)
-        backgroundColor: ['#1e3a8a', '#b45309'],
-        hoverBackgroundColor: ['#1e40af', '#c2410c'],
-        borderWidth: 0, hoverOffset: 6
+        backgroundColor: [P.primary, P.gold],
+        hoverBackgroundColor: [P.primaryHover, P.goldHover],
+        borderWidth: 0,
+        hoverOffset: 8,
+        spacing: 2
       }]
     },
     options: {
-      responsive: true, cutout: '68%',
+      responsive: true, cutout: '70%',
       plugins: {
-        legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true, pointStyle: 'circle', font: { size: 12.5 } } }
+        legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, font: { size: 12.5, weight: '500' } } },
+        tooltip: { ...tooltipStyle, callbacks: { label: (ctx) => `  ${ctx.label}: ${ctx.parsed.toLocaleString('th-TH')} คน` } }
       }
     }
   });
 
-  // ── ช่วงอายุพนักงาน — monochromatic slate (premium editorial) ──
+  // ── ช่วงอายุพนักงาน — slate ramp (intuitive: older = darker) ──
   if ($('#chartByAge') && s.byAge?.length) {
-    // ช่วงอายุน้อย → อ่อน, อายุมาก → เข้ม (intuitive: older = darker)
-    const ageRamp = ['#cbd5e1', '#94a3b8', '#64748b', '#475569', '#334155', '#1e293b'];
-    const undefinedColor = '#e2e8f0';
+    const ramp = isDark ? P.slateRampDark : P.slateRamp;
+    const undefinedColor = isDark ? '#334155' : P.slateMuted;
     const colors = s.byAge.map((b) => {
       if (b.label === 'ไม่ระบุวันเกิด') return undefinedColor;
       const idx = ['ต่ำกว่า 20 ปี','20-29 ปี','30-39 ปี','40-49 ปี','50-59 ปี','60 ปีขึ้นไป'].indexOf(b.label);
-      return idx >= 0 ? ageRamp[idx] : '#475569';
+      return idx >= 0 ? ramp[idx] : (isDark ? '#94a3b8' : '#475569');
     });
     makeChart('chartByAge', {
       type: 'bar',
@@ -822,38 +890,43 @@ function renderDashboardCharts(s, monthly, trailing12) {
           data: s.byAge.map(b => b.count),
           backgroundColor: colors,
           hoverBackgroundColor: colors.map(c => c),
-          borderRadius: 4, borderSkipped: false, barPercentage: 0.6, categoryPercentage: 0.75
+          borderRadius: 5, borderSkipped: false, barPercentage: 0.6, categoryPercentage: 0.78
         }]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
-          tooltip: { callbacks: { label: (ctx) => `${ctx.parsed.y} คน` } }
+          tooltip: { ...tooltipStyle, callbacks: { label: (ctx) => `  ${ctx.parsed.y.toLocaleString('th-TH')} คน` } }
         },
         scales: {
-          x: { grid: { display: false }, ticks: { font: { size: 12 } } },
-          y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: gridColor } }
+          x: { grid: { display: false }, ticks: { font: { size: 12 } }, border: { display: false } },
+          y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: gridColor }, border: { display: false } }
         }
       }
     });
   }
 
-  // ── KPI Sparklines: trailing-12-month hire/exit mini charts ──
+  // ── KPI Sparklines — gradient fills (premium minis) ──
   if (trailing12 && trailing12.length) {
-    const sparkOpts = (color) => ({
+    const sparkOpts = (rgbColor, lightRgba) => ({
       type: 'line',
       data: {
         labels: trailing12.map(m => m.ym),
         datasets: [{
           data: [],
-          borderColor: color,
-          borderWidth: 1.75,
-          tension: 0.35,
+          borderColor: rgbColor,
+          borderWidth: 2,
+          tension: 0.38,
           pointRadius: 0,
           pointHoverRadius: 0,
           fill: true,
-          backgroundColor: color.replace('rgb', 'rgba').replace(')', ',0.10)')
+          backgroundColor: (ctx) => {
+            const c = ctx.chart.ctx;
+            if (!c) return lightRgba;
+            return makeChartGradient(c, lightRgba, lightRgba.replace(/[\d.]+\)$/, '0)'));
+          },
+          cubicInterpolationMode: 'monotone'
         }]
       },
       options: {
@@ -864,18 +937,18 @@ function renderDashboardCharts(s, monthly, trailing12) {
       }
     });
     if ($('#sparkHires')) {
-      const cfg = sparkOpts('rgb(22,163,74)');
+      const cfg = sparkOpts(P.emerald, 'rgba(21, 146, 63, 0.18)');
       cfg.data.datasets[0].data = trailing12.map(m => m.hires);
       makeChart('sparkHires', cfg);
     }
     if ($('#sparkExits')) {
-      const cfg = sparkOpts('rgb(220,38,38)');
+      const cfg = sparkOpts(P.crimson, 'rgba(215, 38, 38, 0.15)');
       cfg.data.datasets[0].data = trailing12.map(m => m.exits);
       makeChart('sparkExits', cfg);
     }
   }
 
-  // ── อัตราค่าจ้างต่อตำแหน่งงาน — bar chart โทนทอง (editorial) ──
+  // ── อัตราค่าจ้างต่อตำแหน่งงาน — champagne gold (premium money) ──
   if ($('#chartSalaryByPosition') && s.salaryByPosition?.length) {
     const data = s.salaryByPosition;
     makeChart('chartSalaryByPosition', {
@@ -885,9 +958,17 @@ function renderDashboardCharts(s, monthly, trailing12) {
         datasets: [{
           label: 'รายได้รวมเฉลี่ย',
           data: data.map(d => d.avg),
-          backgroundColor: '#b45309',
-          hoverBackgroundColor: '#92400e',
-          borderRadius: 3, borderSkipped: false, barPercentage: 0.6, categoryPercentage: 0.8
+          backgroundColor: (ctx) => {
+            const c = ctx.chart.ctx;
+            if (!c) return P.gold;
+            return makeChartGradient(c, P.goldHover, 'rgba(201, 169, 97, 0.50)');
+          },
+          hoverBackgroundColor: (ctx) => {
+            const c = ctx.chart.ctx;
+            if (!c) return P.goldHover;
+            return makeChartGradient(c, '#8a6f2c', 'rgba(166, 138, 61, 0.55)');
+          },
+          borderRadius: 5, borderSkipped: false, barPercentage: 0.62, categoryPercentage: 0.82
         }]
       },
       options: {
@@ -895,28 +976,27 @@ function renderDashboardCharts(s, monthly, trailing12) {
         plugins: {
           legend: { display: false },
           tooltip: {
+            ...tooltipStyle,
             callbacks: {
               label: (ctx) => {
                 const d = data[ctx.dataIndex];
                 return [
-                  `รายได้รวมเฉลี่ย: ${d.avg.toLocaleString('th-TH')} บาท/เดือน`,
-                  `ต่ำสุด: ${d.min.toLocaleString('th-TH')} บาท`,
-                  `สูงสุด: ${d.max.toLocaleString('th-TH')} บาท`,
-                  `จำนวน: ${d.count} คน`
+                  `  เฉลี่ย: ${d.avg.toLocaleString('th-TH')} บาท/เดือน`,
+                  `  ต่ำสุด: ${d.min.toLocaleString('th-TH')} บาท`,
+                  `  สูงสุด: ${d.max.toLocaleString('th-TH')} บาท`,
+                  `  จำนวน: ${d.count.toLocaleString('th-TH')} คน`
                 ];
               }
             }
           }
         },
         scales: {
-          x: { grid: { display: false }, ticks: { font: { size: 11 }, maxRotation: 45, minRotation: 30, autoSkip: false } },
+          x: { grid: { display: false }, ticks: { font: { size: 11 }, maxRotation: 45, minRotation: 30, autoSkip: false }, border: { display: false } },
           y: {
             beginAtZero: true,
-            ticks: {
-              precision: 0,
-              callback: (v) => v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v
-            },
-            grid: { color: gridColor }
+            ticks: { precision: 0, callback: (v) => v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v },
+            grid: { color: gridColor },
+            border: { display: false }
           }
         }
       }
