@@ -94,21 +94,20 @@ const DB = {
     const { data } = await this.client.from('user_profiles').select('*').eq('user_id', this.user.id).maybeSingle();
     this.profile = data;
     this.role = data?.role || 'viewer';
-    this.isAdmin = this.role === 'admin';
-    this.isHR = this.role === 'admin' || this.role === 'hr';
-    // managed_branches: TEXT[] จาก DB; null/empty = scope ตาม role default
+    this.isAdmin = this.role === 'admin';                          // เฉพาะ admin
+    this.isHR    = this.role === 'admin' || this.role === 'hr';    // admin + hr
     this._managedBranches = Array.isArray(data?.managed_branches) ? data.managed_branches.filter(Boolean) : [];
   },
 
-  // ─── PERMISSION HELPERS ───
-  // role hierarchy: admin > hr > operation_manager > area_manager > branch_manager > branch_staff > viewer
-  // ฟังก์ชันเหล่านี้ใช้แทน this.isAdmin ในที่ที่ต้องการ permission ที่ละเอียดกว่า
-  canEdit()         { return this.role === 'admin' || this.role === 'hr'; },
-  canDelete()       { return this.role === 'admin' || this.role === 'hr'; },
-  canSeeSalary()    { return this.role === 'admin' || this.role === 'hr'; },
-  canEditMaster()   { return this.role === 'admin' || this.role === 'hr'; }, // สาขา/ตำแหน่ง/Master Data
-  canManageUsers()  { return this.role === 'admin'; },                        // เฉพาะ admin
-  canSeeAudit()     { return this.role === 'admin' || this.role === 'hr'; },
+  // ─── PERMISSION HELPERS (ตาม matrix) ───
+  // admin + hr ทำได้เหมือนกัน ยกเว้น "ตั้งค่าระบบ" (company settings) = admin only
+  canEdit()         { return this.isHR; },
+  canDelete()       { return this.isHR; },
+  canSeeSalary()    { return this.isHR; },
+  canEditMaster()   { return this.isHR; },
+  canManageUsers()  { return this.isHR; },         // HR ตั้งสิทธิ์/จัดการ user ได้
+  canEditCompany()  { return this.isAdmin; },      // "ตั้งค่าระบบ" company info = admin only
+  canSeeAudit()     { return this.isHR; },
   canApproveLeave() {
     return ['admin', 'hr', 'operation_manager', 'area_manager', 'branch_manager'].includes(this.role);
   },
@@ -536,14 +535,40 @@ const DB = {
     id: r.id,
     name: r.name || '',
     active: r.active !== false,
-    note: r.note || ''
+    note: r.note || '',
+    phone: r.phone || '',
+    email: r.email || ''
   }),
   _branchToDB: (b) => ({
     id: b.id,
     name: b.name || null,
     active: b.active !== false,
-    note: b.note || null
+    note: b.note || null,
+    phone: b.phone || null,
+    email: b.email || null
   }),
+
+  // ผู้บังคับบัญชาสูงสุดของสาขา — derive จากระดับตำแหน่งงานสูงสุดของพนักงาน active ในสาขานั้น
+  // คืน object พนักงาน หรือ null ถ้าไม่มี
+  getBranchManager(branchId) {
+    if (!branchId) return null;
+    const empsInBranch = this.data.employees.filter(e =>
+      e.branch === branchId && this.empStatus(e) !== 'resigned'
+    );
+    if (!empsInBranch.length) return null;
+    // จับคู่ position level (สูงสุด = ผู้บังคับบัญชา)
+    let best = null;
+    let bestLevel = -1;
+    for (const e of empsInBranch) {
+      const pos = this.getPosition?.(e.position);
+      const lvl = Number(pos?.level || 0);
+      if (lvl > bestLevel) {
+        bestLevel = lvl;
+        best = e;
+      }
+    }
+    return best;
+  },
 
   // ─── EMPLOYEES ───
   // สถานะที่แท้จริง (effective status) — คำนวณจาก terminationDate
@@ -944,11 +969,30 @@ const DB = {
     return result;
   },
 
+  // ─── SCOPE FILTER HELPER ───
+  // กรอง records ตาม RBAC scope ของ user ปัจจุบัน
+  // - admin/hr/operation_manager → ไม่กรอง
+  // - branch_staff/viewer → เฉพาะของตัวเอง
+  // - branch_manager/area_manager → เฉพาะคนในสาขาที่ดูแล
+  // getEmpId: function ที่ดึง employee_id จาก record
+  _filterByScope(records, getEmpId) {
+    if (!this.role) return records;
+    if (this.role === 'admin' || this.role === 'hr' || this.role === 'operation_manager') return records;
+    if (this.role === 'branch_staff' || this.role === 'viewer') {
+      const myId = this.profile?.employee_id;
+      return records.filter(r => getEmpId(r) === myId);
+    }
+    // branch_manager / area_manager
+    const scoped = this.scopedBranches() || [];
+    const scopedEmpIds = new Set(this.data.employees.filter(e => scoped.includes(e.branch)).map(e => e.id));
+    return records.filter(r => scopedEmpIds.has(getEmpId(r)));
+  },
+
   // ─── LOANS ───
   getLoans(employeeId = null) {
     let list = this.data.loans.slice();
-    if (employeeId) list = list.filter(l => l.employeeId === employeeId);
-    return list;
+    if (employeeId) return list.filter(l => l.employeeId === employeeId);
+    return this._filterByScope(list, l => l.employeeId);
   },
   async saveLoan(loan) {
     const row = this._loanToDB(loan);
@@ -970,8 +1014,8 @@ const DB = {
   // ─── ADVANCES ───
   getAdvances(employeeId = null) {
     let list = this.data.advances.slice();
-    if (employeeId) list = list.filter(a => a.employeeId === employeeId);
-    return list;
+    if (employeeId) return list.filter(a => a.employeeId === employeeId);
+    return this._filterByScope(list, a => a.employeeId);
   },
   async saveAdvance(adv) {
     const row = this._advToDB(adv);
@@ -993,8 +1037,8 @@ const DB = {
   // ─── ALLOWANCES ───
   getAllowances(employeeId = null) {
     let list = this.data.allowances.slice();
-    if (employeeId) list = list.filter(a => a.employeeId === employeeId);
-    return list;
+    if (employeeId) return list.filter(a => a.employeeId === employeeId);
+    return this._filterByScope(list, a => a.employeeId);
   },
   async saveAllowance(rec) {
     const row = this._allowToDB(rec);
@@ -1016,8 +1060,8 @@ const DB = {
   // ─── EVALUATIONS ───
   getEvaluations(employeeId = null) {
     let list = this.data.evaluations.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    if (employeeId) list = list.filter(e => e.employeeId === employeeId);
-    return list;
+    if (employeeId) return list.filter(e => e.employeeId === employeeId);
+    return this._filterByScope(list, e => e.employeeId);
   },
   async saveEvaluation(ev) {
     const row = this._evalToDB(ev);
@@ -1159,10 +1203,14 @@ const DB = {
   },
 
   // ─── UNIFORM REQUESTS (header) ───
-  getUniformRequests({ status, employeeId } = {}) {
+  getUniformRequests({ status, employeeId, _noScope = false } = {}) {
     let list = this.data.uniformRequests.slice();
     if (status) list = list.filter(r => r.status === status);
     if (employeeId) list = list.filter(r => r.employeeId === employeeId);
+    // Auto-scope (เฉพาะเมื่อไม่ได้ระบุ employeeId)
+    if (!_noScope && !employeeId) {
+      list = this._filterByScope(list, r => r.employeeId);
+    }
     return list.sort((a, b) => (b.requestedDate || '').localeCompare(a.requestedDate || ''));
   },
   getUniformRequest(id) { return this.data.uniformRequests.find(r => r.id === id); },
@@ -1466,7 +1514,8 @@ const DB = {
   },
 
   async setEmployeeRole(employeeId, role, branches = null) {
-    if (!this.isAdmin) throw new Error('ต้องเป็น admin');
+    // Guard ฝั่ง client: admin หรือ hr — RPC ตรวจซ้ำที่ฝั่ง DB อยู่ดี (defense in depth)
+    if (!this.isHR) throw new Error('ต้องเป็น admin หรือ HR');
     const { data, error } = await this.client.rpc('set_employee_role', {
       p_employee_id: employeeId,
       p_role: role,

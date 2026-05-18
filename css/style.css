@@ -165,46 +165,118 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; border: 2px solid var(--bg); }
 ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
 
-/* ═════════════ LOGIN ═════════════ */
+/* ═════════════ LOGIN — PREMIUM EDITION ═════════════ */
+/* Dramatic dark gradient background + animated mesh + glassmorphism card */
 .login-screen {
   position: fixed; inset: 0;
   background:
-    radial-gradient(ellipse at top right, rgba(30, 58, 138, 0.18), transparent 60%),
-    radial-gradient(ellipse at bottom left, rgba(30, 58, 138, 0.10), transparent 50%),
-    linear-gradient(180deg, #f8fafc 0%, #e2eaf5 100%);
+    radial-gradient(ellipse 80% 60% at 15% 20%, rgba(78, 112, 176, 0.35), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 85% 80%, rgba(135, 169, 107, 0.22), transparent 55%),
+    radial-gradient(ellipse 100% 80% at 50% 100%, rgba(30, 58, 138, 0.25), transparent 60%),
+    linear-gradient(135deg, #0a0e1a 0%, #141a2e 40%, #0d1424 100%);
   display: flex; align-items: center; justify-content: center;
   padding: 24px; z-index: 1000;
+  overflow: hidden;
 }
+
+/* Animated mesh layer — ขับเคลื่อนช้าๆ ให้มีชีวิตชีวา */
+.login-screen::before {
+  content: ''; position: absolute; inset: -15%;
+  background:
+    radial-gradient(circle at 30% 40%, rgba(78, 112, 176, 0.18), transparent 38%),
+    radial-gradient(circle at 70% 60%, rgba(135, 169, 107, 0.12), transparent 38%);
+  animation: meshDrift 25s ease-in-out infinite alternate;
+  pointer-events: none;
+  filter: blur(40px);
+}
+@keyframes meshDrift {
+  0%   { transform: translate(0, 0) scale(1) rotate(0deg); }
+  50%  { transform: translate(3%, -3%) scale(1.08) rotate(2deg); }
+  100% { transform: translate(-3%, 3%) scale(1) rotate(-2deg); }
+}
+
+/* Subtle vignette */
+.login-screen::after {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.35) 100%);
+  pointer-events: none;
+}
+
 [data-theme="dark"] .login-screen {
   background:
-    radial-gradient(ellipse at top right, rgba(30, 58, 138, 0.22), transparent 60%),
-    radial-gradient(ellipse at bottom left, rgba(30, 58, 138, 0.10), transparent 50%),
-    #050511;
+    radial-gradient(ellipse 80% 60% at 15% 20%, rgba(78, 112, 176, 0.40), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 85% 80%, rgba(135, 169, 107, 0.25), transparent 55%),
+    #03060e;
 }
 
 .login-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2xl);
-  padding: 48px 44px 40px;
-  width: 100%; max-width: 420px;
-  box-shadow: var(--shadow-xl);
-  position: relative;
-  overflow: hidden;
+  position: relative; z-index: 2;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 28px;
+  padding: 56px 48px 44px;
+  width: 100%; max-width: 460px;
+  box-shadow:
+    0 32px 90px rgba(0, 0, 0, 0.45),
+    0 12px 24px rgba(30, 58, 138, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  animation: cardEnter 0.7s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.login-card::before {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(180deg, rgba(30, 58, 138, 0.04), transparent 30%);
+@keyframes cardEnter {
+  from { opacity: 0; transform: translateY(24px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.login-logo { text-align: center; margin-bottom: 32px; position: relative; }
-.login-logo h1 {
-  font-size: 24px; font-weight: 600; margin-top: 20px;
-  letter-spacing: -0.02em; color: var(--text);
+[data-theme="dark"] .login-card {
+  background: rgba(15, 20, 36, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow:
+    0 32px 90px rgba(0, 0, 0, 0.7),
+    0 12px 24px rgba(30, 58, 138, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
+
+.login-card::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(135deg, rgba(78, 112, 176, 0.08), transparent 45%);
+  border-radius: inherit;
+}
+/* เส้น accent ด้านบน — gradient line */
+.login-card::after {
+  content: ''; position: absolute; top: 0; left: 28%; right: 28%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(78, 112, 176, 0.6), rgba(135, 169, 107, 0.6), transparent);
+  border-radius: 0 0 99px 99px;
+}
+
+.login-logo { text-align: center; margin-bottom: 36px; position: relative; }
+.login-logo h1 {
+  font-size: 26px; font-weight: 700; margin-top: 18px;
+  letter-spacing: -0.025em;
+  background: linear-gradient(135deg, #1e3a8a 0%, #4e70b0 60%, #87a96b 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.login-name-en {
+  font-size: 11px; color: var(--text-3); margin-top: 6px;
+  letter-spacing: 0.28em; font-weight: 500;
+  font-family: 'Inter', sans-serif;
+}
+/* เส้นคั่นระหว่างชื่อภาษาอังกฤษกับ subtitle */
 .login-logo p {
-  color: var(--text-2); font-size: 13px; margin-top: 6px;
-  letter-spacing: 0.01em;
+  color: var(--text-2); font-size: 11.5px; margin-top: 14px;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  font-weight: 600;
+  position: relative;
+  padding-top: 14px;
+}
+.login-logo p::before {
+  content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 40px; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(78, 112, 176, 0.5), transparent);
 }
 
 .logo-circle {
@@ -239,29 +311,76 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   object-fit: contain;
   display: block;
   margin: 0 auto -4px;
+  filter: drop-shadow(0 12px 28px rgba(30, 58, 138, 0.22));
+  animation: logoFloat 6s ease-in-out infinite;
+}
+@keyframes logoFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
 }
 
-.login-form label { display: block; margin-bottom: 16px; }
+.login-form label { display: block; margin-bottom: 20px; }
 .login-form label span {
-  display: block; font-size: 12px; color: var(--text-2);
-  margin-bottom: 7px; font-weight: 500; letter-spacing: 0.02em;
+  display: block; font-size: 11px; color: var(--text-2);
+  margin-bottom: 8px; font-weight: 700; letter-spacing: 0.10em;
+  text-transform: uppercase;
 }
 .login-form input {
-  width: 100%; padding: 12px 14px;
-  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  width: 100%; padding: 14px 16px;
+  border: 1.5px solid var(--border); border-radius: 12px;
   background: var(--surface); color: var(--text);
-  transition: border-color var(--transition), box-shadow var(--transition);
-  font-size: 14px;
+  transition: all 0.2s var(--ease-out);
+  font-size: 14.5px; font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 .login-form input:hover { border-color: var(--border-strong); }
-.login-form input:focus { border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-soft); }
+.login-form input:focus {
+  border-color: var(--primary);
+  box-shadow:
+    0 0 0 4px var(--primary-soft),
+    0 4px 12px rgba(30, 58, 138, 0.12);
+  outline: none;
+}
+
+/* ปุ่ม Login premium — gradient + shimmer + lift on hover */
+.login-form .btn-block {
+  margin-top: 6px;
+  padding: 15px 18px;
+  font-size: 14.5px; font-weight: 600;
+  letter-spacing: 0.04em;
+  background: linear-gradient(135deg, #1e3a8a 0%, #2e4ba8 100%);
+  border: none; border-radius: 12px;
+  color: #fff;
+  box-shadow:
+    0 10px 30px rgba(30, 58, 138, 0.40),
+    inset 0 1px 0 rgba(255, 255, 255, 0.20);
+  position: relative; overflow: hidden;
+  transition: transform 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
+  cursor: pointer;
+}
+.login-form .btn-block:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 14px 36px rgba(30, 58, 138, 0.50),
+    inset 0 1px 0 rgba(255, 255, 255, 0.30);
+}
+.login-form .btn-block:active { transform: translateY(0); }
+/* Shimmer animation on hover */
+.login-form .btn-block::before {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+  transform: translateX(-100%);
+  transition: transform 0.7s var(--ease-out);
+}
+.login-form .btn-block:hover::before { transform: translateX(100%); }
+
 .login-error {
   color: var(--danger); font-size: 13px; min-height: 18px; margin-bottom: 8px;
-  font-weight: 500;
+  font-weight: 600; letter-spacing: 0.01em;
 }
 .login-hint {
-  text-align: center; color: var(--text-3); font-size: 12px; margin-top: 16px;
-  letter-spacing: 0.02em;
+  text-align: center; color: var(--text-3); font-size: 11.5px; margin-top: 20px;
+  letter-spacing: 0.04em;
 }
 
 /* ═══════════════════════════════════════════════════════════
