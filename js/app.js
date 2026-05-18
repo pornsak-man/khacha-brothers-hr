@@ -7935,7 +7935,7 @@ const ROLE_LABELS = {
 
 async function renderEmpAccounts() {
   const box = document.getElementById('empAccountsBox');
-  if (!box || !DB.isAdmin) return;
+  if (!box || !DB.isHR) return;
   try {
     const profiles = await DB.getUserProfilesList();
     const byEmpId = new Map(profiles.filter(p => p.employee_id).map(p => [p.employee_id, p]));

@@ -1504,7 +1504,7 @@ const DB = {
   // สร้างบัญชี 1 คนด้วย Supabase signUp — เก็บ admin session ไว้ก่อน, signUp, แล้ว restore กลับ
   // handle_new_user trigger จะ auto-link employee_id จาก raw_user_meta_data
   async createEmployeeAccount(employeeId) {
-    if (!this.isAdmin) throw new Error('ต้องเป็น admin');
+    if (!this.isHR) throw new Error('ต้องเป็น admin หรือ HR');
     const emp = this.getEmployee(employeeId);
     if (!emp) throw new Error('ไม่พบพนักงาน ' + employeeId);
 
@@ -1541,7 +1541,7 @@ const DB = {
   },
 
   async bulkCreateEmployeeAccounts() {
-    if (!this.isAdmin) throw new Error('ต้องเป็น admin');
+    if (!this.isHR) throw new Error('ต้องเป็น admin หรือ HR');
     const profiles = await this.refetchUserProfiles();
     const linked = new Set((profiles || []).filter(p => p.employee_id).map(p => p.employee_id));
     const todo = this.data.employees.filter(e => this.empStatus(e) !== 'resigned' && !linked.has(e.id));
@@ -1559,7 +1559,7 @@ const DB = {
   },
 
   async resetEmployeePassword(employeeId, newPassword = null) {
-    if (!this.isAdmin) throw new Error('ต้องเป็น admin');
+    if (!this.isHR) throw new Error('ต้องเป็น admin หรือ HR');
     const { data, error } = await this.client.rpc('reset_employee_password', {
       p_employee_id: employeeId,
       p_new_password: newPassword
