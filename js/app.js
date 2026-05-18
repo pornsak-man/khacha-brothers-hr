@@ -313,6 +313,7 @@ const auth = {
     $('.user-role').textContent = DB.isAdmin ? 'ผู้ดูแลระบบ' : 'ผู้ใช้งานทั่วไป';
     if (typeof updateUniformBadge === 'function') updateUniformBadge();
     if (typeof updateLeaveBadge === 'function') updateLeaveBadge();
+    if (typeof updateSSOBadge === 'function') updateSSOBadge();
     // ซ่อนเมนูเฉพาะ admin ถ้าไม่ใช่ admin
     $$('.nav-admin-only').forEach(el => { el.style.display = DB.isAdmin ? '' : 'none'; });
     router.go('dashboard');
@@ -356,6 +357,7 @@ const router = {
       evaluations: 'ประเมินผลงาน',
       reports: 'รายงาน / Export',
       calendar: 'ปฏิทิน HR',
+      sso: 'ประกันสังคม',
       settings: 'ตั้งค่าระบบ'
     };
     $('#pageTitle').textContent = titles[name] || name;
@@ -380,7 +382,7 @@ const router = {
 // ─── REALTIME UPDATE — TARGETED REFRESH ───
 // ตาราง → หน้าที่ขึ้นกับตารางนั้น (ถ้า user ไม่ได้อยู่หน้านี้ จะไม่ refresh)
 const _RT_PAGE_DEPS = {
-  employees: ['dashboard', 'employees', 'departments', 'positions', 'salary-adjust', 'loans', 'advances', 'allowance', 'evaluations', 'reports', 'recruit', 'uniform', 'branches'],
+  employees: ['dashboard', 'employees', 'departments', 'positions', 'salary-adjust', 'loans', 'advances', 'allowance', 'evaluations', 'reports', 'recruit', 'uniform', 'branches', 'sso'],
   departments: ['dashboard', 'employees', 'departments', 'recruit'],
   position_levels: ['employees', 'positions', 'recruit'],
   salary_history: ['dashboard', 'salary-adjust'],
@@ -421,6 +423,9 @@ window.onRealtimeChange = (payload) => {
 
   // อัปเดต badge การลา — เสมอ (ไม่ขึ้นกับหน้าปัจจุบัน)
   if (table === 'leave_requests' && typeof updateLeaveBadge === 'function') updateLeaveBadge();
+
+  // อัปเดต badge ประกันสังคม เมื่อ employees เปลี่ยน — เสมอ (ไม่ขึ้นกับหน้าปัจจุบัน)
+  if (table === 'employees' && typeof updateSSOBadge === 'function') updateSSOBadge();
 
   // อัปเดต badge เมื่อ uniform_requests เปลี่ยน — เสมอ (ไม่ขึ้นกับหน้าปัจจุบัน)
   if (table === 'uniform_requests') {
@@ -1507,6 +1512,24 @@ function openEmployeeForm(id = null, init = null, onSaved = null) {
       </div>
 
       <div class="form-section">
+        <h3>ประกันสังคม <span class="muted-2" style="font-weight:normal;font-size:12px">(สปส.1-03 แจ้งเข้า / สปส.6-09 แจ้งออก)</span></h3>
+        <div class="form-grid">
+          <div class="form-group"><label>เลขประกันสังคม</label>
+            <input name="ssoNo" value="${escapeHtml(emp.ssoNo || '')}" maxlength="20" placeholder="โดยมากใช้เลขบัตร ปชช. 13 หลัก"/>
+          </div>
+          <div class="form-group"><label>สถานพยาบาลที่เลือก <span class="muted-2" style="font-weight:normal;font-size:11px">(ทางเลือก)</span></label>
+            <input name="ssoHospital" value="${escapeHtml(emp.ssoHospital || '')}" placeholder="เช่น รพ.จุฬาภรณ์"/>
+          </div>
+          <div class="form-group"><label>วันที่แจ้งเข้า สปส. <span class="muted-2" style="font-weight:normal;font-size:11px">(ภายใน 30 วันนับจากวันเริ่มงาน)</span></label>
+            <input name="ssoEnrolledDate" type="date" value="${emp.ssoEnrolledDate || ''}"/>
+          </div>
+          <div class="form-group"><label>วันที่แจ้งออก สปส. <span class="muted-2" style="font-weight:normal;font-size:11px">(ภายในวันที่ 15 ของเดือนถัดไป)</span></label>
+            <input name="ssoTerminatedDate" type="date" value="${emp.ssoTerminatedDate || ''}"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
         <h3>บัญชีธนาคาร</h3>
         <div class="form-grid">
           <div class="form-group"><label>ธนาคาร</label><input name="bank" list="dl-banks" value="${escapeHtml(emp.bank)}"/></div>
@@ -1811,6 +1834,16 @@ function viewEmployee(id) {
       <div class="emp-info-grid">
         <div class="emp-info-row"><div class="label">ธนาคาร</div><div class="value">${escapeHtml(e.bank || '-')}</div></div>
         <div class="emp-info-row"><div class="label">เลขบัญชี</div><div class="value">${escapeHtml(e.bankAccount || '-')}</div></div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <h3>ประกันสังคม</h3>
+      <div class="emp-info-grid">
+        <div class="emp-info-row"><div class="label">เลขประกันสังคม</div><div class="value mono">${escapeHtml(e.ssoNo || '-')}</div></div>
+        <div class="emp-info-row"><div class="label">สถานพยาบาล</div><div class="value">${escapeHtml(e.ssoHospital || '-')}</div></div>
+        <div class="emp-info-row"><div class="label">วันที่แจ้งเข้า สปส.</div><div class="value">${e.ssoEnrolledDate ? fmt.date(e.ssoEnrolledDate) + ' <span class="badge badge-success" style="margin-left:6px">แจ้งแล้ว</span>' : '<span class="badge badge-warning">ยังไม่แจ้ง</span>'}</div></div>
+        <div class="emp-info-row"><div class="label">วันที่แจ้งออก สปส.</div><div class="value">${e.ssoTerminatedDate ? fmt.date(e.ssoTerminatedDate) + ' <span class="badge badge-success" style="margin-left:6px">แจ้งแล้ว</span>' : (e.terminationDate && DB.empStatus(e) === 'resigned' ? '<span class="badge badge-warning">ยังไม่แจ้ง</span>' : '-')}</div></div>
       </div>
     </div>
 
@@ -3668,6 +3701,247 @@ function renderApplicantImportPreview(rows, errors) {
       </div>
     </div>
   `;
+}
+
+// ═══════════════════════════════════════════════════════
+//  PAGE: SSO (ประกันสังคม — แจ้งเข้า / แจ้งออก)
+// ═══════════════════════════════════════════════════════
+const _ssoState = { tab: 'enroll' }; // 'enroll' | 'terminate'
+
+// Cut-off date: วันเริ่มใช้ feature SSO — ระบบจะ list เฉพาะคนที่ hire_date / termination_date >= cutoff
+// (เก็บใน localStorage per-browser; default = วันแรกที่เข้าหน้า SSO)
+function ssoCutoff() {
+  let v = localStorage.getItem('kb_sso_cutoff');
+  if (!v) {
+    v = tz.today();
+    try { localStorage.setItem('kb_sso_cutoff', v); } catch(e) {}
+  }
+  return v;
+}
+function setSSOCutoff() {
+  const current = ssoCutoff();
+  modal.open('ตั้งค่าวันเริ่มใช้ระบบประกันสังคม',
+    `<p style="margin-bottom:12px">ระบบจะแสดงเฉพาะพนักงานที่ <strong>วันเริ่มงาน</strong> (สำหรับแจ้งเข้า) หรือ <strong>วันพ้นสภาพ</strong> (สำหรับแจ้งออก) ตั้งแต่วันที่นี้เป็นต้นไป</p>
+     <div class="form-group"><label>วันเริ่มใช้ (cut-off date) *</label>
+       <input id="ssoCutoffInput" type="date" value="${current}" required/>
+     </div>
+     <p class="muted-2" style="font-size:12px;margin-top:10px">หมายเหตุ: ค่านี้เก็บในเครื่องนี้ (per browser) — ถ้าใช้หลายเครื่อง/หลาย user ต้องตั้งซ้ำในแต่ละที่</p>`,
+    {
+      footer: `<button class="btn btn-secondary" data-close>ยกเลิก</button><button class="btn btn-primary" id="ssoCutoffSave">บันทึก</button>`
+    }
+  );
+  $('#ssoCutoffSave').addEventListener('click', () => {
+    const v = $('#ssoCutoffInput').value;
+    if (!v) { toast('กรุณาเลือกวันที่', 'error'); return; }
+    try { localStorage.setItem('kb_sso_cutoff', v); } catch(e) {}
+    modal.close();
+    toast('บันทึกแล้ว', 'success');
+    updateSSOBadge();
+    if (router.current === 'sso') router.refresh();
+  });
+}
+
+// Deadline ตามกฎหมาย:
+//  enroll  = hire_date + 30 วัน (สปส.1-03)
+//  terminate = วันที่ 15 ของเดือนถัดจากเดือน termination_date (สปส.6-09)
+function _ssoDeadline(emp, tab) {
+  if (tab === 'enroll') {
+    if (!emp.hireDate) return '';
+    const d = new Date(emp.hireDate); d.setDate(d.getDate() + 30);
+    return d.toISOString().slice(0, 10);
+  }
+  if (!emp.terminationDate) return '';
+  const d = new Date(emp.terminationDate);
+  d.setMonth(d.getMonth() + 1); d.setDate(15);
+  return d.toISOString().slice(0, 10);
+}
+
+function _ssoPending(tab) {
+  const today = tz.today();
+  const cutoff = ssoCutoff();
+  return DB.getEmployees().filter(e => {
+    if (tab === 'enroll') {
+      if (!e.hireDate || e.hireDate < cutoff || e.hireDate > today) return false;
+      if (e.ssoEnrolledDate) return false;
+      const st = DB.empStatus(e);
+      return st === 'active' || st === 'pending';
+    }
+    if (!e.terminationDate || e.terminationDate < cutoff || e.terminationDate > today) return false;
+    if (e.ssoTerminatedDate) return false;
+    return DB.empStatus(e) === 'resigned';
+  });
+}
+
+function _ssoOverdueCount() {
+  const today = tz.today();
+  const enrollOver = _ssoPending('enroll').filter(e => _ssoDeadline(e, 'enroll') < today).length;
+  const terminateOver = _ssoPending('terminate').filter(e => _ssoDeadline(e, 'terminate') < today).length;
+  return { enrollOver, terminateOver, total: enrollOver + terminateOver };
+}
+
+function updateSSOBadge() {
+  const { total } = _ssoOverdueCount();
+  const badge = document.getElementById('navBadgeSSO');
+  if (!badge) return;
+  if (total > 0) {
+    badge.textContent = String(total);
+    badge.style.display = 'inline-block';
+    badge.title = `${total} คนเกินกำหนดแจ้ง สปส.`;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+router.register('sso', () => {
+  const today = tz.today();
+  const enrollList = _ssoPending('enroll');
+  const terminateList = _ssoPending('terminate');
+  const enrollOverdue = enrollList.filter(e => _ssoDeadline(e, 'enroll') < today).length;
+  const terminateOverdue = terminateList.filter(e => _ssoDeadline(e, 'terminate') < today).length;
+  const tab = _ssoState.tab;
+  const list = tab === 'enroll' ? enrollList : terminateList;
+
+  const cutoff = ssoCutoff();
+  return `
+    <div class="sw-page-header">
+      <div>
+        <div class="sw-page-title">ประกันสังคม</div>
+        <div class="sw-page-subtitle">แจ้งเข้า สปส.1-03 (ภายใน 30 วันจากวันเริ่มงาน) · แจ้งออก สปส.6-09 (ภายในวันที่ 15 ของเดือนถัดไป)</div>
+        <div class="sw-page-subtitle" style="margin-top:6px">
+          <span class="badge badge-info">เริ่มใช้ตั้งแต่ ${fmt.date(cutoff)}</span>
+          ${DB.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="setSSOCutoff()" style="margin-left:8px">เปลี่ยน</button>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <div class="sw-stats-grid">
+      <div class="sw-stat-card sw-accent-amber">
+        <div class="sw-stat-icon">${ICON.users}</div>
+        <div class="sw-stat-label">รอแจ้งเข้า</div>
+        <div class="sw-stat-value">${fmt.num(enrollList.length)}</div>
+        <div class="sw-stat-change">${enrollOverdue ? `<span style="color:var(--danger);font-weight:600">เกินกำหนด ${enrollOverdue} คน</span>` : 'ทันกำหนดทุกคน'}</div>
+      </div>
+      <div class="sw-stat-card sw-accent-red">
+        <div class="sw-stat-icon">${ICON.clipboard}</div>
+        <div class="sw-stat-label">รอแจ้งออก</div>
+        <div class="sw-stat-value">${fmt.num(terminateList.length)}</div>
+        <div class="sw-stat-change">${terminateOverdue ? `<span style="color:var(--danger);font-weight:600">เกินกำหนด ${terminateOverdue} คน</span>` : 'ทันกำหนดทุกคน'}</div>
+      </div>
+    </div>
+
+    <div class="sw-chart-card" style="margin-top:24px">
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+        <button class="btn btn-sm ${tab === 'enroll' ? 'btn-primary' : 'btn-secondary'}" onclick="setSSOTab('enroll')">แจ้งเข้า (${enrollList.length})</button>
+        <button class="btn btn-sm ${tab === 'terminate' ? 'btn-primary' : 'btn-secondary'}" onclick="setSSOTab('terminate')">แจ้งออก (${terminateList.length})</button>
+      </div>
+      ${list.length ? `
+        <div class="table-wrap" style="margin-top:14px">
+          <table class="table table-compact">
+            <thead>
+              <tr>
+                <th>รหัส</th>
+                <th>ชื่อ-สกุล</th>
+                <th>เลขประชาชน</th>
+                <th>เลข สปส.</th>
+                <th>${tab === 'enroll' ? 'วันเริ่มงาน' : 'วันพ้นสภาพ'}</th>
+                <th>ครบกำหนด</th>
+                <th>สถานะ</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${list.map(e => {
+                const dl = _ssoDeadline(e, tab);
+                const overdue = dl && dl < today;
+                const refDate = tab === 'enroll' ? e.hireDate : e.terminationDate;
+                return `
+                  <tr>
+                    <td>${escapeHtml(e.id)}</td>
+                    <td>
+                      <div style="font-weight:600">${escapeHtml((e.title || '') + e.firstName + ' ' + (e.lastName || ''))}</div>
+                      ${e.nickname ? `<div class="muted-2" style="font-size:12px">(${escapeHtml(e.nickname)})</div>` : ''}
+                    </td>
+                    <td class="mono">${escapeHtml(e.nationalId || '-')}</td>
+                    <td class="mono">${escapeHtml(e.ssoNo || '-')}</td>
+                    <td>${fmt.date(refDate)}</td>
+                    <td>${fmt.date(dl)}</td>
+                    <td>${overdue ? '<span class="badge badge-danger">เกินกำหนด</span>' : '<span class="badge badge-warning">รอแจ้ง</span>'}</td>
+                    <td class="actions">
+                      ${DB.isAdmin ? `<button class="btn btn-primary btn-sm" onclick="markSSO('${e.id}', '${tab}')">บันทึก${tab === 'enroll' ? 'แจ้งเข้า' : 'แจ้งออก'}แล้ว</button>` : ''}
+                      <button class="btn btn-ghost btn-sm" onclick="viewEmployee('${e.id}')">ดู</button>
+                    </td>
+                  </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      ` : `
+        <div class="empty-state" style="margin-top:14px">
+          <div class="icon">${ICON.users}</div>
+          <div class="title">ไม่มีรายการ${tab === 'enroll' ? 'รอแจ้งเข้า' : 'รอแจ้งออก'}</div>
+          <div class="hint">เมื่อมีพนักงาน${tab === 'enroll' ? 'เข้าใหม่ที่ยังไม่ได้แจ้งเข้า' : 'พ้นสภาพที่ยังไม่ได้แจ้งออก'} ระบบจะแสดงที่นี่อัตโนมัติ</div>
+        </div>
+      `}
+    </div>
+  `;
+});
+
+function setSSOTab(tab) {
+  _ssoState.tab = tab;
+  router.refresh();
+}
+
+async function markSSO(empId, tab) {
+  if (!requireAdmin()) return;
+  const emp = DB.getEmployee(empId);
+  if (!emp) return;
+  const isEnroll = tab === 'enroll';
+  const today = tz.today();
+  modal.open(
+    isEnroll ? 'บันทึกการแจ้งเข้า สปส.' : 'บันทึกการแจ้งออก สปส.',
+    `<form id="ssoMarkForm">
+      <div style="margin-bottom:14px;font-size:14px">
+        <strong>${escapeHtml((emp.title || '') + emp.firstName + ' ' + (emp.lastName || ''))}</strong>
+        <span class="muted-2" style="margin-left:8px">รหัส ${escapeHtml(emp.id)}</span>
+      </div>
+      <div class="form-grid">
+        <div class="form-group"><label>วันที่แจ้ง${isEnroll ? 'เข้า' : 'ออก'} *</label>
+          <input name="date" type="date" value="${today}" required/>
+        </div>
+        ${isEnroll ? `
+          <div class="form-group"><label>เลขประกันสังคม <span class="muted-2" style="font-weight:normal;font-size:11px">(ค่าเริ่มต้น: เลข ปชช.)</span></label>
+            <input name="ssoNo" value="${escapeHtml(emp.ssoNo || emp.nationalId || '')}" maxlength="20"/>
+          </div>
+        ` : ''}
+      </div>
+    </form>`,
+    {
+      footer: `<button class="btn btn-secondary" data-close>ยกเลิก</button><button class="btn btn-primary" id="ssoMarkSubmit">บันทึก</button>`
+    }
+  );
+  $('#ssoMarkSubmit').addEventListener('click', async () => {
+    const form = $('#ssoMarkForm');
+    const data = Object.fromEntries(new FormData(form).entries());
+    if (!data.date) { toast('กรุณาเลือกวันที่', 'error'); return; }
+    const btn = $('#ssoMarkSubmit'); btn.disabled = true; btn.textContent = 'กำลังบันทึก...';
+    try {
+      const updates = { ...emp };
+      if (isEnroll) {
+        updates.ssoEnrolledDate = data.date;
+        if (data.ssoNo) updates.ssoNo = data.ssoNo;
+      } else {
+        updates.ssoTerminatedDate = data.date;
+      }
+      await DB.saveEmployee(updates);
+      modal.close();
+      toast(`บันทึก${isEnroll ? 'แจ้งเข้า' : 'แจ้งออก'}เรียบร้อย`, 'success');
+      updateSSOBadge();
+      router.refresh();
+    } catch (ex) {
+      toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error');
+      btn.disabled = false; btn.textContent = 'บันทึก';
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════

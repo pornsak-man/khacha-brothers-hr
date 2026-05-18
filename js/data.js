@@ -238,6 +238,10 @@ const DB = {
     terminationDate: r.termination_date || '',
     terminationReason: r.termination_reason || '',
     terminationNote: r.termination_note || '',
+    ssoNo: r.sso_no || '',
+    ssoEnrolledDate: r.sso_enrolled_date || '',
+    ssoTerminatedDate: r.sso_terminated_date || '',
+    ssoHospital: r.sso_hospital || '',
     status: r.status || 'active', note: r.note || ''
   }),
   _empToDB: (e) => ({
@@ -266,6 +270,10 @@ const DB = {
     termination_date: e.terminationDate || null,
     termination_reason: e.terminationReason || null,
     termination_note: e.terminationNote || null,
+    sso_no: e.ssoNo || null,
+    sso_enrolled_date: e.ssoEnrolledDate || null,
+    sso_terminated_date: e.ssoTerminatedDate || null,
+    sso_hospital: e.ssoHospital || null,
     status: e.status, note: e.note
   }),
   _depFromDB: (r) => ({ id: r.id, name: r.name, manager: r.manager_id || '', note: r.note || '' }),

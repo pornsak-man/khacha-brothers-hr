@@ -591,15 +591,18 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 }
 .nav-item:hover { background: var(--sidebar-hover); color: #fff; }
 .nav-item.active {
-  background: linear-gradient(90deg, rgba(78, 112, 176, 0.22), rgba(78, 112, 176, 0.08) 60%, transparent);
+  background: linear-gradient(90deg, rgba(78, 112, 176, 0.55), rgba(78, 112, 176, 0.28));
   color: #fff; font-weight: 600;
   letter-spacing: 0.01em;
+  box-shadow:
+    inset 0 0 0 1px rgba(120, 160, 220, 0.35),
+    0 4px 14px rgba(30, 58, 138, 0.25);
 }
 .nav-item.active::before {
-  content: ''; position: absolute; left: -14px; top: 7px; bottom: 7px; width: 3px;
+  content: ''; position: absolute; left: -14px; top: 5px; bottom: 5px; width: 4px;
   background: linear-gradient(180deg, var(--navy-300), var(--navy-500));
-  border-radius: 0 3px 3px 0;
-  box-shadow: 0 0 16px rgba(78, 112, 176, 0.6), 0 0 4px rgba(78, 112, 176, 0.8);
+  border-radius: 0 4px 4px 0;
+  box-shadow: 0 0 18px rgba(78, 112, 176, 0.75), 0 0 4px rgba(78, 112, 176, 0.9);
 }
 .nav-icon { width: 18px; height: 18px; flex-shrink: 0; }
 .nav-icon svg { width: 100%; height: 100%; stroke-width: 1.75; }
