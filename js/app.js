@@ -7650,50 +7650,120 @@ router.register('user-roles', () => {
   `;
 });
 
-// Modal แก้ไขตาราง role matrix (admin/HR)
+// Modal แก้ไขตาราง role matrix (admin/HR) — premium UI
 async function openRoleMatrixEditor() {
   if (!requireHR()) return;
   const rows = DB.getRoleMatrix();
-  // Use deep-copy เพื่อ allow editing in modal ก่อน save
   const draft = rows.map(r => ({ ...r }));
 
+  // Role columns config — แต่ละ role มี accent สี subtle
+  const COLS = [
+    { k: 'menuLabel',  label: 'เมนู / สิทธิ์',   tone: 'label' },
+    { k: 'admin',      label: 'Admin',          tone: 'admin' },
+    { k: 'hr',         label: 'HR',             tone: 'hr' },
+    { k: 'opMgr',      label: 'Op Mgr',         tone: 'mgr' },
+    { k: 'areaMgr',    label: 'Area Mgr',       tone: 'mgr' },
+    { k: 'branchMgr',  label: 'Branch Mgr',     tone: 'mgr' },
+    { k: 'branchStaff',label: 'Branch Staff',   tone: 'staff' },
+    { k: 'note',       label: 'หมายเหตุ',        tone: 'note' }
+  ];
+
   const renderTable = () => {
-    return `<div class="table-wrap"><table class="table table-compact" id="matrixEditTable">
+    return `<div class="mtx-wrap"><table class="mtx-table" id="matrixEditTable">
       <thead><tr>
-        <th style="width:160px">เมนู / สิทธิ์</th>
-        <th>Admin</th>
-        <th>HR</th>
-        <th>Op Mgr</th>
-        <th>Area Mgr</th>
-        <th>Branch Mgr</th>
-        <th>Branch Staff</th>
-        <th>หมายเหตุ</th>
-        <th style="width:50px"></th>
+        ${COLS.map(c => `<th class="mtx-th mtx-th-${c.tone}">${escapeHtml(c.label)}</th>`).join('')}
+        <th class="mtx-th mtx-th-action"></th>
       </tr></thead>
       <tbody>
-        ${draft.map((r, i) => `<tr data-idx="${i}">
-          <td><input class="mtx-in" data-k="menuLabel" value="${escapeHtml(r.menuLabel)}" placeholder="ชื่อเมนู"/></td>
-          <td><input class="mtx-in" data-k="admin" value="${escapeHtml(r.admin)}" placeholder="—"/></td>
-          <td><input class="mtx-in" data-k="hr" value="${escapeHtml(r.hr)}" placeholder="—"/></td>
-          <td><input class="mtx-in" data-k="opMgr" value="${escapeHtml(r.opMgr)}" placeholder="—"/></td>
-          <td><input class="mtx-in" data-k="areaMgr" value="${escapeHtml(r.areaMgr)}" placeholder="—"/></td>
-          <td><input class="mtx-in" data-k="branchMgr" value="${escapeHtml(r.branchMgr)}" placeholder="—"/></td>
-          <td><input class="mtx-in" data-k="branchStaff" value="${escapeHtml(r.branchStaff)}" placeholder="—"/></td>
-          <td><input class="mtx-in" data-k="note" value="${escapeHtml(r.note)}" placeholder="(ทางเลือก)"/></td>
-          <td><button type="button" class="btn btn-ghost btn-sm" onclick="window._mtxDeleteRow(${i})" title="ลบแถว">🗑</button></td>
+        ${draft.map((r, i) => `<tr class="mtx-row" data-idx="${i}">
+          ${COLS.map(c => `<td class="mtx-td mtx-td-${c.tone}"><div class="mtx-cell" contenteditable="true" data-k="${c.k}" data-idx="${i}" data-placeholder="${c.k === 'menuLabel' ? 'ชื่อเมนู…' : (c.k === 'note' ? '(ทางเลือก)' : '—')}">${escapeHtml(r[c.k] || '')}</div></td>`).join('')}
+          <td class="mtx-td mtx-td-action"><button type="button" class="mtx-del" onclick="window._mtxDeleteRow(${i})" title="ลบแถวนี้" aria-label="ลบ"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button></td>
         </tr>`).join('')}
       </tbody>
     </table></div>`;
   };
 
   modal.open('แก้ไขตารางสิทธิ์ตาม Role',
-    `<div style="margin-bottom:12px;padding:10px 14px;background:rgba(245,158,11,0.08);border-left:3px solid var(--warning);border-radius:6px;font-size:12.5px;line-height:1.6">
-       ⚠️ <strong>หมายเหตุ:</strong> ตารางนี้เป็นเอกสารอ้างอิงเท่านั้น — การแก้ค่าในตารางจะไม่ไปแก้สิทธิ์จริงในระบบโดยอัตโนมัติ (สิทธิ์จริงยังอยู่ที่ code/RLS)
+    `<style>
+       /* Premium editable matrix */
+       .mtx-wrap { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
+       .mtx-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+       .mtx-th {
+         padding: 12px 14px; text-align: left; font-size: 10.5px; font-weight: 700;
+         letter-spacing: 0.10em; text-transform: uppercase; color: var(--text-2);
+         background: var(--surface-2); border-bottom: 1px solid var(--border);
+         position: sticky; top: 0; z-index: 1;
+       }
+       .mtx-th-admin  { color: #1e3a8a; }
+       .mtx-th-hr     { color: #166534; }
+       .mtx-th-mgr    { color: #1d4ed8; }
+       .mtx-th-staff  { color: #6b7280; }
+       .mtx-th-action { width: 48px; }
+       .mtx-td { padding: 0; border-bottom: 1px solid var(--border); vertical-align: middle; }
+       .mtx-row:last-child .mtx-td { border-bottom: 0; }
+       .mtx-row { transition: background 0.12s; }
+       .mtx-row:hover { background: rgba(78, 112, 176, 0.03); }
+       .mtx-cell {
+         padding: 12px 14px; min-height: 22px; line-height: 1.45;
+         border-radius: 6px; cursor: text; transition: all 0.12s;
+         outline: none; border: 1px solid transparent;
+       }
+       .mtx-td-label .mtx-cell { font-weight: 600; color: var(--text); }
+       .mtx-td-note .mtx-cell { font-size: 12.5px; color: var(--text-2); font-style: italic; }
+       .mtx-cell:hover { background: rgba(78, 112, 176, 0.06); }
+       .mtx-cell:focus {
+         background: var(--surface);
+         border-color: var(--primary);
+         box-shadow: 0 0 0 3px rgba(78, 112, 176, 0.15);
+       }
+       .mtx-cell:empty::before {
+         content: attr(data-placeholder); color: var(--text-3); font-style: italic;
+       }
+       .mtx-td-action { text-align: center; padding-right: 8px; }
+       .mtx-del {
+         background: transparent; border: 0; padding: 6px;
+         color: var(--text-3); cursor: pointer; border-radius: 6px;
+         opacity: 0; transition: all 0.15s;
+         display: inline-flex; align-items: center; justify-content: center;
+       }
+       .mtx-row:hover .mtx-del { opacity: 0.6; }
+       .mtx-del:hover { opacity: 1; color: var(--danger); background: rgba(220, 38, 38, 0.08); }
+       /* warning banner */
+       .mtx-warning {
+         display: flex; align-items: flex-start; gap: 12px;
+         padding: 14px 16px; margin-bottom: 18px;
+         background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(245, 158, 11, 0.03));
+         border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 10px;
+         font-size: 12.5px; line-height: 1.6; color: var(--text-2);
+       }
+       .mtx-warning-icon {
+         flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
+         background: var(--warning); color: #fff;
+         display: inline-flex; align-items: center; justify-content: center;
+         font-weight: 700; font-size: 13px;
+       }
+       .mtx-add-btn {
+         margin-top: 12px;
+         display: inline-flex; align-items: center; gap: 8px;
+         padding: 10px 16px; background: transparent;
+         border: 1.5px dashed var(--border-strong); border-radius: 10px;
+         color: var(--text-2); font-size: 13px; font-weight: 500; cursor: pointer;
+         transition: all 0.15s;
+       }
+       .mtx-add-btn:hover {
+         border-color: var(--primary); color: var(--primary);
+         background: rgba(78, 112, 176, 0.04);
+       }
+     </style>
+     <div class="mtx-warning">
+       <span class="mtx-warning-icon">!</span>
+       <div><strong>เอกสารอ้างอิงเท่านั้น</strong> — การแก้ค่าในตารางนี้จะไม่ไปเปลี่ยนสิทธิ์จริงในระบบโดยอัตโนมัติ สิทธิ์การใช้งานจริงยังควบคุมโดย code และ RLS policy ใน database</div>
      </div>
      <div id="matrixEditBox">${renderTable()}</div>
-     <div style="margin-top:12px;display:flex;gap:8px">
-       <button type="button" class="btn btn-secondary btn-sm" onclick="window._mtxAddRow()">${ICON.plus}เพิ่มแถวใหม่</button>
-     </div>`,
+     <button type="button" class="mtx-add-btn" onclick="window._mtxAddRow()">
+       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+       เพิ่มแถวใหม่
+     </button>`,
     {
       size: 'lg',
       footer: `<button class="btn btn-secondary" data-close>ยกเลิก</button><button class="btn btn-primary" id="mtxSave">บันทึก</button>`
@@ -7719,9 +7789,9 @@ async function openRoleMatrixEditor() {
   const collectFromInputs = () => {
     const rows = $$('#matrixEditTable tbody tr');
     rows.forEach((tr, i) => {
-      const inputs = $$('.mtx-in', tr);
-      inputs.forEach(inp => {
-        draft[i][inp.dataset.k] = inp.value;
+      const cells = $$('.mtx-cell', tr);
+      cells.forEach(cell => {
+        draft[i][cell.dataset.k] = (cell.textContent || '').trim();
       });
     });
   };
