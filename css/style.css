@@ -2494,3 +2494,248 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 
 /* Dark mode: account summary stat cards */
 [data-theme="dark"] .sw-account-summary { background: rgba(255,255,255,0.03); }
+
+/* ═══════════════════════════════════════════════════════════
+   CALENDAR PAGE — Premium holiday cards & featured next holiday
+   ═══════════════════════════════════════════════════════════ */
+
+/* Featured next holiday card — hero presentation */
+.sw-cal-featured {
+  position: relative;
+  background: linear-gradient(135deg, var(--primary-soft) 0%, var(--surface) 70%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px 32px;
+  margin-bottom: 20px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 24px;
+  align-items: center;
+}
+.sw-cal-featured::before {
+  content: "";
+  position: absolute;
+  top: -40px; right: -40px;
+  width: 200px; height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, var(--primary) 0%, transparent 70%);
+  opacity: 0.08;
+  pointer-events: none;
+}
+.sw-cal-featured-icon {
+  font-size: 56px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.06));
+}
+.sw-cal-featured-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--primary);
+  margin-bottom: 6px;
+}
+.sw-cal-featured-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+.sw-cal-featured-meta {
+  font-size: 13.5px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.sw-cal-featured-countdown {
+  text-align: center;
+  padding: 12px 22px;
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  min-width: 120px;
+}
+.sw-cal-featured-countdown .num {
+  font-size: 38px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+}
+.sw-cal-featured-countdown .lbl {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  margin-top: 4px;
+}
+@media (max-width: 800px) {
+  .sw-cal-featured {
+    grid-template-columns: auto 1fr;
+    gap: 16px;
+    padding: 20px 22px;
+  }
+  .sw-cal-featured-icon { font-size: 44px; }
+  .sw-cal-featured-title { font-size: 18px; }
+  .sw-cal-featured-countdown {
+    grid-column: 1 / -1;
+    text-align: left;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 10px 16px;
+  }
+  .sw-cal-featured-countdown .num { font-size: 24px; }
+  .sw-cal-featured-countdown .lbl { margin-top: 0; }
+}
+
+/* Quarter section header */
+.sw-cal-quarter-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 28px 0 14px;
+}
+.sw-cal-quarter-header:first-child { margin-top: 8px; }
+.sw-cal-quarter-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.sw-cal-quarter-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--border-strong), transparent);
+}
+.sw-cal-quarter-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  background: var(--surface-2);
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+/* Holiday card — premium minimal */
+.sw-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.sw-cal-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px 18px 16px;
+  transition: all var(--transition);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 112px;
+}
+.sw-cal-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+.sw-cal-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.sw-cal-card-icon {
+  font-size: 24px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.sw-cal-card-date {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.sw-cal-card-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+}
+.sw-cal-card-foot {
+  margin-top: auto;
+  padding-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sw-cal-card.is-past { opacity: 0.5; }
+.sw-cal-card.is-next { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.sw-cal-card.is-swapped {
+  background: repeating-linear-gradient(45deg, var(--surface) 0 10px, var(--surface-2) 10px 20px);
+}
+.sw-cal-card.is-swapped .sw-cal-card-title {
+  text-decoration: line-through;
+  color: var(--text-2);
+}
+.sw-cal-card.is-swap-target {
+  background: var(--success-soft);
+  border-color: var(--success);
+}
+.sw-cal-card.is-swap-target .sw-cal-card-icon::after { content: "✓"; }
+.sw-cal-swap-note {
+  font-size: 11.5px;
+  color: var(--warning-text);
+  background: var(--warning-soft);
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1.3;
+}
+.sw-cal-card-actions {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+.sw-cal-card:hover .sw-cal-card-actions { opacity: 1; }
+.sw-cal-card-actions .btn {
+  padding: 4px 10px;
+  font-size: 11.5px;
+  min-height: unset;
+}
+
+/* Calendar stats — slight refinement */
+.sw-cal-stats { margin-bottom: 20px; }
+[data-theme="dark"] .sw-cal-featured {
+  background: linear-gradient(135deg, rgba(126,155,204,0.10) 0%, var(--surface) 70%);
+}
+[data-theme="dark"] .sw-cal-card.is-swap-target {
+  background: rgba(21,146,63,0.10);
+}
+[data-theme="dark"] .sw-cal-card.is-swapped {
+  background: repeating-linear-gradient(45deg, var(--surface) 0 10px, rgba(255,255,255,0.03) 10px 20px);
+}
+[data-theme="dark"] .sw-cal-swap-note {
+  background: rgba(201,119,6,0.15);
+  color: #f5c178;
+}

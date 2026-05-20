@@ -7241,9 +7241,40 @@ function renderHolidaySwapHistory() {
   </div>`;
 }
 
+// Emoji icons สำหรับวันหยุดประเภทต่างๆ — ค้นจากชื่อ
+function holidayEmoji(title, date, type) {
+  if (type === 'event') return '📌';
+  if (type !== 'holiday') return '📍';
+  const t = title || '';
+  const md = (date || '').slice(5);
+  if (t.includes('ปีใหม่') || t.includes('สิ้นปี') || md === '01-01' || md === '12-31') return '🎊';
+  if (t.includes('สงกรานต์')) return '💦';
+  if (t.includes('แรงงาน')) return '⚒️';
+  if (t.includes('พระบรมราชสมภพ') || t.includes('พระเจ้าอยู่หัว') || t.includes('ร.๙') || t.includes('ร.๑๐') || t.includes('ราชินี')) return '👑';
+  if (t.includes('รัฐธรรมนูญ')) return '📜';
+  if (t.includes('วิสาขบูชา') || t.includes('อาสาฬหบูชา') || t.includes('เข้าพรรษา') || t.includes('มาฆบูชา')) return '🪷';
+  if (t.includes('แม่')) return '🌸';
+  if (t.includes('พ่อ')) return '🌟';
+  if (t.includes('จักรี')) return '🏛️';
+  if (t.includes('ฉัตรมงคล')) return '👑';
+  return '🗓️';
+}
+
+// คำนวณวันที่เหลือจาก today ถึง dateStr (อาจติดลบถ้าผ่านแล้ว)
+function daysUntil(dateStr, today) {
+  const t = parseYMD(dateStr);
+  const n = parseYMD(today);
+  if (!t || !n) return 0;
+  const ms = new Date(t[0], t[1] - 1, t[2]) - new Date(n[0], n[1] - 1, n[2]);
+  return Math.round(ms / 86400000);
+}
+
 router.register('calendar', () => {
   const items = DB.getCalendar();
   const today = tz.today();
+  const todayYmd = parseYMD(today);
+  const currentYear = todayYmd ? todayYmd[0] : new Date().getFullYear();
+  const buddhistYear = currentYear + 543;
   const typeLabel = (t) => t === 'holiday' ? 'วันหยุด' : t === 'event' ? 'กิจกรรม' : 'อื่นๆ';
   const typeBadge = (t) => t === 'holiday' ? 'badge-danger' : t === 'event' ? 'badge-info' : 'badge';
 
@@ -7251,82 +7282,166 @@ router.register('calendar', () => {
     loadHolidaySwapHistory();
   }
 
-  // สร้าง virtual entries สำหรับวันหยุดชดเชย เพื่อให้แสดงในรายการที่จะมาถึง
-  const swapEntries = items
-    .filter(c => c.type === 'holiday' && c.swapToDate)
+  // สถิติ
+  const holidays = items.filter(c => c.type === 'holiday');
+  const swappedHolidays = holidays.filter(c => c.swapToDate);
+  const upcomingItems = items.filter(c => c.date >= today);
+  const pastItems = items.filter(c => c.date < today);
+
+  // สร้าง virtual entries สำหรับวันหยุดชดเชย เพื่อให้แสดงในรายการเดียวกัน
+  const swapEntries = holidays
+    .filter(c => c.swapToDate)
     .map(c => ({
       id: c.id + '__swap',
       date: c.swapToDate,
-      title: `หยุดชดเชย — แทน ${c.title} (${fmt.date(c.date)})`,
+      title: `หยุดชดเชย — แทน ${c.title}`,
       type: 'holiday',
       _isSwapTarget: true,
-      _originalId: c.id
+      _originalId: c.id,
+      _originalDate: c.date,
+      _originalTitle: c.title
     }));
-  const allForUpcoming = [...items, ...swapEntries].sort((a, b) => a.date.localeCompare(b.date));
-  const upcoming = allForUpcoming.filter(c => c.date >= today).slice(0, 6);
+
+  // รวมรายการทั้งหมด + เรียงตามวันที่
+  const allItems = [...items, ...swapEntries].sort((a, b) => a.date.localeCompare(b.date));
+  const upcomingAll = allItems.filter(c => c.date >= today);
+  const nextHoliday = upcomingAll[0] || null;
+  const nextDays = nextHoliday ? daysUntil(nextHoliday.date, today) : null;
+
+  // จัดกลุ่มตามไตรมาส (เฉพาะปีปัจจุบัน — ปีอื่นแยกกลุ่ม)
+  const groupByQuarter = (arr) => {
+    const groups = {};
+    for (const c of arr) {
+      const ymd = parseYMD(c.date);
+      if (!ymd) continue;
+      const year = ymd[0];
+      const q = Math.floor((ymd[1] - 1) / 3) + 1;
+      const key = `${year}-Q${q}`;
+      if (!groups[key]) groups[key] = { year, q, items: [] };
+      groups[key].items.push(c);
+    }
+    return Object.values(groups).sort((a, b) => a.year - b.year || a.q - b.q);
+  };
+  const quarterGroups = groupByQuarter(allItems);
+
+  // Render การ์ดวันหยุดแต่ละใบ
+  const renderCard = (c) => {
+    const swapped = c.type === 'holiday' && c.swapToDate;
+    const isTarget = !!c._isSwapTarget;
+    const isPast = c.date < today;
+    const isNext = nextHoliday && c.date === nextHoliday.date && c.title === nextHoliday.title && !isPast;
+    const classes = ['sw-cal-card'];
+    if (isPast) classes.push('is-past');
+    if (isNext) classes.push('is-next');
+    if (swapped) classes.push('is-swapped');
+    if (isTarget) classes.push('is-swap-target');
+    const icon = isTarget ? '🔁' : holidayEmoji(isTarget ? c._originalTitle : c.title, c.date, c.type);
+    const editId = isTarget ? c._originalId : c.id;
+    return `<div class="${classes.join(' ')}">
+      ${DB.isHR && !isTarget ? `<div class="sw-cal-card-actions">
+        <button class="btn btn-ghost btn-sm" onclick="openCalForm('${c.id}')">แก้</button>
+        <button class="btn btn-ghost btn-sm" onclick="deleteCalRec('${c.id}')">ลบ</button>
+      </div>` : isTarget && DB.isHR ? `<div class="sw-cal-card-actions">
+        <button class="btn btn-ghost btn-sm" onclick="openCalForm('${editId}')">ดู</button>
+      </div>` : ''}
+      <div class="sw-cal-card-head">
+        <span class="sw-cal-card-icon">${icon}</span>
+        <span class="sw-cal-card-date">${fmt.date(c.date)}</span>
+      </div>
+      <div class="sw-cal-card-title">${escapeHtml(c.title)}</div>
+      ${swapped ? `<div class="sw-cal-swap-note">⚠ มาทำงาน · ชดเชย ${fmt.date(c.swapToDate)}${c.swapNote ? ' · ' + escapeHtml(c.swapNote) : ''}</div>` : ''}
+      ${isTarget ? `<div style="font-size:11.5px;color:var(--success-text);margin-top:4px">✓ หยุดแทนวันที่ ${fmt.date(c._originalDate)}</div>` : ''}
+      <div class="sw-cal-card-foot">
+        <span class="badge ${isTarget ? 'badge-success' : typeBadge(c.type)}" style="font-size:10.5px">${isTarget ? 'หยุดชดเชย' : typeLabel(c.type)}</span>
+        ${isNext ? `<span style="font-size:10.5px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:0.08em">วันถัดไป</span>` : ''}
+      </div>
+    </div>`;
+  };
+
+  const QUARTER_LABEL = { 1: 'ไตรมาส 1 · ม.ค. – มี.ค.', 2: 'ไตรมาส 2 · เม.ย. – มิ.ย.', 3: 'ไตรมาส 3 · ก.ค. – ก.ย.', 4: 'ไตรมาส 4 · ต.ค. – ธ.ค.' };
 
   return `
     <div class="sw-page-header">
       <div>
         <div class="sw-page-title">ปฏิทิน HR</div>
-        <div class="sw-page-subtitle">วันหยุด · กิจกรรมบริษัท · เหตุการณ์สำคัญต่างๆ</div>
+        <div class="sw-page-subtitle">วันหยุด · กิจกรรมบริษัท · ประจำปี ${fmt.num(buddhistYear)}</div>
       </div>
       <div class="sw-page-actions">${DB.isHR ? '<button class="btn btn-primary" onclick="openCalForm()">+ เพิ่มกิจกรรม</button>' : ''}</div>
     </div>
-    ${upcoming.length ? `
-    <div class="sw-chart-card">
-      <div class="sw-chart-header">
-        <div>
-          <div class="sw-chart-title">กิจกรรม / วันหยุดที่จะมาถึง <span class="sw-chart-count">${fmt.num(upcoming.length)}</span></div>
-          <div class="sw-chart-sub">6 รายการแรกที่ใกล้สุด</div>
-        </div>
+
+    <!-- KPI Stats -->
+    <div class="sw-stats-grid sw-cal-stats">
+      <div class="sw-stat-card sw-accent-primary">
+        <div class="sw-stat-icon">${ICON.calendar}</div>
+        <div class="sw-stat-label">วันหยุดทั้งหมด</div>
+        <div class="sw-stat-value">${fmt.num(holidays.length)}</div>
+        <div class="sw-stat-change">รวมวันหยุดประเพณีและพิเศษ</div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
-        ${upcoming.map(c => {
-          const swapped = c.type === 'holiday' && c.swapToDate;
-          const isTarget = c._isSwapTarget;
-          const cardStyle = swapped
-            ? 'background:var(--surface-2);padding:14px 16px;border-radius:12px;border:1px dashed var(--border);opacity:0.7'
-            : isTarget
-              ? 'background:var(--surface-2);padding:14px 16px;border-radius:12px;border:1px solid var(--success,#10b981)'
-              : 'background:var(--surface-2);padding:14px 16px;border-radius:12px;border:1px solid var(--border)';
-          return `<div class="sw-clickable" style="${cardStyle}">
-            <div class="muted-2" style="font-size:11.5px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">${fmt.date(c.date)}</div>
-            <div style="font-weight:600;margin-top:6px;color:var(--text);font-size:14px;${swapped ? 'text-decoration:line-through' : ''}">${escapeHtml(c.title)}</div>
-            ${swapped ? `<div style="font-size:11.5px;margin-top:4px;color:var(--warning,#f59e0b);font-weight:600">⚠ มาทำงาน · ชดเชย ${fmt.date(c.swapToDate)}</div>` : ''}
-            ${isTarget ? `<span class="badge badge-success" style="margin-top:8px;display:inline-block;font-size:10.5px">หยุดชดเชย</span>` : `<span class="badge ${typeBadge(c.type)}" style="margin-top:8px;display:inline-block;font-size:10.5px">${typeLabel(c.type)}</span>`}
-          </div>`;
-        }).join('')}
+      <div class="sw-stat-card sw-accent-green">
+        <div class="sw-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        <div class="sw-stat-label">จะมาถึง</div>
+        <div class="sw-stat-value">${fmt.num(upcomingItems.length)}</div>
+        <div class="sw-stat-change">${nextHoliday ? 'วันถัดไป: ' + fmt.date(nextHoliday.date) : 'ครบปีแล้ว'}</div>
+      </div>
+      <div class="sw-stat-card sw-accent-amber">
+        <div class="sw-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
+        <div class="sw-stat-label">เปลี่ยน / เลื่อน</div>
+        <div class="sw-stat-value" style="color:${swappedHolidays.length ? 'var(--warning)' : 'var(--text)'}">${fmt.num(swappedHolidays.length)}</div>
+        <div class="sw-stat-change">${swappedHolidays.length ? 'มีการเลื่อนเป็นวันอื่น' : 'ไม่มีการเลื่อนวันหยุด'}</div>
+      </div>
+      <div class="sw-stat-card sw-accent-red">
+        <div class="sw-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div class="sw-stat-label">ผ่านมาแล้ว</div>
+        <div class="sw-stat-value">${fmt.num(pastItems.length)}</div>
+        <div class="sw-stat-change">รายการที่ผ่านไปในปีนี้</div>
+      </div>
+    </div>
+
+    <!-- Featured Next Holiday -->
+    ${nextHoliday ? `
+    <div class="sw-cal-featured">
+      <div class="sw-cal-featured-icon">${nextHoliday._isSwapTarget ? '🔁' : holidayEmoji(nextHoliday._isSwapTarget ? nextHoliday._originalTitle : nextHoliday.title, nextHoliday.date, nextHoliday.type)}</div>
+      <div>
+        <div class="sw-cal-featured-label">${nextDays === 0 ? '— วันนี้ —' : 'วันหยุดถัดไป'}</div>
+        <div class="sw-cal-featured-title">${escapeHtml(nextHoliday.title)}</div>
+        <div class="sw-cal-featured-meta">${fmt.dateLong ? fmt.dateLong(nextHoliday.date) : fmt.date(nextHoliday.date)}${nextHoliday._isSwapTarget ? ' · หยุดชดเชยแทน ' + fmt.date(nextHoliday._originalDate) : ''}</div>
+      </div>
+      <div class="sw-cal-featured-countdown">
+        <div class="num">${nextDays === 0 ? '0' : fmt.num(nextDays)}</div>
+        <div class="lbl">${nextDays === 0 ? 'วันนี้' : 'วันข้างหน้า'}</div>
       </div>
     </div>` : ''}
-    <div class="sw-chart-card">
-      <div class="sw-chart-header">
+
+    <!-- Year overview by quarter -->
+    ${allItems.length ? `
+    <div class="sw-chart-card" style="padding:24px 26px">
+      <div class="sw-chart-header" style="margin-bottom:4px">
         <div>
-          <div class="sw-chart-title">ทุกกิจกรรม <span class="sw-chart-count">${fmt.num(items.length)}</span></div>
-          <div class="sw-chart-sub">เรียงตามวันที่</div>
+          <div class="sw-chart-title">ภาพรวมทั้งปี <span class="sw-chart-count">${fmt.num(allItems.length)}</span></div>
+          <div class="sw-chart-sub">จัดกลุ่มตามไตรมาส · รวมวันหยุดชดเชย</div>
         </div>
       </div>
-      ${items.length ? `
-      <div class="table-wrap"><table class="table table-compact sw-emp-table">
-        <thead><tr><th>วันที่</th><th>หัวข้อ</th><th>ประเภท</th><th>สถานะ</th><th></th></tr></thead>
-        <tbody>
-          ${items.map(c => {
-            const swapped = c.type === 'holiday' && c.swapToDate;
-            return `<tr style="${c.date < today ? 'opacity:0.6' : ''}">
-              <td class="sw-cell-meta">${fmt.date(c.date)}</td>
-              <td><strong style="${swapped ? 'text-decoration:line-through' : ''}">${escapeHtml(c.title)}</strong>${swapped && c.swapNote ? `<div class="muted-2" style="font-size:11.5px;margin-top:2px">${escapeHtml(c.swapNote)}</div>` : ''}</td>
-              <td><span class="badge ${typeBadge(c.type)}">${typeLabel(c.type)}</span></td>
-              <td>${swapped ? `<span class="badge badge-warning" style="font-size:10.5px">มาทำงาน → ชดเชย ${fmt.date(c.swapToDate)}</span>` : ''}</td>
-              <td class="actions">${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openCalForm('${c.id}')">แก้</button><button class="btn btn-ghost btn-sm" onclick="deleteCalRec('${c.id}')">ลบ</button>` : ''}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table></div>` : `<div class="empty-state" style="padding:60px 20px">
+      ${quarterGroups.map(g => {
+        const lblPrefix = g.year !== currentYear ? `${g.year + 543} · ` : '';
+        return `
+        <div class="sw-cal-quarter-header">
+          <span class="sw-cal-quarter-label">${lblPrefix}${QUARTER_LABEL[g.q]}</span>
+          <span class="sw-cal-quarter-line"></span>
+          <span class="sw-cal-quarter-count">${fmt.num(g.items.length)} รายการ</span>
+        </div>
+        <div class="sw-cal-grid">
+          ${g.items.map(renderCard).join('')}
+        </div>`;
+      }).join('')}
+    </div>` : `
+    <div class="sw-chart-card">
+      <div class="empty-state" style="padding:60px 20px">
         <div style="font-size:42px;margin-bottom:12px;opacity:0.35">📅</div>
         <div class="title" style="font-size:16px;font-weight:600">ยังไม่มีกิจกรรม</div>
         <div class="hint" style="margin-top:6px">กด + เพิ่มกิจกรรม เพื่อเริ่ม</div>
-      </div>`}
-    </div>
+      </div>
+    </div>`}
+
     ${renderHolidaySwapHistory()}`;
 });
 
