@@ -1779,11 +1779,12 @@ const DB = {
     if (!sameBranch.length) return null;
 
     // ลำดับชั้นในสาขา (level สูง → ต่ำ)
+    // Bug #6 fix: ใช้ byte-order comparison ให้ตรงกับ SQL (e.id ASC) — กัน JS/DB disagree สำหรับ ID พิเศษ
     const withLevel = sameBranch.map(e => {
       const pos = this.getPosition(e.position);
       return { emp: e, level: pos ? Number(pos.level || 0) : 0 };
     });
-    withLevel.sort((a, b) => b.level - a.level || a.emp.id.localeCompare(b.emp.id));
+    withLevel.sort((a, b) => b.level - a.level || (a.emp.id < b.emp.id ? -1 : a.emp.id > b.emp.id ? 1 : 0));
     const topInBranch = withLevel[0].emp;
 
     // ถ้า requester ≠ ผู้จัดการสาขา → ผู้จัดการสาขาคืออนุมัติ
@@ -1791,22 +1792,24 @@ const DB = {
 
     // requester = ผู้จัดการสาขา → escalate หา Area Manager
     // (1) หา user_profiles ที่ role='area_manager' + managed_branches มี branch นี้
+    //     Bug #5 fix: sort by employee_id เพื่อให้ deterministic (ไม่สุ่มเปลี่ยน AM ระหว่าง session)
     const profiles = this._userProfiles || [];
     const amCandidates = profiles.filter(p =>
       p.role === 'area_manager' &&
       Array.isArray(p.managed_branches) &&
       p.managed_branches.includes(emp.branch) &&
       p.employee_id
-    );
+    ).sort((a, b) => (a.employee_id < b.employee_id ? -1 : a.employee_id > b.employee_id ? 1 : 0));
     if (amCandidates.length) {
       const amEmp = this.getEmployee(amCandidates[0].employee_id);
       if (amEmp && this.empStatus(amEmp) !== 'resigned') return amEmp;
     }
 
-    // (2) Fallback หา HR (คนแรกที่เจอ)
-    const hrProfile = profiles.find(p => p.role === 'hr' && p.employee_id);
-    if (hrProfile) {
-      const hrEmp = this.getEmployee(hrProfile.employee_id);
+    // (2) Fallback หา HR — Bug #5 fix: sort by employee_id ให้ deterministic
+    const hrProfiles = profiles.filter(p => p.role === 'hr' && p.employee_id)
+      .sort((a, b) => (a.employee_id < b.employee_id ? -1 : a.employee_id > b.employee_id ? 1 : 0));
+    for (const hp of hrProfiles) {
+      const hrEmp = this.getEmployee(hp.employee_id);
       if (hrEmp && this.empStatus(hrEmp) !== 'resigned') return hrEmp;
     }
 
