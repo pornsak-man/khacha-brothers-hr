@@ -3594,6 +3594,7 @@ function renderApplicantList() {
             <th>ช่องทาง</th>
             <th>วันสมัคร</th>
             <th>สถานะ</th>
+            <th>จัดชุด</th>
             <th></th>
           </tr>
         </thead>
@@ -3601,6 +3602,11 @@ function renderApplicantList() {
           ${list.map(a => {
             const s = APPL_STATUS[a.status] || APPL_STATUS.new;
             const pos = a.positionTitle || (DB.getPosition(a.position)?.name || '-');
+            const uniReq = DB.getUniformRequestByApplicant(a.id);
+            const uniStatus = uniReq ? (UNIFORM_STATUS[uniReq.status] || UNIFORM_STATUS.pending) : null;
+            const uniCell = uniReq
+              ? `<button class="btn btn-ghost btn-sm" style="padding:2px 8px" onclick="openUniformRequestForm('${uniReq.id}')" title="คลิกเพื่อดู/แก้ไขคำขอจัดชุด"><span class="badge ${uniStatus.cls}">${uniStatus.label}</span></button>`
+              : `<span class="muted-2" style="font-size:12px">—</span>`;
             return `
               <tr>
                 <td>
@@ -3619,6 +3625,7 @@ function renderApplicantList() {
                 <td>${escapeHtml(a.source || '-')}</td>
                 <td>${fmt.date(a.appliedDate)}</td>
                 <td><span class="badge ${s.badge}">${s.label}</span></td>
+                <td>${uniCell}</td>
                 <td class="actions">
                   ${DB.isAdmin && a.status !== 'hired' ? `<button class="btn btn-primary btn-sm" onclick="hireApplicant('${a.id}')" title="สร้างเป็นพนักงาน">รับเข้า</button>` : ''}
                   ${DB.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="openApplicantForm('${a.id}')">แก้ไข</button>
@@ -3733,50 +3740,203 @@ function openApplicantForm(id = null) {
           extraNote = extraLines.join('\n');
         }
 
+        const needChecked = existingUniReq || !id;
         return `
-        <div class="form-section">
-          <h3>การจัดชุดพนักงาน <span class="muted-2" style="font-weight:normal;font-size:12px">(ส่งให้ Benefit ดำเนินการจัดชุดก่อนวันเริ่มงาน)</span></h3>
-          <div class="form-grid">
-            <div class="form-group span-2">
-              <label>
-                <input type="checkbox" name="needUniform" id="needUniformChk" ${existingUniReq || !id ? 'checked' : ''}/>
-                ต้องจัดชุดให้พนักงานใหม่
-              </label>
+        <div class="form-section uni-premium">
+          <div class="uni-section-head">
+            <div class="uni-section-title">
+              <span class="uni-section-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/></svg>
+              </span>
+              <div>
+                <h3 style="margin:0">การจัดชุดพนักงาน</h3>
+                <div class="uni-section-sub">ส่งให้ Benefit ดำเนินการจัดชุดก่อนวันเริ่มงาน</div>
+              </div>
             </div>
-            <div class="form-group"><label>ต้องการก่อน (วันเริ่มงาน)</label><input name="uniformNeededBy" type="date" value="${existingUniReq?.neededBy || ''}"/></div>
-            <div class="form-group"><label>HR ที่แจ้ง</label><input name="uniformRequestedBy" value="${escapeHtml(existingUniReq?.requestedBy || DB.profile?.name || DB.user?.email || '')}" placeholder="ชื่อ HR คนแจ้ง"/></div>
+            ${existingUniReq ? `
+              <div class="uni-status-pill uni-status-${existingUniReq.status || 'pending'}">
+                <span class="uni-status-dot"></span>
+                ${UNIFORM_STATUS[existingUniReq.status]?.label || existingUniReq.status}
+                ${existingUniReq.totalCost > 0 ? `<span class="uni-status-cost">· ${fmt.money(existingUniReq.totalCost)} บาท</span>` : ''}
+              </div>
+            ` : ''}
           </div>
 
-          <div style="margin-top:18px">
-            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px">
-              <label style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.14em">รายการชุดที่ต้องจัด</label>
-              <span class="muted-2" style="font-size:11.5px">กรอกจำนวนเฉพาะที่ต้องการ</span>
+          <label class="uni-toggle-card ${needChecked ? 'is-active' : ''}" for="needUniformChk">
+            <input type="checkbox" name="needUniform" id="needUniformChk" ${needChecked ? 'checked' : ''}/>
+            <span class="uni-toggle-switch"><span class="uni-toggle-thumb"></span></span>
+            <div class="uni-toggle-text">
+              <div class="uni-toggle-title">ต้องจัดชุดให้พนักงานใหม่</div>
+              <div class="uni-toggle-desc">เปิดเพื่อระบุรายการชุด · ปิดถ้าไม่ต้องจัดให้</div>
             </div>
-            <div class="uni-rows-card">
-              <div class="uni-rows-header">
-                <div>ประเภทชุด</div><div>ขนาด</div><div style="text-align:center">จำนวน</div><div></div>
+          </label>
+
+          <div class="uni-collapse" id="uniCollapse" data-open="${needChecked ? '1' : '0'}">
+            <div class="form-grid uni-meta-grid">
+              <div class="form-group"><label>ต้องการก่อน <span class="muted-2" style="font-weight:normal;font-size:11px">(วันเริ่มงาน)</span></label><input name="uniformNeededBy" type="date" value="${existingUniReq?.neededBy || ''}"/></div>
+              <div class="form-group"><label>HR ที่แจ้ง</label><input name="uniformRequestedBy" value="${escapeHtml(existingUniReq?.requestedBy || DB.profile?.name || DB.user?.email || '')}" placeholder="ชื่อ HR คนแจ้ง"/></div>
+            </div>
+
+            <div class="uni-items-block">
+              <div class="uni-items-head">
+                <div class="uni-items-label">รายการชุดที่ต้องจัด</div>
+                <div class="uni-items-hint">กรอกจำนวนเฉพาะรายการที่ต้องการ</div>
               </div>
-              ${typeNames.map((tn, idx) => {
-                const sizes = [...(sizesByType[tn] || [])];
-                const preset = presets[tn] || {};
-                const hasQty = Number(preset.qty) > 0;
-                return `
-                <div class="uni-row ${hasQty ? 'uni-row-active' : ''}">
-                  <div class="uni-row-name">${escapeHtml(tn)}</div>
-                  <input type="text" class="uni-row-size" name="uniSize_${idx}" list="dl-unisize-${idx}" value="${escapeHtml(preset.size || '')}" placeholder="—" autocomplete="off"/>
-                  <datalist id="dl-unisize-${idx}">${sizes.map(s => `<option value="${escapeHtml(s)}">`).join('')}</datalist>
-                  <input type="number" class="uni-row-qty" name="uniQty_${idx}" min="0" value="${preset.qty || ''}" placeholder="0"/>
-                  <div class="uni-row-unit">${unitOf(tn)}</div>
-                </div>`;
-              }).join('')}
+              <div class="uni-rows-card">
+                <div class="uni-rows-header">
+                  <div>ประเภทชุด</div><div>ขนาด</div><div style="text-align:center">จำนวน</div><div></div>
+                </div>
+                ${typeNames.map((tn, idx) => {
+                  const sizes = [...(sizesByType[tn] || [])];
+                  const preset = presets[tn] || {};
+                  const hasQty = Number(preset.qty) > 0;
+                  return `
+                  <div class="uni-row ${hasQty ? 'uni-row-active' : ''}">
+                    <div class="uni-row-name">${escapeHtml(tn)}</div>
+                    <input type="text" class="uni-row-size" name="uniSize_${idx}" list="dl-unisize-${idx}" value="${escapeHtml(preset.size || '')}" placeholder="—" autocomplete="off"/>
+                    <datalist id="dl-unisize-${idx}">${sizes.map(s => `<option value="${escapeHtml(s)}">`).join('')}</datalist>
+                    <input type="number" class="uni-row-qty" name="uniQty_${idx}" min="0" value="${preset.qty || ''}" placeholder="0"/>
+                    <div class="uni-row-unit">${unitOf(tn)}</div>
+                  </div>`;
+                }).join('')}
+              </div>
+            </div>
+
+            <div class="form-grid" style="margin-top:16px">
+              <div class="form-group span-2">
+                <label>หมายเหตุเพิ่มเติม <span class="muted-2" style="font-weight:normal;font-size:11px">(เช่น แพ้ผ้าบางชนิด, สีพิเศษ ฯลฯ)</span></label>
+                <textarea name="uniformExtraNote" rows="2" placeholder="ระบุข้อมูลพิเศษนอกเหนือจากรายการด้านบน">${escapeHtml(extraNote)}</textarea>
+              </div>
             </div>
           </div>
+
           <style>
+            /* ── PREMIUM UNIFORM SECTION ── */
+            .uni-premium { padding-top: 8px; }
+            .uni-section-head {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              gap: 16px;
+              margin-bottom: 18px;
+              padding-bottom: 16px;
+              border-bottom: 1px solid var(--border);
+            }
+            .uni-section-title { display: flex; gap: 12px; align-items: center; }
+            .uni-section-icon {
+              width: 38px; height: 38px;
+              display: flex; align-items: center; justify-content: center;
+              background: linear-gradient(135deg, var(--primary-soft), var(--surface-2));
+              color: var(--primary);
+              border-radius: var(--radius);
+              flex-shrink: 0;
+            }
+            .uni-section-icon svg { width: 20px; height: 20px; }
+            .uni-premium h3 { font-size: 16px; letter-spacing: -0.01em; font-weight: 700; }
+            .uni-section-sub { font-size: 12.5px; color: var(--text-3); margin-top: 2px; letter-spacing: 0.01em; }
+            .uni-status-pill {
+              display: inline-flex; align-items: center; gap: 8px;
+              padding: 6px 14px;
+              background: var(--surface-2);
+              border: 1px solid var(--border);
+              border-radius: var(--radius-full);
+              font-size: 12px;
+              font-weight: 600;
+              color: var(--text-2);
+              white-space: nowrap;
+            }
+            .uni-status-dot {
+              width: 7px; height: 7px; border-radius: 50%;
+              background: var(--text-3);
+              box-shadow: 0 0 0 3px rgba(0,0,0,0.05);
+            }
+            .uni-status-pending .uni-status-dot { background: var(--warning); box-shadow: 0 0 0 3px var(--warning-soft); }
+            .uni-status-preparing .uni-status-dot { background: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+            .uni-status-issued .uni-status-dot { background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); }
+            .uni-status-cancelled .uni-status-dot { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+            .uni-status-cost { color: var(--text-3); font-weight: 500; }
+
+            /* ── TOGGLE CARD ── */
+            .uni-toggle-card {
+              display: flex; align-items: center; gap: 16px;
+              padding: 16px 20px;
+              background: var(--surface);
+              border: 1.5px solid var(--border);
+              border-radius: var(--radius-lg);
+              cursor: pointer;
+              transition: all 0.2s ease;
+              user-select: none;
+            }
+            .uni-toggle-card:hover {
+              border-color: var(--border-strong);
+              background: var(--surface-2);
+            }
+            .uni-toggle-card.is-active {
+              border-color: var(--primary);
+              background: linear-gradient(135deg, var(--primary-soft) 0%, var(--surface) 60%);
+              box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px -4px rgba(0,0,0,0.06);
+            }
+            .uni-toggle-card input[type="checkbox"] {
+              position: absolute; opacity: 0; pointer-events: none;
+            }
+            .uni-toggle-switch {
+              width: 44px; height: 26px;
+              background: var(--border-strong);
+              border-radius: var(--radius-full);
+              position: relative;
+              transition: background 0.25s ease;
+              flex-shrink: 0;
+            }
+            .uni-toggle-thumb {
+              position: absolute;
+              top: 3px; left: 3px;
+              width: 20px; height: 20px;
+              background: #fff;
+              border-radius: 50%;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+              transition: transform 0.25s ease;
+            }
+            .uni-toggle-card.is-active .uni-toggle-switch { background: var(--primary); }
+            .uni-toggle-card.is-active .uni-toggle-thumb { transform: translateX(18px); }
+            .uni-toggle-title { font-weight: 600; font-size: 14.5px; color: var(--text); letter-spacing: -0.005em; }
+            .uni-toggle-desc { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+
+            /* ── COLLAPSE ── */
+            .uni-collapse {
+              max-height: 0;
+              overflow: hidden;
+              opacity: 0;
+              transition: max-height 0.35s ease, opacity 0.25s ease, margin-top 0.25s ease;
+              margin-top: 0;
+            }
+            .uni-collapse[data-open="1"] {
+              max-height: 2000px;
+              opacity: 1;
+              margin-top: 20px;
+            }
+
+            .uni-meta-grid { margin-bottom: 18px; }
+
+            .uni-items-block { margin-top: 4px; }
+            .uni-items-head {
+              display: flex; justify-content: space-between; align-items: baseline;
+              margin-bottom: 10px;
+            }
+            .uni-items-label {
+              font-size: 11px; font-weight: 700;
+              color: var(--text-3);
+              text-transform: uppercase;
+              letter-spacing: 0.14em;
+            }
+            .uni-items-hint { font-size: 11.5px; color: var(--text-3); }
+
+            /* ── ITEMS TABLE ── */
             .uni-rows-card {
               background: var(--surface);
               border: 1px solid var(--border);
               border-radius: var(--radius-lg);
               overflow: hidden;
+              box-shadow: 0 1px 2px rgba(0,0,0,0.02);
             }
             .uni-rows-header {
               display: grid;
@@ -3798,12 +3958,16 @@ function openApplicantForm(id = null) {
               align-items: center;
               padding: 14px 20px;
               border-bottom: 1px solid var(--border);
-              transition: background 0.15s ease;
+              transition: background 0.15s ease, border-left-color 0.15s ease;
+              border-left: 3px solid transparent;
             }
             .uni-row:last-child { border-bottom: none; }
             .uni-row:hover { background: var(--surface-2); }
-            .uni-row-active { background: rgba(22, 163, 74, 0.04); }
-            .uni-row-active:hover { background: rgba(22, 163, 74, 0.08); }
+            .uni-row-active {
+              background: linear-gradient(90deg, rgba(21, 146, 63, 0.05), transparent 60%);
+              border-left-color: var(--success);
+            }
+            .uni-row-active:hover { background: linear-gradient(90deg, rgba(21, 146, 63, 0.09), transparent 60%); }
             .uni-row-name {
               font-weight: 600;
               color: var(--text);
@@ -3818,7 +3982,7 @@ function openApplicantForm(id = null) {
               font-size: 13.5px;
               font-family: inherit;
               color: var(--text);
-              transition: border-color 0.15s ease, background 0.15s ease;
+              transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
             }
             .uni-row-size { width: 100%; }
             .uni-row-qty { width: 100%; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -3826,24 +3990,30 @@ function openApplicantForm(id = null) {
               border-color: var(--primary);
               outline: none;
               background: var(--surface);
+              box-shadow: 0 0 0 3px var(--primary-soft);
             }
             .uni-row-active .uni-row-qty {
               border-color: var(--success);
               color: var(--success);
+              background: var(--success-soft);
             }
             .uni-row-unit {
               font-size: 12.5px;
               color: var(--text-3);
               letter-spacing: 0.02em;
             }
-          </style>
 
-          <div class="form-grid" style="margin-top:14px">
-            <div class="form-group span-2"><label>หมายเหตุเพิ่มเติม <span class="muted-2" style="font-weight:normal;font-size:11px">(เช่น แพ้ผ้าบางชนิด, สีพิเศษ, ฯลฯ)</span></label>
-              <textarea name="uniformExtraNote" rows="2" placeholder="ระบุข้อมูลพิเศษนอกเหนือจากรายการด้านบน">${escapeHtml(extraNote)}</textarea>
-            </div>
-          </div>
-          ${existingUniReq ? `<div class="muted-2" style="font-size:12px;padding:8px 12px;background:var(--surface-2);border-radius:6px;margin-top:8px">📋 มีคำขอจัดชุดอยู่แล้ว · สถานะ: <strong>${UNIFORM_STATUS[existingUniReq.status]?.label || existingUniReq.status}</strong>${existingUniReq.totalCost > 0 ? ` · ค่าชุดรวม ${fmt.money(existingUniReq.totalCost)} บาท` : ''}</div>` : ''}
+            /* Responsive — narrow screens */
+            @media (max-width: 720px) {
+              .uni-section-head { flex-direction: column; align-items: stretch; }
+              .uni-rows-header, .uni-row {
+                grid-template-columns: 1fr 80px 60px 50px;
+                gap: 10px;
+                padding: 12px 14px;
+              }
+              .uni-row-name { font-size: 13px; }
+            }
+          </style>
         </div>`;
       })()}
 
@@ -3861,6 +4031,18 @@ function openApplicantForm(id = null) {
       if (row) row.classList.toggle('uni-row-active', Number(inp.value) > 0);
     });
   });
+
+  // Premium toggle — expand/collapse uniform section
+  const uniChk = document.getElementById('needUniformChk');
+  const uniCard = uniChk?.closest('.uni-toggle-card');
+  const uniCollapse = document.getElementById('uniCollapse');
+  if (uniChk && uniCard && uniCollapse) {
+    uniChk.addEventListener('change', () => {
+      const on = uniChk.checked;
+      uniCard.classList.toggle('is-active', on);
+      uniCollapse.dataset.open = on ? '1' : '0';
+    });
+  }
 
   $('#applForm').addEventListener('submit', async (e) => {
     e.preventDefault();
