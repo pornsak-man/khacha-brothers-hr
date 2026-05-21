@@ -536,14 +536,6 @@ window.onRealtimeChange = (payload) => {
     return;
   }
 
-  // CALENDAR: เมื่อแก้ calendar_items ให้ refetch ประวัติการเปลี่ยนวันหยุดด้วย
-  if (router.current === 'calendar' && table === 'calendar_items' && typeof loadHolidaySwapHistory === 'function' && DB.isAdmin) {
-    _holidaySwapState.hasLoaded = false;
-    clearTimeout(window._rtTimer);
-    window._rtTimer = setTimeout(() => loadHolidaySwapHistory(), 600);
-    return;
-  }
-
   // dashboard มี chart + KPI ซับซ้อน — throttle นาน + animation chart รบกวนน้อยลง
   const delay = router.current === 'dashboard' ? 1500 : 400;
   clearTimeout(window._rtTimer);
@@ -7162,89 +7154,6 @@ function exportDataJSON() {
 // ═══════════════════════════════════════════════════════
 //  PAGE: CALENDAR
 // ═══════════════════════════════════════════════════════
-const _holidaySwapState = { rows: [], loading: false, hasLoaded: false };
-
-async function loadHolidaySwapHistory() {
-  if (!DB.isAdmin) return;
-  if (_holidaySwapState.loading) return;
-  _holidaySwapState.loading = true;
-  try {
-    _holidaySwapState.rows = await DB.fetchHolidaySwapHistory({ limit: 100 });
-  } catch (ex) {
-    _holidaySwapState.rows = [];
-    console.warn('โหลดประวัติการเปลี่ยนวันหยุดไม่สำเร็จ:', ex.message || ex);
-  }
-  _holidaySwapState.hasLoaded = true;
-  _holidaySwapState.loading = false;
-  if (router.current === 'calendar') router.go('calendar');
-}
-
-function renderHolidaySwapHistory() {
-  if (!DB.isAdmin) return '';
-  if (_holidaySwapState.loading && !_holidaySwapState.hasLoaded) {
-    return `<div class="sw-chart-card"><div class="muted-2" style="padding:20px;text-align:center">กำลังโหลดประวัติ…</div></div>`;
-  }
-  const rows = _holidaySwapState.rows;
-  if (!rows.length) {
-    return `<div class="sw-chart-card">
-      <div class="sw-chart-header">
-        <div>
-          <div class="sw-chart-title">ประวัติการเปลี่ยนวันหยุด</div>
-          <div class="sw-chart-sub">บันทึกการตั้ง/แก้ไข/ยกเลิก การเลื่อนวันหยุดประเพณี</div>
-        </div>
-        <button class="btn btn-ghost btn-sm" onclick="loadHolidaySwapHistory()">รีเฟรช</button>
-      </div>
-      <div class="empty-state" style="padding:40px 20px">
-        <div class="hint">ยังไม่มีประวัติการเปลี่ยนวันหยุด</div>
-      </div>
-    </div>`;
-  }
-  const actionLabel = (a, oldS, newS) => {
-    if (a === 'INSERT') return { txt: 'ตั้งวันหยุด (พร้อมเลื่อน)', cls: 'badge-info' };
-    if (a === 'DELETE') return { txt: 'ลบวันหยุด', cls: 'badge-danger' };
-    if (!oldS && newS) return { txt: 'เลื่อนวันหยุด', cls: 'badge-warning' };
-    if (oldS && !newS) return { txt: 'ยกเลิกการเลื่อน', cls: 'badge-success' };
-    return { txt: 'แก้ไขการเลื่อน', cls: 'badge-info' };
-  };
-  return `<div class="sw-chart-card">
-    <div class="sw-chart-header">
-      <div>
-        <div class="sw-chart-title">ประวัติการเปลี่ยนวันหยุด <span class="sw-chart-count">${fmt.num(rows.length)}</span></div>
-        <div class="sw-chart-sub">เรียงจากใหม่สุด · เฉพาะที่เกี่ยวกับการเลื่อนวันหยุด</div>
-      </div>
-      <button class="btn btn-ghost btn-sm" onclick="loadHolidaySwapHistory()">รีเฟรช</button>
-    </div>
-    <div class="table-wrap"><table class="table table-compact">
-      <thead><tr>
-        <th>เวลา</th>
-        <th>ผู้แก้ไข</th>
-        <th>การกระทำ</th>
-        <th>วันหยุดเดิม</th>
-        <th>วันหยุดชดเชย</th>
-        <th>หมายเหตุ</th>
-      </tr></thead>
-      <tbody>
-        ${rows.map(r => {
-          const lab = actionLabel(r.action, r.oldSwap, r.newSwap);
-          const oldSwapTxt = r.oldSwap ? fmt.date(r.oldSwap) : '∅';
-          const newSwapTxt = r.newSwap ? fmt.date(r.newSwap) : '∅';
-          const swapDisplay = r.action === 'UPDATE' && (r.oldSwap || r.newSwap)
-            ? `<code style="font-size:11.5px">${oldSwapTxt} → <strong>${newSwapTxt}</strong></code>`
-            : r.newSwap ? fmt.date(r.newSwap) : (r.oldSwap ? fmt.date(r.oldSwap) : '-');
-          const note = r.newNote || r.oldNote || '';
-          return `<tr>
-            <td class="sw-cell-meta" style="white-space:nowrap">${new Date(r.ts).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-            <td style="font-size:12px">${escapeHtml(r.userEmail || '—')}<div class="muted-2" style="font-size:10.5px">${escapeHtml(r.userRole || '')}</div></td>
-            <td><span class="badge ${lab.cls}" style="font-size:10.5px">${lab.txt}</span></td>
-            <td class="sw-cell-meta"><strong>${escapeHtml(r.holidayTitle)}</strong><div class="muted-2" style="font-size:11.5px">${fmt.date(r.holidayDate)}</div></td>
-            <td>${swapDisplay}</td>
-            <td style="font-size:12px">${escapeHtml(note)}</td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table></div>
-  </div>`;
-}
 
 // Emoji icons สำหรับวันหยุดประเภทต่างๆ — ค้นจากชื่อ
 function holidayEmoji(title, date, type) {
@@ -7282,6 +7191,33 @@ function setCalendarYear(y) {
   router.go('calendar');
 }
 
+// State + actions ของ section "คำขอเปลี่ยนวันหยุด" — filter + pagination (รองรับ 200+ คำขอ)
+const _swapReqUI = {
+  tab: 'pending',
+  search: '',
+  branch: '',
+  page: 0,
+  pageSize: 20
+};
+function swapReqSetTab(t) { _swapReqUI.tab = t; _swapReqUI.page = 0; router.go('calendar'); }
+function swapReqSetFilter(k, v) {
+  const newVal = (v ?? '').trim();
+  if (_swapReqUI[k] === newVal) return;
+  _swapReqUI[k] = newVal;
+  _swapReqUI.page = 0;
+  router.go('calendar');
+}
+function swapReqClearFilters() {
+  _swapReqUI.search = '';
+  _swapReqUI.branch = '';
+  _swapReqUI.page = 0;
+  router.go('calendar');
+}
+function swapReqGoPage(p) {
+  _swapReqUI.page = Math.max(0, Number(p) || 0);
+  router.go('calendar');
+}
+
 router.register('calendar', () => {
   const allCalendarItems = DB.getCalendar();
   const today = tz.today();
@@ -7301,10 +7237,6 @@ router.register('calendar', () => {
   const yearsSet = new Set(allCalendarItems.map(c => parseYMD(c.date)?.[0]).filter(Boolean));
   for (let y = todayYear - 3; y <= todayYear + 1; y++) yearsSet.add(y);
   const yearOptions = Array.from(yearsSet).sort((a, b) => b - a);
-
-  if (DB.isAdmin && !_holidaySwapState.hasLoaded && !_holidaySwapState.loading) {
-    loadHolidaySwapHistory();
-  }
 
   // ─── PER-USER SWAP STATE ──────────────────────────────────
   // วันหยุด = calendar_items (เหมือนกันทุกคน) + ทับด้วย swap ของ "ฉันเอง"
@@ -7413,52 +7345,166 @@ router.register('calendar', () => {
     </tr>`;
   };
 
-  // Render section "คำขอเปลี่ยนวันหยุด" — pending + recent decided
+  // Render section "คำขอเปลี่ยนวันหยุด" — premium + filterable + paginated (รองรับ 200+ คำขอ)
   const renderSwapRequestsSection = () => {
     const allReqs = DB.getHolidaySwapRequests();
     if (!allReqs.length) return '';
-    const pending = allReqs.filter(r => r.status === 'pending');
-    const recent = allReqs.filter(r => r.status !== 'pending').slice(0, 10);
-    if (!pending.length && !recent.length) return '';
+
+    // ─── Stats ตามสถานะ ───
+    const counts = { all: allReqs.length, pending: 0, approved: 0, rejected: 0, cancelled: 0 };
+    for (const r of allReqs) counts[r.status] = (counts[r.status] || 0) + 1;
+    const decidedCount = counts.approved + counts.rejected + counts.cancelled;
+
+    // ─── Filter by tab ───
+    let filtered = allReqs;
+    if (_swapReqUI.tab === 'pending') filtered = allReqs.filter(r => r.status === 'pending');
+    else if (_swapReqUI.tab === 'decided') filtered = allReqs.filter(r => r.status !== 'pending');
+
+    // ─── Filter by search (ชื่อ/รหัสพนักงาน) ───
+    const s = (_swapReqUI.search || '').trim().toLowerCase();
+    if (s) {
+      filtered = filtered.filter(r => {
+        const emp = DB.getEmployee(r.employeeId);
+        const name = ((emp?.firstName || '') + ' ' + (emp?.lastName || '')).toLowerCase();
+        return name.includes(s) || String(r.employeeId).toLowerCase().includes(s);
+      });
+    }
+    // ─── Filter by branch ───
+    if (_swapReqUI.branch) {
+      filtered = filtered.filter(r => {
+        const emp = DB.getEmployee(r.employeeId);
+        return emp?.branch === _swapReqUI.branch;
+      });
+    }
+
+    // ─── Pagination ───
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / _swapReqUI.pageSize));
+    const page = Math.min(_swapReqUI.page, totalPages - 1);
+    const slice = filtered.slice(page * _swapReqUI.pageSize, (page + 1) * _swapReqUI.pageSize);
+    const startIdx = page * _swapReqUI.pageSize + 1;
+    const endIdx = Math.min((page + 1) * _swapReqUI.pageSize, total);
+
+    // ─── Branches dropdown — auto-scope ───
+    const branchSet = new Set();
+    for (const r of allReqs) {
+      const emp = DB.getEmployee(r.employeeId);
+      if (emp?.branch) branchSet.add(emp.branch);
+    }
+    const branches = Array.from(branchSet).sort();
+
+    const hasFilters = !!(s || _swapReqUI.branch);
+
+    // ─── Row: พนักงาน + วันหยุด + วันชดเชย + สถานะ + วันยื่น + actions ───
     const renderRow = (r) => {
       const holiday = DB.getCalendar().find(c => c.id === r.calendarItemId);
       const requester = DB.getEmployee(r.employeeId);
       const STATUS = SWAP_STATUS_BADGE[r.status] || { label: r.status, cls: 'badge' };
       const canApprove = r.status === 'pending' && DB.canApproveHolidaySwapFor(r.employeeId);
       const isMine = r.employeeId === DB.profile?.employee_id;
-      return `<tr>
-        <td><span class="badge ${STATUS.cls}">${STATUS.label}</span></td>
-        <td><strong>${escapeHtml(holiday?.title || '—')}</strong><div class="muted-2" style="font-size:11.5px">${fmt.date(holiday?.date)}</div></td>
-        <td><strong>${fmt.date(r.swapToDate)}</strong></td>
-        <td style="font-size:12.5px">${escapeHtml((requester?.firstName || '') + ' ' + (requester?.lastName || ''))}<div class="muted-2" style="font-size:11px">${escapeHtml(r.employeeId)}</div></td>
-        <td style="font-size:11.5px;color:var(--text-2)">${r.requestedAt ? new Date(r.requestedAt).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short' }) : '-'}</td>
-        <td style="text-align:right">
-          <button class="btn btn-ghost btn-sm" onclick="openSwapRequestDetail('${r.id}')">รายละเอียด</button>
-          ${canApprove ? `<button class="btn btn-primary btn-sm" onclick="approveSwapReq('${r.id}')">อนุมัติ</button>` : ''}
+      const fullName = (requester?.firstName || '') + ' ' + (requester?.lastName || '');
+      const initials = ((requester?.firstName || '?').charAt(0) + (requester?.lastName || '').charAt(0)).toUpperCase();
+      return `<tr style="${r.status === 'pending' ? '' : 'opacity:0.78'}">
+        <td>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:34px;height:34px;border-radius:50%;background:var(--primary-soft);color:var(--primary-text);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;flex-shrink:0">${escapeHtml(initials)}</div>
+            <div style="min-width:0">
+              <div style="font-weight:600;font-size:13.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(fullName)}${isMine ? ' <span class="muted-2" style="font-size:10.5px;font-weight:500">(ฉัน)</span>' : ''}</div>
+              <div class="muted-2" style="font-size:11px;font-variant-numeric:tabular-nums">${escapeHtml(r.employeeId)}${requester?.branch ? ' · ' + escapeHtml(requester.branch) : ''}</div>
+            </div>
+          </div>
+        </td>
+        <td>
+          <div style="font-weight:600;font-size:13px">${escapeHtml(holiday?.title || '—')}</div>
+          <div class="muted-2" style="font-size:11.5px;font-variant-numeric:tabular-nums">${fmt.date(holiday?.date)}</div>
+        </td>
+        <td style="font-variant-numeric:tabular-nums">
+          <div style="font-weight:600;font-size:13px;color:var(--success-text)">${fmt.date(r.swapToDate)}</div>
+        </td>
+        <td><span class="badge ${STATUS.cls}" style="font-size:10.5px;white-space:nowrap">${STATUS.label}</span></td>
+        <td style="font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums;white-space:nowrap">${r.requestedAt ? new Date(r.requestedAt).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short' }) : '-'}</td>
+        <td style="text-align:right;white-space:nowrap">
+          ${canApprove ? `<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="approveSwapReq('${r.id}')">อนุมัติ</button>` : ''}
+          <button class="btn btn-ghost btn-sm" style="font-size:11.5px" onclick="openSwapRequestDetail('${r.id}')">รายละเอียด</button>
         </td>
       </tr>`;
     };
+
+    // ─── Pagination buttons ───
+    const renderPagination = () => {
+      if (totalPages <= 1) return '';
+      const pageButtons = [];
+      const maxButtons = 5;
+      let start = Math.max(0, page - Math.floor(maxButtons / 2));
+      let end = Math.min(totalPages, start + maxButtons);
+      start = Math.max(0, end - maxButtons);
+      for (let i = start; i < end; i++) {
+        pageButtons.push(`<button class="btn btn-ghost btn-sm" style="min-width:32px;${i === page ? 'background:var(--primary);color:#fff;border-color:var(--primary)' : ''}" onclick="swapReqGoPage(${i})">${i + 1}</button>`);
+      }
+      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 4px 4px;flex-wrap:wrap">
+        <div class="muted-2" style="font-size:12px">แสดง ${fmt.num(startIdx)}–${fmt.num(endIdx)} จาก ${fmt.num(total)} รายการ</div>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-ghost btn-sm" ${page === 0 ? 'disabled' : ''} onclick="swapReqGoPage(${page - 1})">‹ ก่อนหน้า</button>
+          ${pageButtons.join('')}
+          <button class="btn btn-ghost btn-sm" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="swapReqGoPage(${page + 1})">ถัดไป ›</button>
+        </div>
+      </div>`;
+    };
+
     return `
     <div class="sw-chart-card">
       <div class="sw-chart-header">
         <div>
-          <div class="sw-chart-title">คำขอเปลี่ยนวันหยุด ${pending.length ? `<span class="sw-chart-count">${fmt.num(pending.length)} รออนุมัติ</span>` : ''}</div>
-          <div class="sw-chart-sub">ใช้ chain อนุมัติเดียวกับการลา · เมื่ออนุมัติแล้ววันหยุดชดเชยจะมีผลทันที</div>
+          <div class="sw-chart-title">คำขอเปลี่ยนวันหยุด</div>
+          <div class="sw-chart-sub">ใช้ chain อนุมัติเดียวกับการลา · เห็นเฉพาะคำขอในขอบเขตของคุณ</div>
         </div>
       </div>
-      ${pending.length ? `
-      <div class="table-wrap"><table class="table table-compact">
-        <thead><tr><th>สถานะ</th><th>วันหยุดเดิม</th><th>วันชดเชย</th><th>ผู้ยื่น</th><th>วันยื่น</th><th></th></tr></thead>
-        <tbody>${pending.map(renderRow).join('')}</tbody>
-      </table></div>` : `<div class="empty-state" style="padding:24px 16px"><div class="hint" style="font-size:13px">ไม่มีคำขอที่รออนุมัติ</div></div>`}
-      ${recent.length ? `
-      <details style="margin-top:12px">
-        <summary style="cursor:pointer;padding:8px 12px;background:var(--surface-2);border-radius:8px;font-size:12.5px;font-weight:600;color:var(--text-2)">ดูคำขอที่ตัดสินใจแล้ว (${recent.length})</summary>
-        <div class="table-wrap" style="margin-top:8px"><table class="table table-compact">
-          <thead><tr><th>สถานะ</th><th>วันหยุดเดิม</th><th>วันชดเชย</th><th>ผู้ยื่น</th><th>วันยื่น</th><th></th></tr></thead>
-          <tbody>${recent.map(renderRow).join('')}</tbody>
-        </table></div>
-      </details>` : ''}
+
+      <!-- Tabs (filter pills) -->
+      <div class="sw-tabs" style="margin-bottom:14px" role="tablist">
+        <button class="sw-tab ${_swapReqUI.tab === 'pending' ? 'active' : ''}" onclick="swapReqSetTab('pending')" role="tab">
+          <span>รออนุมัติ</span>${counts.pending ? `<span class="sw-tab-pill" style="background:var(--warning-soft);color:var(--warning-text)">${fmt.num(counts.pending)}</span>` : ''}
+        </button>
+        <button class="sw-tab ${_swapReqUI.tab === 'decided' ? 'active' : ''}" onclick="swapReqSetTab('decided')" role="tab">
+          <span>ตัดสินใจแล้ว</span>${decidedCount ? `<span class="sw-tab-pill">${fmt.num(decidedCount)}</span>` : ''}
+        </button>
+        <button class="sw-tab ${_swapReqUI.tab === 'all' ? 'active' : ''}" onclick="swapReqSetTab('all')" role="tab">
+          <span>ทั้งหมด</span><span class="sw-tab-pill">${fmt.num(counts.all)}</span>
+        </button>
+      </div>
+
+      <!-- Filter bar -->
+      <div class="sw-filter-bar">
+        <input id="swapReqSearch" type="text" class="sw-filter-input" placeholder="🔍 ค้นชื่อ/รหัสพนักงาน"
+          value="${escapeHtml(_swapReqUI.search)}"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();swapReqSetFilter('search', this.value);}"
+          onblur="swapReqSetFilter('search', this.value)"/>
+        ${branches.length > 1 ? `<select class="sw-filter-select" onchange="swapReqSetFilter('branch', this.value)">
+          <option value="">— ทุกสาขา —</option>
+          ${branches.map(b => `<option value="${escapeHtml(b)}" ${_swapReqUI.branch === b ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
+        </select>` : ''}
+        ${hasFilters ? `<button class="btn btn-ghost btn-sm sw-filter-clear" onclick="swapReqClearFilters()">✕ ล้างตัวกรอง</button>` : ''}
+      </div>
+
+      <!-- Table -->
+      ${slice.length ? `
+      <div class="table-wrap"><table class="table table-compact sw-swap-table">
+        <thead><tr>
+          <th style="min-width:200px">พนักงาน</th>
+          <th style="min-width:160px">วันหยุดเดิม</th>
+          <th style="min-width:110px">วันชดเชย</th>
+          <th style="width:110px">สถานะ</th>
+          <th style="width:80px">วันยื่น</th>
+          <th style="width:1%;text-align:right">การกระทำ</th>
+        </tr></thead>
+        <tbody>${slice.map(renderRow).join('')}</tbody>
+      </table></div>
+      ${renderPagination()}
+      ` : `<div class="empty-state" style="padding:48px 20px">
+        <div style="font-size:36px;margin-bottom:8px;opacity:0.3">📭</div>
+        <div class="title" style="font-size:14px;font-weight:600">${hasFilters ? 'ไม่พบคำขอที่ตรงกับตัวกรอง' : (_swapReqUI.tab === 'pending' ? 'ไม่มีคำขอที่รออนุมัติ' : 'ไม่มีคำขอ')}</div>
+        ${hasFilters ? '<div class="hint" style="margin-top:4px">ลองล้างตัวกรองเพื่อดูทั้งหมด</div>' : ''}
+      </div>`}
     </div>`;
   };
 
@@ -7546,8 +7592,7 @@ router.register('calendar', () => {
       </div>`}
     </div>
 
-    ${renderSwapRequestsSection()}
-    ${renderHolidaySwapHistory()}`;
+    ${renderSwapRequestsSection()}`;
 });
 
 function openCalForm(id = null) {

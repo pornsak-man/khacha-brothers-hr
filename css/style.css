@@ -2741,22 +2741,18 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 }
 
 /* Calendar table — compact list view */
-.sw-cal-table tbody tr.sw-cal-quarter-row {
-  background: transparent !important;
-}
-.sw-cal-table tbody tr.sw-cal-quarter-row:hover {
-  background: transparent !important;
-}
-.sw-cal-table tbody tr.sw-cal-quarter-row td {
-  border-bottom: none;
-  padding-top: 18px;
-  padding-bottom: 8px;
-}
-.sw-cal-table tbody tr.sw-cal-quarter-row:first-child td {
-  padding-top: 4px;
-}
-.sw-cal-table tbody tr:not(.sw-cal-quarter-row) td {
+.sw-cal-table tbody tr td {
   padding-top: 12px;
   padding-bottom: 12px;
   vertical-align: middle;
+}
+
+/* Swap requests table — premium row layout */
+.sw-swap-table tbody tr td {
+  padding-top: 14px;
+  padding-bottom: 14px;
+  vertical-align: middle;
+}
+.sw-swap-table tbody tr {
+  transition: background var(--transition);
 }
