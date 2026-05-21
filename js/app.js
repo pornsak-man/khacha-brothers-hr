@@ -7274,14 +7274,33 @@ function daysUntil(dateStr, today) {
   return Math.round(ms / 86400000);
 }
 
+const _calendarState = {
+  filterYear: new Date().getFullYear()
+};
+function setCalendarYear(y) {
+  _calendarState.filterYear = Number(y);
+  router.go('calendar');
+}
+
 router.register('calendar', () => {
-  const items = DB.getCalendar();
+  const allCalendarItems = DB.getCalendar();
   const today = tz.today();
   const todayYmd = parseYMD(today);
-  const currentYear = todayYmd ? todayYmd[0] : new Date().getFullYear();
-  const buddhistYear = currentYear + 543;
+  const todayYear = todayYmd ? todayYmd[0] : new Date().getFullYear();
+  const filterYear = _calendarState.filterYear;
+  const buddhistYear = filterYear + 543;
+  // จำกัดเฉพาะปีที่เลือก
+  const items = allCalendarItems.filter(c => {
+    const y = parseYMD(c.date)?.[0];
+    return y === filterYear;
+  });
   const typeLabel = (t) => t === 'holiday' ? 'วันหยุด' : t === 'event' ? 'กิจกรรม' : 'อื่นๆ';
   const typeBadge = (t) => t === 'holiday' ? 'badge-danger' : t === 'event' ? 'badge-info' : 'badge';
+
+  // ปีที่มีข้อมูล (สำหรับ dropdown) — รวมปีปัจจุบัน
+  const yearsWithData = new Set(allCalendarItems.map(c => parseYMD(c.date)?.[0]).filter(Boolean));
+  yearsWithData.add(todayYear);
+  const yearOptions = Array.from(yearsWithData).sort((a, b) => b - a);
 
   if (DB.isAdmin && !_holidaySwapState.hasLoaded && !_holidaySwapState.loading) {
     loadHolidaySwapHistory();
@@ -7330,22 +7349,6 @@ router.register('calendar', () => {
   const nextHoliday = upcomingAll[0] || null;
   const nextDays = nextHoliday ? daysUntil(nextHoliday.date, today) : null;
 
-  // จัดกลุ่มตามไตรมาส (เฉพาะปีปัจจุบัน — ปีอื่นแยกกลุ่ม)
-  const groupByQuarter = (arr) => {
-    const groups = {};
-    for (const c of arr) {
-      const ymd = parseYMD(c.date);
-      if (!ymd) continue;
-      const year = ymd[0];
-      const q = Math.floor((ymd[1] - 1) / 3) + 1;
-      const key = `${year}-Q${q}`;
-      if (!groups[key]) groups[key] = { year, q, items: [] };
-      groups[key].items.push(c);
-    }
-    return Object.values(groups).sort((a, b) => a.year - b.year || a.q - b.q);
-  };
-  const quarterGroups = groupByQuarter(allItems);
-
   // วันในสัปดาห์ ไทย — สำหรับคอลัมน์วัน
   const THAI_DOW = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
   const thaiDow = (dateStr) => {
@@ -7354,7 +7357,7 @@ router.register('calendar', () => {
     return THAI_DOW[new Date(ymd[0], ymd[1] - 1, ymd[2]).getDay()];
   };
 
-  // Render แถวตารางของวันหยุด/กิจกรรมแต่ละรายการ
+  // Render แถวตารางของวันหยุด/กิจกรรมแต่ละรายการ (ไม่มี emoji column)
   const renderRow = (c) => {
     const isTarget = !!c._isSwapTarget;
     const isPast = c.date < today;
@@ -7362,7 +7365,6 @@ router.register('calendar', () => {
     const mySwapApproved = !isTarget ? mySwapsApproved.get(c.id) : null;
     const myPendingReq   = !isTarget ? mySwapsPending.get(c.id) : null;
     const isMineSwapped  = !!mySwapApproved;
-    const icon = isTarget ? '🔁' : holidayEmoji(isTarget ? c._originalTitle : c.title, c.date, c.type);
     const canRequestSwap = c.type === 'holiday' && !isTarget && !isPast && !isMineSwapped && !myPendingReq && !!myEmpId;
     const rowStyle = isPast ? 'opacity:0.55' : (isNext ? 'background:var(--primary-soft)' : (isTarget ? 'background:var(--success-soft)' : ''));
     const titleStyle = isMineSwapped ? 'text-decoration:line-through;color:var(--text-2)' : 'color:var(--text)';
@@ -7390,7 +7392,6 @@ router.register('calendar', () => {
     }
 
     return `<tr style="${rowStyle}">
-      <td style="text-align:center;font-size:22px;width:48px">${icon}</td>
       <td style="white-space:nowrap;width:140px">
         <div style="font-weight:600;font-size:13.5px;font-variant-numeric:tabular-nums">${fmt.date(c.date)}</div>
         <div class="muted-2" style="font-size:11.5px">${thaiDow(c.date)}</div>
@@ -7451,7 +7452,6 @@ router.register('calendar', () => {
     </div>`;
   };
 
-  const QUARTER_LABEL = { 1: 'ไตรมาส 1 · ม.ค. – มี.ค.', 2: 'ไตรมาส 2 · เม.ย. – มิ.ย.', 3: 'ไตรมาส 3 · ก.ค. – ก.ย.', 4: 'ไตรมาส 4 · ต.ค. – ธ.ค.' };
 
   return `
     <div class="sw-page-header">
@@ -7490,8 +7490,8 @@ router.register('calendar', () => {
       </div>
     </div>
 
-    <!-- Featured Next Holiday -->
-    ${nextHoliday ? `
+    <!-- Featured Next Holiday — เฉพาะปีปัจจุบัน -->
+    ${nextHoliday && filterYear === todayYear ? `
     <div class="sw-cal-featured">
       <div class="sw-cal-featured-icon">${nextHoliday._isSwapTarget ? '🔁' : holidayEmoji(nextHoliday._isSwapTarget ? nextHoliday._originalTitle : nextHoliday.title, nextHoliday.date, nextHoliday.type)}</div>
       <div>
@@ -7505,18 +7505,20 @@ router.register('calendar', () => {
       </div>
     </div>` : ''}
 
-    <!-- Year overview — table format -->
-    ${allItems.length ? `
+    <!-- Year overview — table format with year selector -->
     <div class="sw-chart-card">
       <div class="sw-chart-header">
         <div>
-          <div class="sw-chart-title">ภาพรวมทั้งปี <span class="sw-chart-count">${fmt.num(allItems.length)}</span></div>
-          <div class="sw-chart-sub">จัดกลุ่มตามไตรมาส · รวมวันหยุดชดเชยของฉัน</div>
+          <div class="sw-chart-title">ภาพรวมปี ${buddhistYear} <span class="sw-chart-count">${fmt.num(allItems.length)}</span></div>
+          <div class="sw-chart-sub">วันหยุด · กิจกรรม · รวมวันหยุดชดเชยของฉัน</div>
         </div>
+        <select class="sw-inline-select" onchange="setCalendarYear(this.value)">
+          ${yearOptions.map(y => `<option value="${y}" ${y === filterYear ? 'selected' : ''}>ปี ${y + 543}${y === todayYear ? ' (ปัจจุบัน)' : ''}</option>`).join('')}
+        </select>
       </div>
+      ${allItems.length ? `
       <div class="table-wrap"><table class="table table-compact sw-cal-table">
         <thead><tr>
-          <th style="width:48px"></th>
           <th style="width:140px">วันที่</th>
           <th>หัวข้อ</th>
           <th style="width:90px">ประเภท</th>
@@ -7524,30 +7526,15 @@ router.register('calendar', () => {
           <th style="width:1%;text-align:right">การกระทำ</th>
         </tr></thead>
         <tbody>
-          ${quarterGroups.map(g => {
-            const lblPrefix = g.year !== currentYear ? `${g.year + 543} · ` : '';
-            return `
-            <tr class="sw-cal-quarter-row">
-              <td colspan="6">
-                <div style="display:flex;align-items:center;gap:12px;padding:6px 0">
-                  <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:var(--text-3);white-space:nowrap">${lblPrefix}${QUARTER_LABEL[g.q]}</span>
-                  <span style="flex:1;height:1px;background:linear-gradient(to right,var(--border-strong),transparent)"></span>
-                  <span style="font-size:11px;font-weight:600;color:var(--text-3);background:var(--surface-2);padding:2px 10px;border-radius:999px;border:1px solid var(--border)">${fmt.num(g.items.length)} รายการ</span>
-                </div>
-              </td>
-            </tr>
-            ${g.items.map(renderRow).join('')}`;
-          }).join('')}
+          ${allItems.map(renderRow).join('')}
         </tbody>
-      </table></div>
-    </div>` : `
-    <div class="sw-chart-card">
+      </table></div>` : `
       <div class="empty-state" style="padding:60px 20px">
         <div style="font-size:42px;margin-bottom:12px;opacity:0.35">📅</div>
-        <div class="title" style="font-size:16px;font-weight:600">ยังไม่มีกิจกรรม</div>
-        <div class="hint" style="margin-top:6px">${DB.isHR ? 'กด + เพิ่มกิจกรรม เพื่อเริ่ม' : 'รอ HR เพิ่มกิจกรรม'}</div>
-      </div>
-    </div>`}
+        <div class="title" style="font-size:16px;font-weight:600">ไม่มีกิจกรรมในปี ${buddhistYear}</div>
+        <div class="hint" style="margin-top:6px">${DB.isHR ? (filterYear === todayYear ? 'กด + เพิ่มกิจกรรม เพื่อเริ่ม' : 'ลองเลือกปีอื่น หรือเพิ่มกิจกรรม') : 'ลองเลือกปีอื่น หรือรอ HR เพิ่ม'}</div>
+      </div>`}
+    </div>
 
     ${renderSwapRequestsSection()}
     ${renderHolidaySwapHistory()}`;
