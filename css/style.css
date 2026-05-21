@@ -2739,3 +2739,24 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   background: rgba(201,119,6,0.15);
   color: #f5c178;
 }
+
+/* Calendar table — compact list view */
+.sw-cal-table tbody tr.sw-cal-quarter-row {
+  background: transparent !important;
+}
+.sw-cal-table tbody tr.sw-cal-quarter-row:hover {
+  background: transparent !important;
+}
+.sw-cal-table tbody tr.sw-cal-quarter-row td {
+  border-bottom: none;
+  padding-top: 18px;
+  padding-bottom: 8px;
+}
+.sw-cal-table tbody tr.sw-cal-quarter-row:first-child td {
+  padding-top: 4px;
+}
+.sw-cal-table tbody tr:not(.sw-cal-quarter-row) td {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  vertical-align: middle;
+}

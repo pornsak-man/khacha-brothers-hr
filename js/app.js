@@ -7346,40 +7346,60 @@ router.register('calendar', () => {
   };
   const quarterGroups = groupByQuarter(allItems);
 
-  // Render การ์ดวันหยุดแต่ละใบ
-  const renderCard = (c) => {
+  // วันในสัปดาห์ ไทย — สำหรับคอลัมน์วัน
+  const THAI_DOW = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+  const thaiDow = (dateStr) => {
+    const ymd = parseYMD(dateStr);
+    if (!ymd) return '';
+    return THAI_DOW[new Date(ymd[0], ymd[1] - 1, ymd[2]).getDay()];
+  };
+
+  // Render แถวตารางของวันหยุด/กิจกรรมแต่ละรายการ
+  const renderRow = (c) => {
     const isTarget = !!c._isSwapTarget;
     const isPast = c.date < today;
     const isNext = nextHoliday && c.date === nextHoliday.date && c.title === nextHoliday.title && !isPast;
-    // swap state ของ "ฉัน" สำหรับวันหยุดนี้
     const mySwapApproved = !isTarget ? mySwapsApproved.get(c.id) : null;
     const myPendingReq   = !isTarget ? mySwapsPending.get(c.id) : null;
     const isMineSwapped  = !!mySwapApproved;
-    const classes = ['sw-cal-card'];
-    if (isPast) classes.push('is-past');
-    if (isNext) classes.push('is-next');
-    if (isMineSwapped) classes.push('is-swapped');
-    if (isTarget) classes.push('is-swap-target');
     const icon = isTarget ? '🔁' : holidayEmoji(isTarget ? c._originalTitle : c.title, c.date, c.type);
     const canRequestSwap = c.type === 'holiday' && !isTarget && !isPast && !isMineSwapped && !myPendingReq && !!myEmpId;
-    return `<div class="${classes.join(' ')}">
-      ${(DB.isHR && !isTarget) ? `<div class="sw-cal-card-actions">
-        <button class="btn btn-ghost btn-sm" onclick="openCalForm('${c.id}')">แก้</button>
-        <button class="btn btn-ghost btn-sm" onclick="deleteCalRec('${c.id}')">ลบ</button>
-      </div>` : ''}
-      <div class="sw-cal-card-head">
-        <span class="sw-cal-card-icon">${icon}</span>
-        <span class="sw-cal-card-date">${fmt.date(c.date)}</span>
-      </div>
-      <div class="sw-cal-card-title">${escapeHtml(c.title)}</div>
-      ${isMineSwapped ? `<div class="sw-cal-swap-note" style="cursor:pointer" onclick="openSwapRequestDetail('${mySwapApproved.id}')">⚠ ฉันมาทำงาน · ชดเชย ${fmt.date(mySwapApproved.swapToDate)}</div>` : ''}
-      ${isTarget ? `<div style="font-size:11.5px;color:var(--success-text);margin-top:4px">✓ หยุดแทนวันที่ ${fmt.date(c._originalDate)}</div>` : ''}
-      ${myPendingReq ? `<div style="font-size:11.5px;margin-top:6px;padding:4px 8px;background:var(--warning-soft);color:var(--warning-text);border-radius:6px;display:inline-flex;align-items:center;gap:4px;cursor:pointer" onclick="openSwapRequestDetail('${myPendingReq.id}')">🕒 คำขอของฉัน · รออนุมัติ → ${fmt.date(myPendingReq.swapToDate)}</div>` : ''}
-      <div class="sw-cal-card-foot">
-        <span class="badge ${isTarget ? 'badge-success' : typeBadge(c.type)}" style="font-size:10.5px">${isTarget ? 'หยุดชดเชย' : typeLabel(c.type)}</span>
-        ${isNext ? `<span style="font-size:10.5px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:0.08em">วันถัดไป</span>` : canRequestSwap ? `<button class="btn btn-ghost btn-sm" style="padding:3px 9px;font-size:11px" onclick="openSwapRequestForm('${c.id}')">⇄ เสนอเปลี่ยน</button>` : ''}
-      </div>
-    </div>`;
+    const rowStyle = isPast ? 'opacity:0.55' : (isNext ? 'background:var(--primary-soft)' : (isTarget ? 'background:var(--success-soft)' : ''));
+    const titleStyle = isMineSwapped ? 'text-decoration:line-through;color:var(--text-2)' : 'color:var(--text)';
+
+    // คอลัมน์สถานะ (per-user)
+    let statusCell = '';
+    if (isTarget) {
+      statusCell = `<span class="badge badge-success" style="font-size:10.5px">หยุดชดเชย</span><div class="muted-2" style="font-size:11px;margin-top:2px">แทน ${fmt.date(c._originalDate)}</div>`;
+    } else if (isMineSwapped) {
+      statusCell = `<span class="badge badge-warning" style="font-size:10.5px;cursor:pointer" onclick="openSwapRequestDetail('${mySwapApproved.id}')">มาทำงาน → ชดเชย ${fmt.date(mySwapApproved.swapToDate)}</span>`;
+    } else if (myPendingReq) {
+      statusCell = `<span class="badge badge-info" style="font-size:10.5px;cursor:pointer" onclick="openSwapRequestDetail('${myPendingReq.id}')">🕒 รออนุมัติ → ${fmt.date(myPendingReq.swapToDate)}</span>`;
+    } else if (isNext) {
+      statusCell = `<span style="font-size:10.5px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:0.08em">วันถัดไป</span>`;
+    } else if (isPast) {
+      statusCell = `<span class="muted-2" style="font-size:11px">ผ่านแล้ว</span>`;
+    }
+
+    // ปุ่ม actions
+    const actions = [];
+    if (canRequestSwap) actions.push(`<button class="btn btn-ghost btn-sm" style="font-size:11.5px" onclick="openSwapRequestForm('${c.id}')">⇄ เสนอเปลี่ยน</button>`);
+    if (DB.isHR && !isTarget) {
+      actions.push(`<button class="btn btn-ghost btn-sm" style="font-size:11.5px" onclick="openCalForm('${c.id}')">แก้</button>`);
+      actions.push(`<button class="btn btn-ghost btn-sm" style="font-size:11.5px;color:var(--danger)" onclick="deleteCalRec('${c.id}')">ลบ</button>`);
+    }
+
+    return `<tr style="${rowStyle}">
+      <td style="text-align:center;font-size:22px;width:48px">${icon}</td>
+      <td style="white-space:nowrap;width:140px">
+        <div style="font-weight:600;font-size:13.5px;font-variant-numeric:tabular-nums">${fmt.date(c.date)}</div>
+        <div class="muted-2" style="font-size:11.5px">${thaiDow(c.date)}</div>
+      </td>
+      <td><strong style="${titleStyle};font-size:14px">${escapeHtml(c.title)}</strong></td>
+      <td><span class="badge ${isTarget ? 'badge-success' : typeBadge(c.type)}" style="font-size:10.5px">${isTarget ? 'หยุดชดเชย' : typeLabel(c.type)}</span></td>
+      <td>${statusCell}</td>
+      <td style="text-align:right;white-space:nowrap">${actions.join(' ')}</td>
+    </tr>`;
   };
 
   // Render section "คำขอเปลี่ยนวันหยุด" — pending + recent decided
@@ -7485,33 +7505,47 @@ router.register('calendar', () => {
       </div>
     </div>` : ''}
 
-    <!-- Year overview by quarter -->
+    <!-- Year overview — table format -->
     ${allItems.length ? `
-    <div class="sw-chart-card" style="padding:24px 26px">
-      <div class="sw-chart-header" style="margin-bottom:4px">
+    <div class="sw-chart-card">
+      <div class="sw-chart-header">
         <div>
           <div class="sw-chart-title">ภาพรวมทั้งปี <span class="sw-chart-count">${fmt.num(allItems.length)}</span></div>
-          <div class="sw-chart-sub">จัดกลุ่มตามไตรมาส · รวมวันหยุดชดเชย</div>
+          <div class="sw-chart-sub">จัดกลุ่มตามไตรมาส · รวมวันหยุดชดเชยของฉัน</div>
         </div>
       </div>
-      ${quarterGroups.map(g => {
-        const lblPrefix = g.year !== currentYear ? `${g.year + 543} · ` : '';
-        return `
-        <div class="sw-cal-quarter-header">
-          <span class="sw-cal-quarter-label">${lblPrefix}${QUARTER_LABEL[g.q]}</span>
-          <span class="sw-cal-quarter-line"></span>
-          <span class="sw-cal-quarter-count">${fmt.num(g.items.length)} รายการ</span>
-        </div>
-        <div class="sw-cal-grid">
-          ${g.items.map(renderCard).join('')}
-        </div>`;
-      }).join('')}
+      <div class="table-wrap"><table class="table table-compact sw-cal-table">
+        <thead><tr>
+          <th style="width:48px"></th>
+          <th style="width:140px">วันที่</th>
+          <th>หัวข้อ</th>
+          <th style="width:90px">ประเภท</th>
+          <th>สถานะ</th>
+          <th style="width:1%;text-align:right">การกระทำ</th>
+        </tr></thead>
+        <tbody>
+          ${quarterGroups.map(g => {
+            const lblPrefix = g.year !== currentYear ? `${g.year + 543} · ` : '';
+            return `
+            <tr class="sw-cal-quarter-row">
+              <td colspan="6">
+                <div style="display:flex;align-items:center;gap:12px;padding:6px 0">
+                  <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:var(--text-3);white-space:nowrap">${lblPrefix}${QUARTER_LABEL[g.q]}</span>
+                  <span style="flex:1;height:1px;background:linear-gradient(to right,var(--border-strong),transparent)"></span>
+                  <span style="font-size:11px;font-weight:600;color:var(--text-3);background:var(--surface-2);padding:2px 10px;border-radius:999px;border:1px solid var(--border)">${fmt.num(g.items.length)} รายการ</span>
+                </div>
+              </td>
+            </tr>
+            ${g.items.map(renderRow).join('')}`;
+          }).join('')}
+        </tbody>
+      </table></div>
     </div>` : `
     <div class="sw-chart-card">
       <div class="empty-state" style="padding:60px 20px">
         <div style="font-size:42px;margin-bottom:12px;opacity:0.35">📅</div>
         <div class="title" style="font-size:16px;font-weight:600">ยังไม่มีกิจกรรม</div>
-        <div class="hint" style="margin-top:6px">กด + เพิ่มกิจกรรม เพื่อเริ่ม</div>
+        <div class="hint" style="margin-top:6px">${DB.isHR ? 'กด + เพิ่มกิจกรรม เพื่อเริ่ม' : 'รอ HR เพิ่มกิจกรรม'}</div>
       </div>
     </div>`}
 
