@@ -8239,18 +8239,26 @@ router.register('leave', () => {
 });
 
 function renderLeaveFilterBar(scope = 'requests') {
+  // branch_staff/viewer เห็นเฉพาะของตัวเอง → ซ่อน search + branch (ไม่มีประโยชน์)
+  // แต่ยังต้องการ status/type/date filter เพื่อกรองคำขอของตัวเอง
+  const role = DB.role;
+  const isSelfOnly = (role === 'branch_staff' || role === 'viewer');
   // Branches dropdown — auto-scope ตาม RBAC (branch_staff เห็นเฉพาะสาขาตัวเอง)
   const branches = [...new Set(DB.getEmployees({ status: 'active' }).map(e => e.branch).filter(Boolean))].sort();
   const types = DB.getLeaveTypesList();
   const showStatus = scope === 'requests' && _leaveState.tab === 'all';
   const showDates = scope === 'requests';
   const showType = scope === 'requests';
+  const showSearch = !isSelfOnly;       // ค้นหา = หาคนอื่น → ซ่อนจาก staff
+  const showBranch = !isSelfOnly && branches.length > 1;
+  // ถ้าทุกอย่างซ่อนหมด → ไม่ render filter bar เลย
+  if (!showSearch && !showType && !showStatus && !showBranch && !showDates) return '';
   return `<div class="sw-filter-bar">
-    <input id="leaveSearchInput" type="text" class="sw-filter-input"
-      placeholder="🔍 ${scope === 'balance' ? 'ค้นชื่อ/รหัสพนักงาน' : 'ค้นชื่อ/รหัสพนักงาน'}"
+    ${showSearch ? `<input id="leaveSearchInput" type="text" class="sw-filter-input"
+      placeholder="🔍 ค้นชื่อ/รหัสพนักงาน"
       value="${escapeHtml(_leaveFilters.search)}"
       onchange="setLeaveFilter('search', this.value)"
-      onkeydown="if(event.key==='Enter'){event.preventDefault();setLeaveFilter('search', this.value);}"/>
+      onkeydown="if(event.key==='Enter'){event.preventDefault();setLeaveFilter('search', this.value);}"/>` : ''}
     ${showType ? `<select class="sw-filter-select" onchange="setLeaveFilter('leaveType', this.value)">
       <option value="">— ทุกประเภทการลา —</option>
       ${types.map(t => `<option value="${t.id}" ${_leaveFilters.leaveType === t.id ? 'selected' : ''}>${escapeHtml(t.label)}</option>`).join('')}
@@ -8259,10 +8267,10 @@ function renderLeaveFilterBar(scope = 'requests') {
       <option value="">— ทุกสถานะ —</option>
       ${Object.entries(LEAVE_STATUS_BADGE).map(([k, v]) => `<option value="${k}" ${_leaveFilters.status === k ? 'selected' : ''}>${escapeHtml(v.label)}</option>`).join('')}
     </select>` : ''}
-    <select class="sw-filter-select" onchange="setLeaveFilter('branch', this.value)">
+    ${showBranch ? `<select class="sw-filter-select" onchange="setLeaveFilter('branch', this.value)">
       <option value="">— ทุกสาขา —</option>
       ${branches.map(b => `<option value="${escapeHtml(b)}" ${_leaveFilters.branch === b ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
-    </select>
+    </select>` : ''}
     ${showDates ? `<div class="sw-filter-date-group">
       <input type="date" class="sw-filter-input sw-filter-date" title="ตั้งแต่วันที่" value="${_leaveFilters.from || ''}" onchange="setLeaveFilter('from', this.value)"/>
       <span class="muted-2" style="font-size:12px">→</span>
