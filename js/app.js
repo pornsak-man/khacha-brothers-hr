@@ -307,6 +307,18 @@ const auth = {
   },
   async logout() {
     await DB.signOut();
+    // ─── Reset client-side state (กัน state leak ระหว่างผู้ใช้บนเครื่องเดียวกัน) ───
+    // ทุก global filter/UI state กลับสู่ค่าเริ่มต้น
+    try {
+      if (typeof empState === 'object') Object.assign(empState, { search: '', branch: '', position: '', status: 'active', sortBy: '', sortDir: 'asc', page: 1 });
+      if (typeof recruitState === 'object') Object.assign(recruitState, { search: '', status: '', year: '', page: 1 });
+      if (typeof _swapReqUI === 'object') Object.assign(_swapReqUI, { tab: 'pending', search: '', branch: '', status: '', page: 0 });
+      if (typeof _calendarState === 'object') _calendarState.filterYear = new Date().getFullYear();
+      if (typeof _empAccFilter === 'object') Object.assign(_empAccFilter, { search: '', branch: '', role: '', accStatus: '' });
+      if (typeof _leaveState === 'object') Object.assign(_leaveState, { tab: 'pending', filterYear: new Date().getFullYear() });
+      if (typeof _leaveFilters === 'object') Object.assign(_leaveFilters, { search: '', leaveType: '', status: '', branch: '', from: '', to: '' });
+      if (typeof _auditState === 'object') Object.assign(_auditState, { page: 0, filterTable: '', filterAction: '', filterSearch: '', rows: [], total: 0, hasLoaded: false });
+    } catch (e) { /* state may not exist yet */ }
     this.showLogin();
   },
 
@@ -7966,11 +7978,22 @@ function openSwapRequestForm(calendarItemId = null) {
         reason: data.reason || null,
         status: 'pending'
       });
+      // ─── Auto-approve: 2nd API call ที่อาจ fail ขณะ save สำเร็จแล้ว ───
+      // ต้อง catch แยกเพื่อไม่ทำให้ user คิดว่า save fail ทั้งหมด
       if (autoApprove && saved?.id) {
-        await DB.approveHolidaySwapRequest(saved.id, '✓ บันทึกและอนุมัติโดย ' + (DB.profile?.employee_id || 'HR'));
+        try {
+          await DB.approveHolidaySwapRequest(saved.id, '✓ บันทึกและอนุมัติโดย ' + (DB.profile?.employee_id || 'HR'));
+          modal.close();
+          toast('✓ บันทึก + อนุมัติแล้ว', 'success');
+        } catch (approveEx) {
+          // save สำเร็จแล้ว แต่ approve ล้มเหลว → record ค้างเป็น pending
+          modal.close();
+          toast(`บันทึกแล้ว แต่อนุมัติอัตโนมัติไม่สำเร็จ — คำขออยู่ใน "รออนุมัติ" (${approveEx.message || approveEx})`, 'warning');
+        }
+      } else {
+        modal.close();
+        toast('ส่งคำขอแล้ว — รออนุมัติ', 'success');
       }
-      modal.close();
-      toast(autoApprove ? '✓ บันทึก + อนุมัติแล้ว' : 'ส่งคำขอแล้ว — รออนุมัติ', 'success');
       router.go('calendar');
     } catch (ex) { toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
   });
