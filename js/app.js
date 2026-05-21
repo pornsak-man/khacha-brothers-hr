@@ -1360,11 +1360,22 @@ router.register('employees', () => {
           <option value="pending"  ${empState.status === 'pending'  ? 'selected' : ''}>นัดพ้นสภาพ</option>
           <option value="resigned" ${empState.status === 'resigned' ? 'selected' : ''}>พ้นสภาพแล้ว</option>
         </select>
+        ${(empState.search || empState.branch || empState.position || empState.status !== 'active') ? `<button class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearEmpFilters()">✕ ล้างตัวกรอง</button>` : ''}
       </div>
       <div id="empList"></div>
     </div>
   `;
 });
+
+// ล้างตัวกรองทั้งหมดในหน้าทะเบียนพนักงาน (กลับไปค่าเริ่มต้น = ปฏิบัติงาน)
+function clearEmpFilters() {
+  empState.search = '';
+  empState.branch = '';
+  empState.position = '';
+  empState.status = 'active';
+  empState.page = 1;
+  router.go('employees');
+}
 
 function wireEmployeePage() {
   renderEmployeeList();
