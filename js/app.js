@@ -7667,9 +7667,7 @@ function openSwapRequestForm(calendarItemId) {
   if (myExisting) { openSwapRequestDetail(myExisting.id); return; }
   const myEmp = DB.getEmployee(myEmpId);
   const approver = DB.getHolidaySwapApprover(myEmpId);
-  const approverHint = approver
-    ? `<div class="muted-2" style="font-size:11.5px;margin-top:6px">ผู้อนุมัติคำขอ: <strong>${escapeHtml(approver.firstName + ' ' + (approver.lastName || ''))}</strong></div>`
-    : (DB.isHR ? `<div class="muted-2" style="font-size:11.5px;margin-top:6px;color:var(--warning-text)">ไม่พบผู้อนุมัติในระบบ admin ต้อง override อนุมัติเอง</div>` : `<div class="muted-2" style="font-size:11.5px;margin-top:6px;color:var(--danger)">ไม่พบผู้อนุมัติ — ติดต่อผู้ดูแลระบบ</div>`);
+  const approverName = approver ? (approver.firstName + ' ' + (approver.lastName || '')).trim() : '';
 
   // คำนวณวันถัดไป (D+1) ของวันหยุด สำหรับใช้เป็น min/default
   const dayAfter = (dateStr) => {
@@ -7688,27 +7686,29 @@ function openSwapRequestForm(calendarItemId) {
   const maxSwapDate = holidayYear ? `${holidayYear}-12-31` : '';
   const holidayIsPast = holiday.date < todayStr;
 
-  modal.open('ขอเปลี่ยนวันหยุดของฉัน', `
-    <div style="background:var(--surface-2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
-      <div class="muted-2" style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;font-weight:600">วันหยุดเดิม (ที่ฉันจะมาทำงาน${holidayIsPast ? ' / มาทำงานไปแล้ว' : ''})</div>
-      <div style="font-size:15px;font-weight:600;margin-top:2px">${escapeHtml(holiday.title)}</div>
-      <div style="font-size:13px;color:var(--text-2);margin-top:2px">${fmt.date(holiday.date)}${holidayIsPast ? ' <span style="color:var(--warning)">· ผ่านมาแล้ว</span>' : ''}</div>
+  modal.open('ขอเปลี่ยนวันหยุด', `
+    <!-- Compact holiday header card -->
+    <div style="background:var(--surface-2);border-radius:10px;padding:14px 16px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <div style="min-width:0">
+        <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-weight:600;margin-bottom:2px">วันหยุดที่ฉันมาทำงาน</div>
+        <div style="font-size:15px;font-weight:600">${escapeHtml(holiday.title)}</div>
+        <div style="font-size:12.5px;color:var(--text-2);font-variant-numeric:tabular-nums">${fmt.date(holiday.date)}</div>
+      </div>
+      ${holidayIsPast ? '<span class="badge badge-warning" style="font-size:10.5px;white-space:nowrap">ผ่านมาแล้ว</span>' : ''}
     </div>
-    <div class="muted-2" style="font-size:12px;margin-bottom:14px;padding:10px 12px;background:var(--info-soft,#e3f2fd);border-radius:8px;border-left:3px solid var(--info)">
-      💡 ใช้เมื่อบริษัทขอให้คุณมาทำงานในวันหยุดประเพณี — คำขอจะถูกส่งให้ผู้บังคับบัญชาอนุมัติเช่นเดียวกับการลา<br>
-      <strong>วันหยุดชดเชยต้องอยู่ในปีปฏิทินเดียวกัน</strong> ${holidayIsPast ? 'และเลือกได้ตั้งแต่พรุ่งนี้เป็นต้นไป' : 'และต้องเป็นวันหลังวันหยุดประเพณี'}
-    </div>
+
     <form id="swapReqForm">
-      <div class="form-group"><label>วันที่ขอหยุดชดเชย *</label>
+      <div class="form-group">
+        <label>วันหยุดชดเชย <span class="muted-2" style="font-weight:400;letter-spacing:0">(${fmt.date(minSwapDate)} – ${fmt.date(maxSwapDate)})</span></label>
         <input name="swapToDate" type="date" value="${minSwapDate}" min="${minSwapDate}" max="${maxSwapDate}" required/>
-        <div class="muted-2" style="font-size:11.5px;margin-top:4px">เลือกได้ตั้งแต่ ${fmt.date(minSwapDate)} ถึง ${fmt.date(maxSwapDate)}</div>
       </div>
-      <div class="form-group"><label>เหตุผล *</label>
-        <textarea name="reason" rows="3" required placeholder="เช่น ได้รับคำสั่งจากหัวหน้าให้มาทำงานในวันสงกรานต์ ขอหยุดวันที่ ... แทน"></textarea>
+      <div class="form-group">
+        <label>เหตุผล</label>
+        <textarea name="reason" rows="2" required placeholder="เช่น มาทำงานตามคำสั่งหัวหน้า"></textarea>
       </div>
-      <div style="background:var(--surface-2);border-radius:10px;padding:10px 12px;font-size:11.5px;color:var(--text-2);line-height:1.6">
-        <div><strong>ผู้ยื่น:</strong> ${escapeHtml((myEmp?.firstName || '') + ' ' + (myEmp?.lastName || ''))} (${escapeHtml(myEmpId)})</div>
-        ${approverHint}
+      <div style="display:flex;align-items:center;gap:14px;padding:8px 2px;font-size:11.5px;color:var(--text-2);flex-wrap:wrap">
+        <span>ผู้ยื่น <strong style="color:var(--text)">${escapeHtml((myEmp?.firstName || '') + ' ' + (myEmp?.lastName || ''))}</strong></span>
+        ${approverName ? `<span style="color:var(--text-3)">→</span><span>อนุมัติโดย <strong style="color:var(--text)">${escapeHtml(approverName)}</strong></span>` : '<span style="color:var(--warning-text)">⚠ ไม่พบผู้อนุมัติ</span>'}
       </div>
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" data-close>ยกเลิก</button>
