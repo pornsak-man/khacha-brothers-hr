@@ -7347,7 +7347,14 @@ router.register('calendar', () => {
 
   // Render section "คำขอเปลี่ยนวันหยุด" — premium + filterable + paginated (รองรับ 200+ คำขอ)
   const renderSwapRequestsSection = () => {
-    const allReqs = DB.getHolidaySwapRequests();
+    // ─── Filter ตามปีที่เลือกข้างบน — สอดคล้องกับตาราง "ภาพรวมทั้งปี" ───
+    // ใช้ปีของวันหยุดเดิม (calendar_item.date) เป็นเกณฑ์
+    const calById = new Map(DB.getCalendar().map(c => [c.id, c]));
+    const allReqs = DB.getHolidaySwapRequests().filter(r => {
+      const holiday = calById.get(r.calendarItemId);
+      if (!holiday) return false;
+      return parseYMD(holiday.date)?.[0] === filterYear;
+    });
     if (!allReqs.length) return '';
 
     // ─── Stats ตามสถานะ ───
@@ -7468,8 +7475,8 @@ router.register('calendar', () => {
     <div class="sw-chart-card">
       <div class="sw-chart-header">
         <div>
-          <div class="sw-chart-title">คำขอเปลี่ยนวันหยุด</div>
-          <div class="sw-chart-sub">ใช้ chain อนุมัติเดียวกับการลา · ${escapeHtml(scopeLabel)}</div>
+          <div class="sw-chart-title">คำขอเปลี่ยนวันหยุด · ปี ${buddhistYear}</div>
+          <div class="sw-chart-sub">ใช้ chain อนุมัติเดียวกับการลา · ${escapeHtml(scopeLabel)} · เปลี่ยนปีที่ตัวกรองด้านบน</div>
         </div>
       </div>
 
