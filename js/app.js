@@ -8137,7 +8137,12 @@ function renderMyLeaveBalance() {
           const usedPct = Math.min(100, (b.used / b.quota) * 100);
           const remainColor = b.remaining === 0 ? 'var(--danger)' : usedPct >= 70 ? 'var(--warning)' : 'var(--success)';
           const badgeCls = b.type.badge || 'badge-info';
-          return `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;position:relative">
+          const isExhausted = b.remaining === 0;
+          const titleHint = isExhausted ? 'สิทธิ์หมดแล้ว — คลิกเพื่อดู' : `คลิกเพื่อขอลา${b.type.label}`;
+          return `<div class="sw-leave-bal-card" role="button" tabindex="0"
+            title="${escapeHtml(titleHint)}"
+            onclick="openLeaveRequestForm(null, '${escapeHtml(b.type.id)}')"
+            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openLeaveRequestForm(null, '${escapeHtml(b.type.id)}')}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
               <span class="badge ${badgeCls}" style="font-size:10.5px">${escapeHtml(b.type.label)}</span>
               <span class="muted-2" style="font-size:10.5px;font-weight:600">ใช้ ${b.used} / ${b.quota}</span>
@@ -8149,6 +8154,7 @@ function renderMyLeaveBalance() {
             <div style="height:6px;background:var(--surface);border-radius:3px;margin-top:10px;overflow:hidden">
               <div style="height:100%;width:${usedPct}%;background:${remainColor};transition:width .3s"></div>
             </div>
+            <div class="sw-leave-bal-hint">+ ขอลา${escapeHtml(b.type.label)}</div>
           </div>`;
         }).join('')}
       </div>
@@ -8558,12 +8564,14 @@ async function deleteLeaveType(id) {
 }
 
 // ─── Leave request form ───
-function openLeaveRequestForm(id = null) {
+function openLeaveRequestForm(id = null, prefilledType = null) {
   const editing = id ? DB.getLeaveRequest(id) : null;
   // staff/manager: pre-select ตัวเอง (จาก user_profiles.employee_id), admin/HR: ให้เลือกได้ (ยื่นคำขอแทน)
   let defaultEmpId = editing?.employeeId || '';
   if (!defaultEmpId && !DB.isHR) defaultEmpId = DB.profile?.employee_id || '';
   const today = tz.today();
+  // ประเภทที่ pre-select — editing ก่อน, ถัดไป prefilledType (เช่นจากกล่องคงเหลือ)
+  const selectedType = editing?.leaveType || prefilledType || '';
 
   // ใช้ getEmployees() เพื่อ auto-scope: branch_staff เห็นเฉพาะตัวเอง, branch_mgr เห็นสาขา ฯลฯ
   const empOptions = DB.getEmployees({ status: 'active' })
@@ -8583,7 +8591,7 @@ function openLeaveRequestForm(id = null) {
         <div class="form-group span-2"><label>ประเภทการลา *</label>
           <select name="leaveType" id="leaveType" required>
             <option value="">— เลือกประเภท —</option>
-            ${Object.entries(DB.LEAVE_TYPES).map(([k, v]) => `<option value="${k}" ${editing?.leaveType === k ? 'selected' : ''}>${escapeHtml(v.label)}</option>`).join('')}
+            ${Object.entries(DB.LEAVE_TYPES).map(([k, v]) => `<option value="${k}" ${selectedType === k ? 'selected' : ''}>${escapeHtml(v.label)}</option>`).join('')}
           </select>
           <div id="leaveBalanceHint" class="muted-2" style="font-size:12px;margin-top:6px"></div>
         </div>
