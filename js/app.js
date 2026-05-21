@@ -9153,6 +9153,22 @@ const ROLE_LABELS = {
   viewer:            { th: 'ผู้ใช้ทั่วไป',       badge: '' }
 };
 
+// State + actions ของ filter ในหน้า "ผู้ใช้และสิทธิ์" (รองรับพนักงานจำนวนมาก)
+const _empAccFilter = { search: '', branch: '', role: '', accStatus: '' };
+function setEmpAccFilter(k, v) {
+  const newVal = (v ?? '').trim();
+  if (_empAccFilter[k] === newVal) return;
+  _empAccFilter[k] = newVal;
+  renderEmpAccounts();
+}
+function clearEmpAccFilters() {
+  _empAccFilter.search = '';
+  _empAccFilter.branch = '';
+  _empAccFilter.role = '';
+  _empAccFilter.accStatus = '';
+  renderEmpAccounts();
+}
+
 async function renderEmpAccounts() {
   const box = document.getElementById('empAccountsBox');
   if (!box || !DB.isHR) return;
@@ -9163,6 +9179,33 @@ async function renderEmpAccounts() {
     const withAcc = active.filter(e => byEmpId.has(e.id));
     const withoutAcc = active.filter(e => !byEmpId.has(e.id));
     const adminCount = Array.from(byEmpId.values()).filter(p => p.role === 'admin').length;
+
+    // ─── Apply filters ───
+    const f = _empAccFilter;
+    const s = f.search.toLowerCase();
+    const filtered = active.filter(e => {
+      if (s) {
+        const name = ((e.firstName || '') + ' ' + (e.lastName || '')).toLowerCase();
+        const email = `${e.id.toLowerCase()}@kacha.local`;
+        if (!name.includes(s) && !String(e.id).toLowerCase().includes(s) && !email.includes(s)) return false;
+      }
+      if (f.branch && e.branch !== f.branch) return false;
+      const p = byEmpId.get(e.id);
+      const hasAcc = !!p;
+      if (f.role) {
+        const roleKey = p?.role || 'viewer';
+        if (f.role === 'no_account') { if (hasAcc) return false; }
+        else if (roleKey !== f.role) return false;
+      }
+      if (f.accStatus === 'has' && !hasAcc) return false;
+      if (f.accStatus === 'none' && hasAcc) return false;
+      return true;
+    });
+
+    const branches = [...new Set(active.map(e => e.branch).filter(Boolean))].sort();
+    const hasFilters = !!(f.search || f.branch || f.role || f.accStatus);
+    const isFiltered = hasFilters;
+
     box.innerHTML = `
       <div class="sw-account-summary">
         <div class="sw-account-stat">
@@ -9183,10 +9226,39 @@ async function renderEmpAccounts() {
         </div>
         ${withoutAcc.length > 0 ? `<button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="bulkCreateAccounts()">🚀 สร้างบัญชีให้ ${withoutAcc.length} คนที่เหลือ</button>` : ''}
       </div>
-      <div class="table-wrap" style="max-height:520px;overflow:auto"><table class="table table-compact sw-emp-table">
+
+      <!-- Filter bar -->
+      <div class="sw-filter-bar" style="margin-top:14px">
+        <input id="empAccSearch" type="text" class="sw-filter-input" placeholder="🔍 ค้นชื่อ / รหัส / email"
+          value="${escapeHtml(f.search)}"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();setEmpAccFilter('search', this.value);}"
+          onblur="setEmpAccFilter('search', this.value)"/>
+        ${branches.length > 1 ? `<select class="sw-filter-select" onchange="setEmpAccFilter('branch', this.value)">
+          <option value="">— ทุกสาขา —</option>
+          ${branches.map(b => `<option value="${escapeHtml(b)}" ${f.branch === b ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
+        </select>` : ''}
+        <select class="sw-filter-select" onchange="setEmpAccFilter('role', this.value)">
+          <option value="">— ทุก Role —</option>
+          ${Object.entries(ROLE_LABELS).map(([k, v]) => `<option value="${k}" ${f.role === k ? 'selected' : ''}>${escapeHtml(v.th)}</option>`).join('')}
+        </select>
+        <select class="sw-filter-select" onchange="setEmpAccFilter('accStatus', this.value)">
+          <option value="">— ทุกสถานะ —</option>
+          <option value="has" ${f.accStatus === 'has' ? 'selected' : ''}>✓ มีบัญชี</option>
+          <option value="none" ${f.accStatus === 'none' ? 'selected' : ''}>⚠ ยังไม่มี</option>
+        </select>
+        ${hasFilters ? `<button class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearEmpAccFilters()">✕ ล้างตัวกรอง</button>` : ''}
+        ${isFiltered ? `<div class="muted-2" style="margin-left:auto;font-size:12px;align-self:center">แสดง <strong>${fmt.num(filtered.length)}</strong> / ${fmt.num(active.length)} คน</div>` : ''}
+      </div>
+
+      ${filtered.length === 0 ? `<div class="empty-state" style="padding:40px 20px;margin-top:14px">
+        <div style="font-size:32px;opacity:0.3">🔍</div>
+        <div class="title" style="font-size:14px;font-weight:600;margin-top:8px">ไม่พบพนักงานตามตัวกรอง</div>
+        <div class="hint" style="margin-top:4px">ลองล้างตัวกรองเพื่อดูทั้งหมด</div>
+      </div>` : `
+      <div class="table-wrap" style="max-height:520px;overflow:auto;margin-top:14px"><table class="table table-compact sw-emp-table">
         <thead><tr><th>รหัส</th><th>ชื่อพนักงาน</th><th>สาขา</th><th>Email Login</th><th>Role</th><th>สาขาที่ดูแล</th><th>สถานะ</th><th></th></tr></thead>
         <tbody>
-          ${active.map(e => {
+          ${filtered.map(e => {
             const p = byEmpId.get(e.id);
             const hasAcc = !!p;
             const email = `${e.id.toLowerCase()}@kacha.local`;
@@ -9214,7 +9286,7 @@ async function renderEmpAccounts() {
             </tr>`;
           }).join('')}
         </tbody>
-      </table></div>
+      </table></div>`}
     `;
   } catch (ex) {
     box.innerHTML = `<div class="empty-state" style="padding:30px 20px;color:var(--danger)">
