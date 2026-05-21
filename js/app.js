@@ -1709,16 +1709,23 @@ function buildEmployeePreview(data, isNew, currentEmp, pendingPhotoBlob, removeP
       terminationDate: 'วันพ้นสภาพ', terminationReason: 'เหตุผลพ้นสภาพ'
     };
     const changes = [];
+    // Lookup helpers — แสดงชื่อแทน ID สำหรับฟิลด์ที่เป็น reference
+    const moneyKeys = new Set(['salary','allowancePosition','allowanceTravel','allowanceFood','allowancePerDiem','allowanceLanguage','allowanceOther']);
+    const lookupValue = (key, v) => {
+      if (!v) return '—';
+      if (key === 'department') return DB.data.departments.find(d => d.id === v)?.name || v;
+      if (key === 'position')   return DB.getPosition(v)?.name || v;
+      if (moneyKeys.has(key))   return fmt.money(Number(v || 0));
+      return v;
+    };
     for (const [key, label] of Object.entries(watchFields)) {
       const oldV = String(currentEmp[key] ?? '').trim();
       const newV = String(data[key] ?? '').trim();
       if (oldV !== newV) {
-        const isMoney = ['salary','allowancePosition','allowanceTravel','allowanceFood','allowancePerDiem','allowanceLanguage','allowanceOther'].includes(key);
-        const fmtV = (v) => isMoney ? fmt.money(Number(v || 0)) : (v || '—');
         changes.push(`<tr>
           <td style="padding:6px 12px;font-weight:600">${escapeHtml(label)}</td>
-          <td style="padding:6px 12px;color:var(--text-3);text-decoration:line-through">${escapeHtml(fmtV(oldV))}</td>
-          <td style="padding:6px 12px;color:var(--success);font-weight:600">→ ${escapeHtml(fmtV(newV))}</td>
+          <td style="padding:6px 12px;color:var(--text-3);text-decoration:line-through">${escapeHtml(lookupValue(key, oldV))}</td>
+          <td style="padding:6px 12px;color:var(--success);font-weight:600">→ ${escapeHtml(lookupValue(key, newV))}</td>
         </tr>`);
       }
     }
@@ -1932,7 +1939,7 @@ function openEmployeeForm(id = null, init = null, onSaved = null) {
       <div class="form-section">
         <h3>การทำงาน</h3>
         <div class="form-grid">
-          <div class="form-group"><label>ฝ่าย *</label><select name="department" required>${depts.map(d => `<option value="${d.id}" ${emp.department === d.id ? 'selected' : ''}>${escapeHtml(d.name)}</option>`).join('')}</select></div>
+          <div class="form-group"><label>ฝ่าย *</label><select name="department" required><option value="" ${!emp.department ? 'selected' : ''}>— เลือกฝ่าย —</option>${depts.map(d => `<option value="${d.id}" ${emp.department === d.id ? 'selected' : ''}>${escapeHtml(d.name)}</option>`).join('')}</select></div>
           <div class="form-group"><label>สาขา</label><input name="branch" list="dl-emp-branches" value="${escapeHtml(emp.branch)}" placeholder="เช่น KMB, GE" autocomplete="off"/><datalist id="dl-emp-branches">${DB.getBranchMaster({ activeOnly: true }).map(b => `<option value="${escapeHtml(b.id)}">${escapeHtml(b.name || b.id)}</option>`).join('')}</datalist></div>
           <div class="form-group"><label>ระดับตำแหน่งงาน *</label>${(() => {
             // จัดกลุ่มตาม track: ฝ่ายปฏิบัติการ / ฝ่ายครัว / อื่นๆ
