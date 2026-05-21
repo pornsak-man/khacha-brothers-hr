@@ -1180,6 +1180,7 @@ const DB = {
   getApplicants(filter = {}) {
     let list = this.data.applicants.slice();
     if (filter.status) list = list.filter(a => a.status === filter.status);
+    if (filter.year)   list = list.filter(a => String(a.appliedDate || '').startsWith(String(filter.year)));
     if (filter.search) {
       const s = filter.search.toLowerCase();
       list = list.filter(a =>

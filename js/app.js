@@ -3773,7 +3773,7 @@ const APPL_STATUS = {
 };
 const APPL_SOURCES = ['Walk-in', 'JobsDB', 'LINE', 'Facebook', 'แนะนำ', 'อื่นๆ'];
 
-const recruitState = { search: '', status: '', page: 1, pageSize: 50 };
+const recruitState = { search: '', status: '', year: '', page: 1, pageSize: 50 };
 
 router.register('recruit', () => {
   const stats = DB.getApplicantStats();
@@ -3832,11 +3832,46 @@ router.register('recruit', () => {
           <option value="">— ทุกสถานะ —</option>
           ${Object.entries(APPL_STATUS).map(([k, v]) => `<option value="${k}" ${recruitState.status === k ? 'selected' : ''}>${v.label}</option>`).join('')}
         </select>
+        <select id="applYear" class="sw-filter-select">
+          ${(() => {
+            const todayYear = new Date().getFullYear();
+            const yearsWithData = new Set((DB.data.applicants || []).map(a => String(a.appliedDate || '').slice(0, 4)).filter(Boolean));
+            for (let y = todayYear - 3; y <= todayYear + 1; y++) yearsWithData.add(String(y));
+            const years = Array.from(yearsWithData).filter(Boolean).sort((a, b) => Number(b) - Number(a));
+            return `<option value="">— ทุกปี —</option>` +
+              years.map(y => `<option value="${y}" ${recruitState.year === y ? 'selected' : ''}>ปี ${Number(y) + 543}${Number(y) === todayYear ? ' (ปัจจุบัน)' : ''}</option>`).join('');
+          })()}
+        </select>
+        <button id="applClearFilter" class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearRecruitFilters()" style="${(recruitState.search || recruitState.status || recruitState.year) ? '' : 'display:none'}">✕ ล้างตัวกรอง</button>
       </div>
       <div id="applList"></div>
     </div>
   `;
 });
+
+// Toggle visibility ของปุ่ม clear filter ในหน้ารับสมัคร
+function updateRecruitClearButton() {
+  const btn = document.getElementById('applClearFilter');
+  if (!btn) return;
+  const hasFilters = recruitState.search || recruitState.status || recruitState.year;
+  btn.style.display = hasFilters ? '' : 'none';
+}
+
+// ล้างตัวกรองหน้ารับสมัครงาน
+function clearRecruitFilters() {
+  recruitState.search = '';
+  recruitState.status = '';
+  recruitState.year = '';
+  recruitState.page = 1;
+  const searchEl = document.getElementById('applSearch');
+  const statusEl = document.getElementById('applStatus');
+  const yearEl = document.getElementById('applYear');
+  if (searchEl) searchEl.value = '';
+  if (statusEl) statusEl.value = '';
+  if (yearEl) yearEl.value = '';
+  renderApplicantList();
+  updateRecruitClearButton();
+}
 
 function wireRecruitPage() {
   renderApplicantList();
@@ -3846,12 +3881,20 @@ function wireRecruitPage() {
       recruitState.search = e.target.value;
       recruitState.page = 1;
       renderApplicantList();
+      updateRecruitClearButton();
     }, 200);
   });
   $('#applStatus')?.addEventListener('change', (e) => {
     recruitState.status = e.target.value;
     recruitState.page = 1;
     renderApplicantList();
+    updateRecruitClearButton();
+  });
+  $('#applYear')?.addEventListener('change', (e) => {
+    recruitState.year = e.target.value;
+    recruitState.page = 1;
+    renderApplicantList();
+    updateRecruitClearButton();
   });
 }
 
