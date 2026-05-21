@@ -913,11 +913,11 @@ router.register('dashboard', () => {
       <canvas id="chartByAge" style="max-height:280px"></canvas>
     </div>
 
-    <div class="sw-section-label">ค่าจ้าง</div>
+    <div class="sw-section-label">การลาออก</div>
     <div class="sw-chart-card">
-      <div class="sw-chart-title">อัตราค่าจ้างต่อตำแหน่งงาน</div>
-      <div class="sw-chart-sub">รายได้รวมเฉลี่ย (เงินเดือน + ค่าตำแหน่ง + เดินทาง + อาหาร + เบี้ยเลี้ยง + ภาษา + อื่นๆ) · เรียงสูงสุด → ต่ำสุด · ${s.salaryByPosition.length} ตำแหน่ง</div>
-      <canvas id="chartSalaryByPosition" style="max-height:320px"></canvas>
+      <div class="sw-chart-title">Turnover Rate ของทุกสาขา</div>
+      <div class="sw-chart-sub">อัตราการลาออก 12 เดือนล่าสุด · (จำนวนลาออก / จำนวนพนักงานเฉลี่ย) × 100 · เรียงสูงสุด → ต่ำสุด · ${s.turnoverByBranch.length} สาขา</div>
+      <canvas id="chartTurnoverByBranch" style="max-height:${Math.max(280, s.turnoverByBranch.length * 28)}px"></canvas>
     </div>
   `;
 });
@@ -1193,30 +1193,29 @@ function renderDashboardCharts(s, monthly, trailing12) {
     }
   }
 
-  // ── อัตราค่าจ้างต่อตำแหน่งงาน — champagne gold (premium money) ──
-  if ($('#chartSalaryByPosition') && s.salaryByPosition?.length) {
-    const data = s.salaryByPosition;
-    makeChart('chartSalaryByPosition', {
+  // ── Turnover Rate ของทุกสาขา — horizontal bar, สีเปลี่ยนตามระดับ ──
+  if ($('#chartTurnoverByBranch') && s.turnoverByBranch?.length) {
+    const data = s.turnoverByBranch;
+    // สีตามระดับ turnover: > 20% danger, 10-20% warning, < 10% success
+    const colorFor = (rate) => {
+      if (rate >= 20) return { bg: 'rgba(215,38,38,0.78)', hover: 'rgba(215,38,38,0.95)' };
+      if (rate >= 10) return { bg: 'rgba(201,119,6,0.78)', hover: 'rgba(201,119,6,0.95)' };
+      return { bg: 'rgba(21,146,63,0.78)', hover: 'rgba(21,146,63,0.95)' };
+    };
+    makeChart('chartTurnoverByBranch', {
       type: 'bar',
       data: {
-        labels: data.map(d => d.name),
+        labels: data.map(d => d.branch),
         datasets: [{
-          label: 'รายได้รวมเฉลี่ย',
-          data: data.map(d => d.avg),
-          backgroundColor: (ctx) => {
-            const c = ctx.chart.ctx;
-            if (!c) return P.sage;
-            return makeChartGradient(c, P.sage, 'rgba(135, 169, 107, 0.50)');
-          },
-          hoverBackgroundColor: (ctx) => {
-            const c = ctx.chart.ctx;
-            if (!c) return P.sageHover;
-            return makeChartGradient(c, P.sageHover, 'rgba(107, 140, 84, 0.55)');
-          },
-          borderRadius: 5, borderSkipped: false, barPercentage: 0.62, categoryPercentage: 0.82
+          label: 'Turnover Rate (%)',
+          data: data.map(d => d.turnover),
+          backgroundColor: data.map(d => colorFor(d.turnover).bg),
+          hoverBackgroundColor: data.map(d => colorFor(d.turnover).hover),
+          borderRadius: 5, borderSkipped: false, barPercentage: 0.7, categoryPercentage: 0.85
         }]
       },
       options: {
+        indexAxis: 'y',           // horizontal bar — รองรับสาขาเยอะ
         responsive: true, maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
@@ -1226,21 +1225,25 @@ function renderDashboardCharts(s, monthly, trailing12) {
               label: (ctx) => {
                 const d = data[ctx.dataIndex];
                 return [
-                  `  เฉลี่ย: ${d.avg.toLocaleString('th-TH')} บาท/เดือน`,
-                  `  ต่ำสุด: ${d.min.toLocaleString('th-TH')} บาท`,
-                  `  สูงสุด: ${d.max.toLocaleString('th-TH')} บาท`,
-                  `  จำนวน: ${d.count.toLocaleString('th-TH')} คน`
+                  `  Turnover: ${d.turnover}%`,
+                  `  ลาออก 12 เดือน: ${d.exits} คน`,
+                  `  พนักงานปัจจุบัน: ${d.active} คน`,
+                  `  เฉลี่ย: ${d.avgHeadcount} คน`
                 ];
               }
             }
           }
         },
         scales: {
-          x: { grid: { display: false }, ticks: { font: { size: 11 }, maxRotation: 45, minRotation: 30, autoSkip: false }, border: { display: false } },
-          y: {
+          x: {
             beginAtZero: true,
-            ticks: { precision: 0, callback: (v) => v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v },
+            ticks: { precision: 0, callback: (v) => v + '%' },
             grid: { color: gridColor },
+            border: { display: false }
+          },
+          y: {
+            grid: { display: false },
+            ticks: { font: { size: 12 } },
             border: { display: false }
           }
         }

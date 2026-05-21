@@ -2215,6 +2215,44 @@ const DB = {
   // คำนวณรายได้รวม (เงินเดือน + ค่าตำแหน่ง + เดินทาง + อาหาร + เบี้ยเลี้ยง + ภาษา + อื่นๆ)
   // avg/min/max ต่อตำแหน่งงาน — เฉพาะที่ยังปฏิบัติงาน
   // คืน [{ name, avg, min, max, count, level }] เรียง avg มาก → น้อย
+  // ─── TURNOVER RATE per branch (rolling 12 months) ───
+  // สูตร: (จำนวนพนักงานที่ลาออกใน 12 เดือนล่าสุด / จำนวนพนักงานเฉลี่ยในช่วงนั้น) × 100
+  // avgHeadcount ใช้สูตรประมาณ: active ปัจจุบัน + (exits / 2) — สะท้อนค่าเฉลี่ยช่วงเวลา
+  getTurnoverByBranch() {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+    // คำนวณวันที่ 12 เดือนย้อนหลัง
+    const ymd = String(today).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!ymd) return [];
+    const startDate = new Date(Number(ymd[1]) - 1, Number(ymd[2]) - 1, Number(ymd[3]));
+    const startStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
+    const map = new Map(); // branch → { active, exits }
+    for (const e of this.data.employees) {
+      if (!e.branch) continue;
+      if (!map.has(e.branch)) map.set(e.branch, { active: 0, exits: 0 });
+      const stat = map.get(e.branch);
+      const status = this.empStatus(e);
+      if (status !== 'resigned') stat.active++;
+      // นับ exits ในช่วง 12 เดือน
+      if (e.terminationDate && e.terminationDate >= startStr && e.terminationDate <= today) {
+        stat.exits++;
+      }
+    }
+    const result = [];
+    for (const [branch, stat] of map) {
+      const avgHeadcount = stat.active + stat.exits / 2;
+      const turnover = avgHeadcount > 0 ? (stat.exits / avgHeadcount) * 100 : 0;
+      result.push({
+        branch,
+        active: stat.active,
+        exits: stat.exits,
+        avgHeadcount: Math.round(avgHeadcount * 10) / 10,
+        turnover: Math.round(turnover * 10) / 10
+      });
+    }
+    // เรียง turnover สูงสุด → ต่ำสุด
+    return result.sort((a, b) => b.turnover - a.turnover);
+  },
+
   getSalaryByPosition() {
     const totalIncome = (e) =>
       Number(e.salary || 0) +
@@ -2281,6 +2319,7 @@ const DB = {
       byPosition,
       byAge: this.getAgeDistribution(),
       salaryByPosition: this.getSalaryByPosition(),
+      turnoverByBranch: this.getTurnoverByBranch(),
       byGender: {
         male: active.filter(e => e.gender === 'ชาย').length,
         female: active.filter(e => e.gender === 'หญิง').length
