@@ -7297,10 +7297,10 @@ router.register('calendar', () => {
   const typeLabel = (t) => t === 'holiday' ? 'วันหยุด' : t === 'event' ? 'กิจกรรม' : 'อื่นๆ';
   const typeBadge = (t) => t === 'holiday' ? 'badge-danger' : t === 'event' ? 'badge-info' : 'badge';
 
-  // ปีที่มีข้อมูล (สำหรับ dropdown) — รวมปีปัจจุบัน
-  const yearsWithData = new Set(allCalendarItems.map(c => parseYMD(c.date)?.[0]).filter(Boolean));
-  yearsWithData.add(todayYear);
-  const yearOptions = Array.from(yearsWithData).sort((a, b) => b - a);
+  // ปีสำหรับ dropdown: รวมปีที่มีข้อมูล + ปีปัจจุบัน + 3 ปีย้อนหลัง + 1 ปีล่วงหน้า
+  const yearsSet = new Set(allCalendarItems.map(c => parseYMD(c.date)?.[0]).filter(Boolean));
+  for (let y = todayYear - 3; y <= todayYear + 1; y++) yearsSet.add(y);
+  const yearOptions = Array.from(yearsSet).sort((a, b) => b - a);
 
   if (DB.isAdmin && !_holidaySwapState.hasLoaded && !_holidaySwapState.loading) {
     loadHolidaySwapHistory();
@@ -7365,7 +7365,17 @@ router.register('calendar', () => {
     const mySwapApproved = !isTarget ? mySwapsApproved.get(c.id) : null;
     const myPendingReq   = !isTarget ? mySwapsPending.get(c.id) : null;
     const isMineSwapped  = !!mySwapApproved;
-    const canRequestSwap = c.type === 'holiday' && !isTarget && !isPast && !isMineSwapped && !myPendingReq && !!myEmpId;
+    // วันหยุดในปีนี้/อนาคต → ขอ swap ได้ แม้ผ่านมาแล้ว ตราบใดที่ยังเหลือวันในปีให้หยุดแทน
+    const cYear = parseYMD(c.date)?.[0];
+    const yearEndStr = cYear ? `${cYear}-12-31` : '';
+    // คำนวณ "พรุ่งนี้" inline (เลี่ยง dependency กับ helper ในขอบเขตอื่น)
+    const _tymd = parseYMD(today);
+    const _tmw = _tymd ? new Date(_tymd[0], _tymd[1] - 1, _tymd[2] + 1) : null;
+    const tomorrowStr = _tmw ? `${_tmw.getFullYear()}-${String(_tmw.getMonth() + 1).padStart(2, '0')}-${String(_tmw.getDate()).padStart(2, '0')}` : '';
+    // ยังมี window ให้ swap: (today+1 หรือ holiday+1 อันที่ช้ากว่า) <= 31 ธ.ค. ของปีวันหยุด
+    const minPossibleSwap = c.date > today ? c.date : tomorrowStr;        // ต้อง > วันหยุดเดิม และ > วันนี้
+    const hasSwapWindow = yearEndStr && minPossibleSwap < yearEndStr && c.date < yearEndStr;
+    const canRequestSwap = c.type === 'holiday' && !isTarget && hasSwapWindow && !isMineSwapped && !myPendingReq && !!myEmpId;
     const rowStyle = isPast ? 'opacity:0.55' : (isNext ? 'background:var(--primary-soft)' : (isTarget ? 'background:var(--success-soft)' : ''));
     const titleStyle = isMineSwapped ? 'text-decoration:line-through;color:var(--text-2)' : 'color:var(--text)';
 
@@ -7623,22 +7633,30 @@ function openSwapRequestForm(calendarItemId) {
     const d = new Date(ymd[0], ymd[1] - 1, ymd[2] + 1);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
-  const minSwapDate = dayAfter(holiday.date);
+  // ขั้นต่ำของ swap date = วันถัดไปของวันหยุด แต่ถ้าวันหยุดผ่านแล้ว ใช้ "วันพรุ่งนี้" แทน (กันเลือกวันในอดีต)
+  const todayStr = tz.today();
+  const dayAfterHoliday = dayAfter(holiday.date);
+  const dayAfterToday = dayAfter(todayStr);
+  const minSwapDate = dayAfterHoliday > dayAfterToday ? dayAfterHoliday : dayAfterToday;
+  // วันสิ้นปีของปีวันหยุด — กันการ swap ข้ามปี
+  const holidayYear = parseYMD(holiday.date)?.[0];
+  const maxSwapDate = holidayYear ? `${holidayYear}-12-31` : '';
+  const holidayIsPast = holiday.date < todayStr;
 
   modal.open('ขอเปลี่ยนวันหยุดของฉัน', `
     <div style="background:var(--surface-2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
-      <div class="muted-2" style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;font-weight:600">วันหยุดเดิม (ที่ฉันจะมาทำงาน)</div>
+      <div class="muted-2" style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;font-weight:600">วันหยุดเดิม (ที่ฉันจะมาทำงาน${holidayIsPast ? ' / มาทำงานไปแล้ว' : ''})</div>
       <div style="font-size:15px;font-weight:600;margin-top:2px">${escapeHtml(holiday.title)}</div>
-      <div style="font-size:13px;color:var(--text-2);margin-top:2px">${fmt.date(holiday.date)}</div>
+      <div style="font-size:13px;color:var(--text-2);margin-top:2px">${fmt.date(holiday.date)}${holidayIsPast ? ' <span style="color:var(--warning)">· ผ่านมาแล้ว</span>' : ''}</div>
     </div>
     <div class="muted-2" style="font-size:12px;margin-bottom:14px;padding:10px 12px;background:var(--info-soft,#e3f2fd);border-radius:8px;border-left:3px solid var(--info)">
       💡 ใช้เมื่อบริษัทขอให้คุณมาทำงานในวันหยุดประเพณี — คำขอจะถูกส่งให้ผู้บังคับบัญชาอนุมัติเช่นเดียวกับการลา<br>
-      <strong>วันหยุดชดเชยต้องเป็นวันหลังวันหยุดประเพณี</strong> (ไม่ใช่วันก่อน)
+      <strong>วันหยุดชดเชยต้องอยู่ในปีปฏิทินเดียวกัน</strong> ${holidayIsPast ? 'และเลือกได้ตั้งแต่พรุ่งนี้เป็นต้นไป' : 'และต้องเป็นวันหลังวันหยุดประเพณี'}
     </div>
     <form id="swapReqForm">
       <div class="form-group"><label>วันที่ขอหยุดชดเชย *</label>
-        <input name="swapToDate" type="date" value="${minSwapDate}" min="${minSwapDate}" required/>
-        <div class="muted-2" style="font-size:11.5px;margin-top:4px">ต้องเป็นวันหลังจาก ${fmt.date(holiday.date)}</div>
+        <input name="swapToDate" type="date" value="${minSwapDate}" min="${minSwapDate}" max="${maxSwapDate}" required/>
+        <div class="muted-2" style="font-size:11.5px;margin-top:4px">เลือกได้ตั้งแต่ ${fmt.date(minSwapDate)} ถึง ${fmt.date(maxSwapDate)}</div>
       </div>
       <div class="form-group"><label>เหตุผล *</label>
         <textarea name="reason" rows="3" required placeholder="เช่น ได้รับคำสั่งจากหัวหน้าให้มาทำงานในวันสงกรานต์ ขอหยุดวันที่ ... แทน"></textarea>
@@ -7658,6 +7676,9 @@ function openSwapRequestForm(calendarItemId) {
       const data = Object.fromEntries(new FormData(e.target).entries());
       if (!data.swapToDate) { toast('กรุณาเลือกวันหยุดชดเชย', 'warning'); return; }
       if (data.swapToDate <= holiday.date) { toast('วันหยุดชดเชยต้องเป็นวันหลังวันหยุดประเพณี (ห้ามเป็นวันเดียวกัน หรือก่อนหน้า)', 'warning'); return; }
+      if (data.swapToDate < dayAfterToday) { toast('วันหยุดชดเชยต้องเป็นวันในอนาคต (อย่างน้อยพรุ่งนี้)', 'warning'); return; }
+      const swapYear = parseYMD(data.swapToDate)?.[0];
+      if (swapYear !== holidayYear) { toast(`วันหยุดชดเชยต้องอยู่ในปีเดียวกับวันหยุดประเพณี (พ.ศ. ${holidayYear + 543})`, 'warning'); return; }
       await DB.saveHolidaySwapRequest({
         calendarItemId,
         employeeId: myEmpId,
