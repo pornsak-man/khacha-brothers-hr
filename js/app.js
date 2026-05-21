@@ -7451,12 +7451,25 @@ router.register('calendar', () => {
       </div>`;
     };
 
+    // Subtitle ตาม role ของผู้ใช้ — บอกขอบเขตการเห็นข้อมูลให้ชัดเจน
+    const role = DB.role;
+    let scopeLabel = 'เห็นเฉพาะคำขอของฉัน';
+    if (DB.isHR) scopeLabel = 'เห็นคำขอทั้งหมดของบริษัท';
+    else if (role === 'operation_manager') scopeLabel = 'เห็นคำขอทั้งหมดของบริษัท';
+    else if (role === 'area_manager') {
+      const branches = (DB.scopedBranches && DB.scopedBranches()) || [];
+      scopeLabel = `เห็นคำขอใน ${branches.length} สาขา ที่ดูแล`;
+    } else if (role === 'branch_manager') {
+      const myBranch = DB.getEmployee(DB.profile?.employee_id)?.branch;
+      scopeLabel = myBranch ? `เห็นคำขอในสาขา ${myBranch}` : 'เห็นคำขอในสาขาที่ดูแล';
+    }
+
     return `
     <div class="sw-chart-card">
       <div class="sw-chart-header">
         <div>
           <div class="sw-chart-title">คำขอเปลี่ยนวันหยุด</div>
-          <div class="sw-chart-sub">ใช้ chain อนุมัติเดียวกับการลา · เห็นเฉพาะคำขอในขอบเขตของคุณ</div>
+          <div class="sw-chart-sub">ใช้ chain อนุมัติเดียวกับการลา · ${escapeHtml(scopeLabel)}</div>
         </div>
       </div>
 
