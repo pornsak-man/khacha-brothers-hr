@@ -2092,18 +2092,35 @@ const DB = {
     // ใช้ getEmployees() เพื่อ auto-scope ตาม RBAC (admin/hr เห็นทั้งหมด, manager เห็นเฉพาะสาขา)
     const emps = this.getEmployees();
     const active = emps.filter(e => this.empStatus(e) !== 'resigned');
+    // Turnover คิดเฉพาะ "พนักงานประจำ" (full-time) เท่านั้น — ไม่รวม part-time/contract/probation
+    const isFullTime = (e) => e.employeeType === 'พนักงานประจำ';
+    const ftActive = active.filter(isFullTime);
+    const ftExitThisMonth = emps.filter(e => isFullTime(e) && e.terminationDate && String(e.terminationDate).startsWith(thisYM)).length;
+    const ftExitYTD = emps.filter(e => isFullTime(e) && e.terminationDate && e.terminationDate >= yearStart && e.terminationDate <= today).length;
+    // หัว KPI อื่นยังนับทั้งหมด
     const newThisMonth = emps.filter(e => e.hireDate && String(e.hireDate).startsWith(thisYM)).length;
     const exitThisMonth = emps.filter(e => e.terminationDate && String(e.terminationDate).startsWith(thisYM)).length;
     const exitYTD = emps.filter(e => e.terminationDate && e.terminationDate >= yearStart && e.terminationDate <= today).length;
     const hireYTD = emps.filter(e => e.hireDate && e.hireDate >= yearStart && e.hireDate <= today).length;
     const headcount = active.length;
-    const turnoverMonth = headcount ? (exitThisMonth / headcount * 100) : 0;
-    const turnoverYTD = headcount ? (exitYTD / headcount * 100) : 0;
+    const ftHeadcount = ftActive.length;
+    const turnoverMonth = ftHeadcount ? (ftExitThisMonth / ftHeadcount * 100) : 0;
+    const turnoverYTD = ftHeadcount ? (ftExitYTD / ftHeadcount * 100) : 0;
     const turnoverAnnualized = tm ? (turnoverYTD * 12 / tm) : 0;
+    // ─── พนักงานลางานวันนี้ — leave_requests ที่ approved + วันนี้อยู่ในช่วง ───
+    // auto-scope ผ่าน leaveRequests ที่ admin/hr เห็นทุก row แต่ manager เห็นเฉพาะของในสาขา
+    // เพื่อความเรียบง่าย — นับจาก data ทั้งหมด แต่ filter ตาม emp.branch ที่ user เห็น
+    const visibleEmpIds = new Set(emps.map(e => e.id));
+    const onLeaveToday = (this.data.leaveRequests || []).filter(r =>
+      r.status === 'approved' &&
+      r.startDate <= today && r.endDate >= today &&
+      visibleEmpIds.has(r.employeeId)
+    );
     return {
-      headcount, total: emps.length,
+      headcount, ftHeadcount, total: emps.length,
       newThisMonth, exitThisMonth, hireYTD, exitYTD,
       turnoverMonth, turnoverYTD, turnoverAnnualized,
+      onLeaveToday: onLeaveToday.length,
       year: ty, monthsElapsed: tm
     };
   },
@@ -2215,9 +2232,10 @@ const DB = {
   // คำนวณรายได้รวม (เงินเดือน + ค่าตำแหน่ง + เดินทาง + อาหาร + เบี้ยเลี้ยง + ภาษา + อื่นๆ)
   // avg/min/max ต่อตำแหน่งงาน — เฉพาะที่ยังปฏิบัติงาน
   // คืน [{ name, avg, min, max, count, level }] เรียง avg มาก → น้อย
-  // ─── TURNOVER RATE per branch (rolling 12 months) ───
-  // สูตร: (จำนวนพนักงานที่ลาออกใน 12 เดือนล่าสุด / จำนวนพนักงานเฉลี่ยในช่วงนั้น) × 100
+  // ─── TURNOVER RATE per branch (rolling 12 months) — เฉพาะพนักงานประจำ ───
+  // สูตร: (จำนวนพนักงานประจำที่ลาออกใน 12 เดือนล่าสุด / จำนวนพนักงานประจำเฉลี่ย) × 100
   // avgHeadcount ใช้สูตรประมาณ: active ปัจจุบัน + (exits / 2) — สะท้อนค่าเฉลี่ยช่วงเวลา
+  // กรอง: employeeType === 'พนักงานประจำ' เท่านั้น (ไม่รวม part-time, สัญญา, ทดลองงาน, ฝึกงาน)
   getTurnoverByBranch() {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
     // คำนวณวันที่ 12 เดือนย้อนหลัง
@@ -2228,6 +2246,8 @@ const DB = {
     const map = new Map(); // branch → { active, exits }
     for (const e of this.data.employees) {
       if (!e.branch) continue;
+      // กรองเฉพาะพนักงานประจำ
+      if (e.employeeType !== 'พนักงานประจำ') continue;
       if (!map.has(e.branch)) map.set(e.branch, { active: 0, exits: 0 });
       const stat = map.get(e.branch);
       const status = this.empStatus(e);

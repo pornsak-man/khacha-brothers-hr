@@ -745,12 +745,12 @@ router.register('dashboard', () => {
       </div>
     </div>
 
-    <div class="sw-stats-grid">
+    <div class="sw-stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
       <div class="sw-stat-card sw-accent-primary">
         <div class="sw-stat-icon">${ICON.users}</div>
         <div class="sw-stat-label">พนักงานปัจจุบัน</div>
         <div class="sw-stat-value">${fmt.num(kpi.headcount)}</div>
-        <div class="sw-stat-change">ที่ยังไม่พ้นสภาพ · รวมทั้งระบบ ${fmt.num(kpi.total)}</div>
+        <div class="sw-stat-change">ประจำ ${fmt.num(kpi.ftHeadcount)} คน · รวมระบบ ${fmt.num(kpi.total)}</div>
       </div>
       <div class="sw-stat-card sw-accent-green">
         <div class="sw-stat-icon">${ICON.trendUp}</div>
@@ -766,11 +766,17 @@ router.register('dashboard', () => {
         <div class="sw-stat-change">รวมปี ${kpi.year}: ${fmt.num(kpi.exitYTD)} คน · 12 เดือนย้อนหลัง</div>
         <div class="sw-stat-spark"><canvas id="sparkExits"></canvas></div>
       </div>
+      <div class="sw-stat-card" style="border-left:4px solid #1e88e5">
+        <div class="sw-stat-icon" style="background:rgba(30,136,229,0.12);color:#1e88e5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+        <div class="sw-stat-label">พนักงานลางาน</div>
+        <div class="sw-stat-value" style="color:#1e88e5">${fmt.num(kpi.onLeaveToday)}</div>
+        <div class="sw-stat-change">${kpi.onLeaveToday > 0 ? 'ไม่อยู่วันนี้ · กำลังอนุมัติแล้ว' : 'พนักงานครบทุกคนวันนี้'}</div>
+      </div>
       <div class="sw-stat-card sw-accent-amber" style="border-left:4px solid ${tvColor}">
         <div class="sw-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg></div>
         <div class="sw-stat-label">Turnover Rate (คาดทั้งปี)</div>
         <div class="sw-stat-value" style="color:${tvColor}">${kpi.turnoverAnnualized.toFixed(2)}%</div>
-        <div class="sw-stat-change"><span class="sw-dot ${tvDot}"></span>${tvLabel} · YTD ${kpi.turnoverYTD.toFixed(2)}%</div>
+        <div class="sw-stat-change"><span class="sw-dot ${tvDot}"></span>${tvLabel} · เฉพาะ ปจ. · YTD ${kpi.turnoverYTD.toFixed(2)}%</div>
       </div>
     </div>
 
@@ -916,7 +922,7 @@ router.register('dashboard', () => {
     <div class="sw-section-label">การลาออก</div>
     <div class="sw-chart-card">
       <div class="sw-chart-title">Turnover Rate ของทุกสาขา</div>
-      <div class="sw-chart-sub">อัตราการลาออก 12 เดือนล่าสุด · (จำนวนลาออก / จำนวนพนักงานเฉลี่ย) × 100 · เรียงสูงสุด → ต่ำสุด · ${s.turnoverByBranch.length} สาขา</div>
+      <div class="sw-chart-sub">อัตราการลาออกของ <strong>พนักงานประจำ</strong> 12 เดือนล่าสุด · (จำนวนลาออก / จำนวนเฉลี่ย) × 100 · เรียงสูงสุด → ต่ำสุด · ${s.turnoverByBranch.length} สาขา</div>
       <canvas id="chartTurnoverByBranch" style="max-height:${Math.max(280, s.turnoverByBranch.length * 28)}px"></canvas>
     </div>
   `;
