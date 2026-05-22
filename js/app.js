@@ -786,6 +786,17 @@ router.register('dashboard', () => {
         <div class="sw-stat-value" style="color:#1e88e5">${fmt.num(kpi.onLeaveToday)}</div>
         <div class="sw-stat-change">${kpi.onLeaveToday > 0 ? 'ไม่อยู่วันนี้ · กำลังอนุมัติแล้ว' : 'พนักงานครบทุกคนวันนี้'}</div>
       </div>
+      ${(() => {
+        const pr = kpi.probationPassRate;
+        const prColor = pr === null ? 'var(--text-3)' : pr >= 80 ? 'var(--success)' : pr >= 60 ? 'var(--warning)' : 'var(--danger)';
+        const prLabel = pr === null ? '—' : pr >= 80 ? 'ดีมาก' : pr >= 60 ? 'ปานกลาง' : 'ต่ำ';
+        return `<div class="sw-stat-card" style="border-left:4px solid ${prColor}">
+        <div class="sw-stat-icon" style="background:rgba(135,169,107,0.14);color:var(--sage,#87a96b)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
+        <div class="sw-stat-label">อัตราผ่านทดลองงาน</div>
+        <div class="sw-stat-value" style="color:${prColor}">${pr === null ? '—' : pr.toFixed(1) + '%'}</div>
+        <div class="sw-stat-change">${pr === null ? 'ยังไม่มี cohort ครบ 120 วัน' : `${prLabel} · ${fmt.num(kpi.probationPassed)}/${fmt.num(kpi.probationCohortSize)} คน${kpi.inProbation ? ' · กำลังทดลอง ' + fmt.num(kpi.inProbation) : ''}`}</div>
+      </div>`;
+      })()}
       <div class="sw-stat-card sw-accent-amber" style="border-left:4px solid ${tvColor}">
         <div class="sw-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg></div>
         <div class="sw-stat-label">Turnover Rate (คาดทั้งปี)</div>

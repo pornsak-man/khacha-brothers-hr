@@ -2268,11 +2268,57 @@ const DB = {
       r.startDate <= today && r.endDate >= today &&
       visibleEmpIds.has(r.employeeId)
     );
+
+    // ─── อัตราผ่านทดลองงาน (120 วันแรก) ───
+    // Cohort: พนักงานที่จ้างใน 12 เดือนล่าสุด + เลย 120 วันแรกแล้ว
+    //   (ไม่นับคนที่ยังไม่ครบ 120 วัน เพราะยังตัดสินไม่ได้)
+    // Passed = ยังทำงานอยู่ หรือ ลาออก หลัง วันจ้าง + 120 วัน
+    // Failed = ลาออก ภายใน 120 วันแรก
+    const addDays = (dateStr, days) => {
+      const m = String(dateStr).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (!m) return null;
+      const d = new Date(+m[1], +m[2] - 1, +m[3] + days);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    const todayDay = Number(today.slice(8, 10)) || 1;
+    const twelveMonthsAgo = (() => {
+      const d = new Date(ty, tm - 13, todayDay);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    })();
+    // Cohort: hireDate ใน 12 เดือนย้อนหลัง + (hireDate + 120) <= today
+    const cohort = emps.filter(e => {
+      if (!e.hireDate || e.hireDate < twelveMonthsAgo || e.hireDate > today) return false;
+      const day120 = addDays(e.hireDate, 120);
+      return day120 && day120 <= today;  // ผ่าน 120 วันแล้ว (รู้ผลแล้ว)
+    });
+    let probationPassed = 0;
+    let probationFailed = 0;
+    for (const e of cohort) {
+      const day120 = addDays(e.hireDate, 120);
+      if (!e.terminationDate || e.terminationDate > day120) {
+        probationPassed++;
+      } else {
+        probationFailed++;
+      }
+    }
+    const probationCohortSize = cohort.length;
+    const probationPassRate = probationCohortSize > 0
+      ? (probationPassed / probationCohortSize * 100)
+      : null;
+    // คนกำลังทดลอง (ยังไม่ครบ 120 วัน + ไม่พ้นสภาพ)
+    const inProbation = emps.filter(e => {
+      if (!e.hireDate || this.empStatus(e) === 'resigned') return false;
+      const day120 = addDays(e.hireDate, 120);
+      return day120 && day120 > today && e.hireDate <= today;
+    }).length;
+
     return {
       headcount, ftHeadcount, total: emps.length,
       newThisMonth, exitThisMonth, hireYTD, exitYTD,
       turnoverMonth, turnoverYTD, turnoverAnnualized,
       onLeaveToday: onLeaveToday.length,
+      probationPassRate, probationPassed, probationFailed,
+      probationCohortSize, inProbation,
       year: ty, monthsElapsed: tm
     };
   },
