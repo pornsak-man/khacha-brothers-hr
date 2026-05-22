@@ -21,10 +21,10 @@ CREATE TABLE IF NOT EXISTS public.company_announcements (
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_ann_type     ON public.company_announcements(type);
-CREATE INDEX IF NOT EXISTS idx_ann_pinned   ON public.company_announcements(pinned DESC, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_ann_priority ON public.company_announcements(priority);
-CREATE INDEX IF NOT EXISTS idx_ann_year     ON public.company_announcements((EXTRACT(YEAR FROM created_at)));
+CREATE INDEX IF NOT EXISTS idx_ann_type       ON public.company_announcements(type);
+CREATE INDEX IF NOT EXISTS idx_ann_pinned     ON public.company_announcements(pinned DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ann_priority   ON public.company_announcements(priority);
+CREATE INDEX IF NOT EXISTS idx_ann_created_at ON public.company_announcements(created_at DESC);
 
 -- ─── RLS ───────────────────────────────────────────────
 ALTER TABLE public.company_announcements ENABLE ROW LEVEL SECURITY;
