@@ -421,6 +421,7 @@ const router = {
       evaluations: 'ประเมินผลงาน',
       reports: 'รายงาน / Export',
       calendar: 'วันหยุดประเพณี',
+      announcements: 'ประกาศ & คำสั่ง',
       sso: 'ประกันสังคม',
       'branch-managers': 'ผู้บังคับบัญชาสาขา',
       'user-roles': 'ผู้ใช้และสิทธิ์',
@@ -468,7 +469,8 @@ const _RT_PAGE_DEPS = {
   audit_log: ['audit'],
   leave_requests: ['dashboard', 'leave'],
   leave_types: ['leave'],
-  holiday_swap_requests: ['dashboard', 'calendar']
+  holiday_swap_requests: ['dashboard', 'calendar'],
+  company_announcements: ['dashboard', 'announcements']
 };
 
 // อัปเดต badge แจ้งเตือนของ "จัดชุดพนักงาน" (รอจัด)
@@ -8091,6 +8093,257 @@ async function deleteCalRec(id) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  PAGE: ANNOUNCEMENTS — ประกาศบริษัท + คำสั่งบริษัท
+// ═══════════════════════════════════════════════════════
+const _annState = { tab: 'all', search: '', year: '' };
+function setAnnFilter(k, v) {
+  const newVal = (v ?? '').trim();
+  if (_annState[k] === newVal) return;
+  _annState[k] = newVal;
+  router.go('announcements');
+}
+function clearAnnFilters() {
+  _annState.tab = 'all';
+  _annState.search = '';
+  _annState.year = '';
+  router.go('announcements');
+}
+
+const ANN_TYPE_LABEL = { announcement: 'ประกาศ', order: 'คำสั่ง' };
+const ANN_TYPE_BADGE = { announcement: 'badge-info', order: 'badge-warning' };
+const ANN_PRIORITY_LABEL = { urgent: 'ด่วนมาก', high: 'สำคัญ', normal: 'ปกติ' };
+const ANN_PRIORITY_BADGE = { urgent: 'badge-danger', high: 'badge-warning', normal: '' };
+
+router.register('announcements', () => {
+  const all = DB.getAnnouncements();
+  const todayYear = new Date().getFullYear();
+
+  // Filter
+  let filtered = all;
+  if (_annState.tab !== 'all') filtered = filtered.filter(a => a.type === _annState.tab);
+  if (_annState.year) filtered = filtered.filter(a => String(a.createdAt || '').startsWith(_annState.year));
+  if (_annState.search) {
+    const s = _annState.search.toLowerCase();
+    filtered = filtered.filter(a => (a.title || '').toLowerCase().includes(s) || (a.body || '').toLowerCase().includes(s));
+  }
+
+  const counts = { all: all.length, announcement: all.filter(a => a.type === 'announcement').length, order: all.filter(a => a.type === 'order').length };
+  const pinned = filtered.filter(a => a.pinned);
+  const recent = filtered.filter(a => !a.pinned);
+
+  // ปีสำหรับ dropdown (มีข้อมูล + ปัจจุบัน)
+  const yearsSet = new Set(all.map(a => String(a.createdAt || '').slice(0, 4)).filter(Boolean));
+  for (let y = todayYear - 2; y <= todayYear; y++) yearsSet.add(String(y));
+  const yearOptions = Array.from(yearsSet).filter(Boolean).sort((a, b) => Number(b) - Number(a));
+  const hasFilters = !!(_annState.search || _annState.year || _annState.tab !== 'all');
+
+  const renderCard = (a) => {
+    const TYPE = { label: ANN_TYPE_LABEL[a.type] || a.type, cls: ANN_TYPE_BADGE[a.type] || 'badge' };
+    const PRI = a.priority !== 'normal' ? { label: ANN_PRIORITY_LABEL[a.priority], cls: ANN_PRIORITY_BADGE[a.priority] } : null;
+    const dateStr = a.createdAt ? new Date(a.createdAt).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Bangkok' }) : '';
+    const bodyPreview = (a.body || '').replace(/\s+/g, ' ').slice(0, 140);
+    return `<div class="sw-ann-card ${a.pinned ? 'is-pinned' : ''}" onclick="openAnnouncementDetail('${a.id}')">
+      ${a.imageUrl ? `<div class="sw-ann-thumb" style="background-image:url('${escapeHtml(a.imageUrl)}')"></div>` : '<div class="sw-ann-thumb sw-ann-thumb-empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><path d="M3 11l18-5v12L3 14v-3z"/></svg></div>'}
+      <div class="sw-ann-body">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+          <span class="badge ${TYPE.cls}" style="font-size:10.5px">${TYPE.label}</span>
+          ${PRI ? `<span class="badge ${PRI.cls}" style="font-size:10.5px">⚠ ${PRI.label}</span>` : ''}
+          ${a.pinned ? '<span style="font-size:11px;color:var(--warning);font-weight:600">📌 ปักหมุด</span>' : ''}
+          <span class="muted-2" style="font-size:11.5px;margin-left:auto">${dateStr}</span>
+        </div>
+        <div style="font-size:15px;font-weight:600;color:var(--text);line-height:1.35;margin-bottom:4px">${escapeHtml(a.title)}</div>
+        <div class="muted-2" style="font-size:12.5px;line-height:1.5">${escapeHtml(bodyPreview)}${a.body.length > 140 ? '...' : ''}</div>
+      </div>
+    </div>`;
+  };
+
+  return `
+    <div class="sw-page-header">
+      <div>
+        <div class="sw-page-title">ประกาศ &amp; คำสั่งบริษัท</div>
+        <div class="sw-page-subtitle">${DB.isHR ? 'สร้าง · แก้ไข · เผยแพร่ให้พนักงาน' : 'ติดตามข่าวสารและคำสั่งจากบริษัท'} · รวม ${fmt.num(all.length)} รายการ</div>
+      </div>
+      <div class="sw-page-actions">${DB.isHR ? '<button class="btn btn-primary" onclick="openAnnouncementForm()">+ สร้างใหม่</button>' : ''}</div>
+    </div>
+
+    <div class="sw-tabs" style="margin-bottom:14px">
+      <button class="sw-tab ${_annState.tab === 'all' ? 'active' : ''}" onclick="setAnnFilter('tab', 'all')">
+        <span>ทั้งหมด</span><span class="sw-tab-pill">${fmt.num(counts.all)}</span>
+      </button>
+      <button class="sw-tab ${_annState.tab === 'announcement' ? 'active' : ''}" onclick="setAnnFilter('tab', 'announcement')">
+        <span>ประกาศ</span>${counts.announcement ? `<span class="sw-tab-pill">${fmt.num(counts.announcement)}</span>` : ''}
+      </button>
+      <button class="sw-tab ${_annState.tab === 'order' ? 'active' : ''}" onclick="setAnnFilter('tab', 'order')">
+        <span>คำสั่ง</span>${counts.order ? `<span class="sw-tab-pill">${fmt.num(counts.order)}</span>` : ''}
+      </button>
+    </div>
+
+    <div class="sw-filter-bar" style="margin-bottom:18px">
+      <input type="text" class="sw-filter-input" placeholder="🔍 ค้นชื่อ/เนื้อหา" value="${escapeHtml(_annState.search)}"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();setAnnFilter('search', this.value);}"
+        onblur="setAnnFilter('search', this.value)"/>
+      <select class="sw-filter-select" onchange="setAnnFilter('year', this.value)">
+        <option value="">— ทุกปี —</option>
+        ${yearOptions.map(y => `<option value="${y}" ${_annState.year === y ? 'selected' : ''}>ปี ${Number(y) + 543}${Number(y) === todayYear ? ' (ปัจจุบัน)' : ''}</option>`).join('')}
+      </select>
+      ${hasFilters ? `<button class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearAnnFilters()">✕ ล้างตัวกรอง</button>` : ''}
+    </div>
+
+    ${filtered.length ? `
+      ${pinned.length ? `<div class="sw-section-label" style="margin-bottom:10px">📌 ปักหมุด</div>
+      <div class="sw-ann-grid">${pinned.map(renderCard).join('')}</div>` : ''}
+      ${recent.length ? `${pinned.length ? '<div class="sw-section-label" style="margin-top:24px;margin-bottom:10px">รายการล่าสุด</div>' : ''}
+      <div class="sw-ann-grid">${recent.map(renderCard).join('')}</div>` : ''}
+    ` : `
+      <div class="sw-chart-card">
+        <div class="empty-state" style="padding:60px 20px">
+          <div style="font-size:42px;margin-bottom:12px;opacity:0.35">📣</div>
+          <div class="title" style="font-size:16px;font-weight:600">${hasFilters ? 'ไม่พบประกาศตามตัวกรอง' : 'ยังไม่มีประกาศหรือคำสั่ง'}</div>
+          <div class="hint" style="margin-top:6px">${hasFilters ? 'ลองล้างตัวกรองเพื่อดูทั้งหมด' : (DB.isHR ? 'กด + สร้างใหม่ เพื่อเริ่ม' : 'รอ HR ประกาศ')}</div>
+        </div>
+      </div>`}
+  `;
+});
+
+function openAnnouncementDetail(id) {
+  const a = DB.getAnnouncement(id);
+  if (!a) { toast('ไม่พบประกาศ', 'error'); return; }
+  const TYPE = { label: ANN_TYPE_LABEL[a.type] || a.type, cls: ANN_TYPE_BADGE[a.type] || 'badge' };
+  const PRI = a.priority !== 'normal' ? { label: ANN_PRIORITY_LABEL[a.priority], cls: ANN_PRIORITY_BADGE[a.priority] } : null;
+  const createdStr = a.createdAt ? new Date(a.createdAt).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  modal.open(a.title, `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <span class="badge ${TYPE.cls}">${TYPE.label}</span>
+      ${PRI ? `<span class="badge ${PRI.cls}">⚠ ${PRI.label}</span>` : ''}
+      ${a.pinned ? '<span style="font-size:12px;color:var(--warning);font-weight:600">📌 ปักหมุด</span>' : ''}
+      <span class="muted-2" style="font-size:12px;margin-left:auto">${createdStr}</span>
+    </div>
+    ${a.imageUrl ? `<div style="margin-bottom:14px;border-radius:10px;overflow:hidden;border:1px solid var(--border)"><img src="${escapeHtml(a.imageUrl)}" style="width:100%;display:block;max-height:420px;object-fit:contain;background:var(--surface-2)"/></div>` : ''}
+    ${(a.effectiveDate || a.expiresDate) ? `<div style="display:flex;gap:14px;font-size:12.5px;color:var(--text-2);padding:10px 14px;background:var(--surface-2);border-radius:8px;margin-bottom:14px">
+      ${a.effectiveDate ? `<div><strong>มีผลตั้งแต่:</strong> ${fmt.date(a.effectiveDate)}</div>` : ''}
+      ${a.expiresDate ? `<div><strong>สิ้นสุด:</strong> ${fmt.date(a.expiresDate)}</div>` : ''}
+    </div>` : ''}
+    <div style="font-size:14px;line-height:1.7;white-space:pre-wrap;color:var(--text)">${escapeHtml(a.body || '')}</div>
+    <div class="form-actions">
+      <button type="button" class="btn btn-secondary" data-close>ปิด</button>
+      ${DB.isHR ? `<button type="button" class="btn btn-ghost" onclick="deleteAnnouncement('${a.id}')">ลบ</button>
+      <button type="button" class="btn btn-primary" onclick="modal.close();openAnnouncementForm('${a.id}')">แก้ไข</button>` : ''}
+    </div>
+  `);
+}
+
+function openAnnouncementForm(id = null) {
+  if (!requireHR()) return;
+  const editing = id ? DB.getAnnouncement(id) : null;
+  const a = editing || { type: 'announcement', title: '', body: '', imageUrl: null, priority: 'normal', pinned: false, effectiveDate: '', expiresDate: '' };
+  let pendingImageUrl = a.imageUrl;
+  modal.open(editing ? 'แก้ไขประกาศ' : 'สร้างประกาศใหม่', `
+    <form id="annForm">
+      <div class="form-grid">
+        <div class="form-group"><label>ประเภท *</label>
+          <select name="type" required>
+            <option value="announcement" ${a.type === 'announcement' ? 'selected' : ''}>📣 ประกาศ</option>
+            <option value="order" ${a.type === 'order' ? 'selected' : ''}>📋 คำสั่ง</option>
+          </select>
+        </div>
+        <div class="form-group"><label>ความสำคัญ</label>
+          <select name="priority">
+            <option value="normal" ${a.priority === 'normal' ? 'selected' : ''}>ปกติ</option>
+            <option value="high" ${a.priority === 'high' ? 'selected' : ''}>สำคัญ</option>
+            <option value="urgent" ${a.priority === 'urgent' ? 'selected' : ''}>ด่วนมาก</option>
+          </select>
+        </div>
+        <div class="form-group span-2"><label>หัวข้อ *</label>
+          <input name="title" value="${escapeHtml(a.title)}" required maxlength="200" placeholder="เช่น ประกาศวันหยุดประจำปี 2569"/>
+        </div>
+        <div class="form-group span-2"><label>เนื้อหา *</label>
+          <textarea name="body" rows="6" required placeholder="รายละเอียดประกาศ...">${escapeHtml(a.body)}</textarea>
+        </div>
+        <div class="form-group"><label>วันมีผล (optional)</label>
+          <input name="effectiveDate" type="date" value="${a.effectiveDate || ''}"/>
+        </div>
+        <div class="form-group"><label>วันสิ้นสุด (optional)</label>
+          <input name="expiresDate" type="date" value="${a.expiresDate || ''}"/>
+        </div>
+        <div class="form-group span-2">
+          <label>รูปประกอบ (optional, max 5 MB)</label>
+          <input type="file" id="annImageInput" accept="image/*" style="margin-bottom:8px"/>
+          <div id="annImagePreview" style="${pendingImageUrl ? '' : 'display:none'};border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface-2);max-height:200px">
+            ${pendingImageUrl ? `<img src="${escapeHtml(pendingImageUrl)}" style="width:100%;display:block;max-height:200px;object-fit:contain"/>` : ''}
+          </div>
+          ${pendingImageUrl ? `<button type="button" class="btn btn-ghost btn-sm" id="annImageRemove" style="margin-top:6px;color:var(--danger)">✕ ลบรูป</button>` : ''}
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--surface-2);border-radius:8px;font-size:13px;cursor:pointer;grid-column:span 2">
+          <input type="checkbox" name="pinned" ${a.pinned ? 'checked' : ''}/>
+          <span>📌 <strong>ปักหมุด</strong> — แสดงไว้บนสุดของรายการ</span>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" data-close>ยกเลิก</button>
+        <button type="submit" class="btn btn-primary">${editing ? 'บันทึก' : 'เผยแพร่'}</button>
+      </div>
+    </form>
+  `, { size: 'lg' });
+
+  // Image upload handling
+  $('#annImageInput').addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast('ไฟล์ใหญ่เกิน 5 MB', 'warning'); e.target.value = ''; return; }
+    const preview = $('#annImagePreview');
+    preview.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-3)">⏳ กำลังอัปโหลด...</div>';
+    preview.style.display = '';
+    try {
+      const url = await DB.uploadAnnouncementImage(file);
+      pendingImageUrl = url;
+      preview.innerHTML = `<img src="${escapeHtml(url)}" style="width:100%;display:block;max-height:200px;object-fit:contain"/>`;
+    } catch (ex) {
+      preview.style.display = 'none';
+      toast('อัปโหลดไม่สำเร็จ: ' + (ex.message || ex), 'error');
+      e.target.value = '';
+    }
+  });
+  $('#annImageRemove')?.addEventListener('click', () => {
+    pendingImageUrl = null;
+    $('#annImagePreview').style.display = 'none';
+    $('#annImagePreview').innerHTML = '';
+    $('#annImageInput').value = '';
+  });
+
+  $('#annForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    try {
+      await DB.saveAnnouncement({
+        id: editing?.id,
+        type: data.type,
+        title: data.title,
+        body: data.body,
+        imageUrl: pendingImageUrl || null,
+        priority: data.priority,
+        pinned: data.pinned === 'on',
+        effectiveDate: data.effectiveDate || null,
+        expiresDate: data.expiresDate || null
+      });
+      modal.close();
+      toast(editing ? 'แก้ไขแล้ว' : 'เผยแพร่แล้ว', 'success');
+      router.go('announcements');
+    } catch (ex) { toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
+  });
+}
+
+async function deleteAnnouncement(id) {
+  if (!requireHR()) return;
+  if (!await modal.confirm('ลบประกาศ', 'แน่ใจหรือไม่? รูปประกอบจะถูกลบด้วย')) return;
+  try {
+    await DB.deleteAnnouncement(id);
+    modal.close();
+    toast('ลบแล้ว', 'success');
+    router.go('announcements');
+  } catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════
 //  PAGE: SETTINGS
 // ═══════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════
@@ -8119,7 +8372,8 @@ const AUDIT_TABLE_LABELS = {
   leave_requests: 'คำขอลา',
   leave_types: 'ตั้งค่าประเภทการลา',
   calendar_items: 'ปฏิทินวันหยุด',
-  holiday_swap_requests: 'คำขอเปลี่ยนวันหยุด'
+  holiday_swap_requests: 'คำขอเปลี่ยนวันหยุด',
+  company_announcements: 'ประกาศ & คำสั่ง'
 };
 const AUDIT_ACTION_LABELS = { INSERT: 'เพิ่ม', UPDATE: 'แก้ไข', DELETE: 'ลบ' };
 const AUDIT_ACTION_COLORS = { INSERT: 'badge-success', UPDATE: 'badge-info', DELETE: 'badge-danger' };

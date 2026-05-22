@@ -31,7 +31,8 @@ const DB = {
     branches: [],
     leaveRequests: [],
     leaveTypes: [],
-    holidaySwapRequests: []
+    holidaySwapRequests: [],
+    announcements: []
   },
 
   // ─── INDEX CACHES (O(1) lookup; rebuild lazily after data change) ───
@@ -230,9 +231,10 @@ const DB = {
       this._fetchAllPages('leave_requests', 'start_date', false).catch(() => []),
       this._fetchAllPages('leave_types', 'sort_order', true).catch(() => []),
       this._fetchAllPages('holiday_swap_requests', 'requested_at', false).catch(() => []),
-      this.client.from('user_profiles').select('*').then(r => r.data || [], () => [])
+      this.client.from('user_profiles').select('*').then(r => r.data || [], () => []),
+      this._fetchAllPages('company_announcements', 'created_at', false).catch(() => [])
     ]);
-    const [deps, pos, cal, comp, emps, branchRows, leaves, lvTypes, swapReqs, ups] = critical;
+    const [deps, pos, cal, comp, emps, branchRows, leaves, lvTypes, swapReqs, ups, anns] = critical;
 
     this.data.departments = (deps.data || []).map(this._depFromDB);
     this.data.positionLevels = (pos.data || []).map(this._posFromDB);
@@ -243,6 +245,7 @@ const DB = {
     this.data.leaveRequests = (leaves || []).map(this._leaveFromDB);
     this.data.leaveTypes = (lvTypes || []).map(this._leaveTypeFromDB);
     this.data.holidaySwapRequests = (swapReqs || []).map(this._swapReqFromDB);
+    this.data.announcements = (anns || []).map(this._annFromDB);
     this._userProfiles = ups || [];
 
     this._invalidateIndex();
@@ -345,7 +348,8 @@ const DB = {
       branches: { list: 'branches', from: this._branchFromDB },
       leave_requests: { list: 'leaveRequests', from: this._leaveFromDB },
       leave_types: { list: 'leaveTypes', from: this._leaveTypeFromDB },
-      holiday_swap_requests: { list: 'holidaySwapRequests', from: this._swapReqFromDB }
+      holiday_swap_requests: { list: 'holidaySwapRequests', from: this._swapReqFromDB },
+      company_announcements: { list: 'announcements', from: this._annFromDB }
     };
     const m = map[table];
     if (!m) return;
@@ -500,6 +504,31 @@ const DB = {
     title: c.title,
     type: c.type
   }),
+  _annFromDB: (r) => ({
+    id: r.id,
+    type: r.type || 'announcement',
+    title: r.title,
+    body: r.body || '',
+    imageUrl: r.image_url || null,
+    effectiveDate: r.effective_date || null,
+    expiresDate: r.expires_date || null,
+    priority: r.priority || 'normal',
+    pinned: !!r.pinned,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }),
+  _annToDB: (a) => ({
+    type: a.type || 'announcement',
+    title: a.title,
+    body: a.body || '',
+    image_url: a.imageUrl || null,
+    effective_date: a.effectiveDate || null,
+    expires_date: a.expiresDate || null,
+    priority: a.priority || 'normal',
+    pinned: !!a.pinned
+  }),
+
   _swapReqFromDB: (r) => ({
     id: r.id,
     calendarItemId: r.calendar_item_id,
@@ -2119,6 +2148,67 @@ const DB = {
     const { error } = await this.client.from('holiday_swap_requests').delete().eq('id', id);
     if (error) throw error;
     this.data.holidaySwapRequests = this.data.holidaySwapRequests.filter(r => r.id !== id);
+  },
+
+  // ─── COMPANY ANNOUNCEMENTS — ประกาศ + คำสั่งบริษัท ───
+  getAnnouncements({ type = null, year = null } = {}) {
+    let list = (this.data.announcements || []).slice();
+    if (type) list = list.filter(a => a.type === type);
+    if (year) list = list.filter(a => String(a.createdAt || '').startsWith(String(year)));
+    // เรียง: pinned ก่อน, แล้ว createdAt ใหม่สุด
+    return list.sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    });
+  },
+
+  getAnnouncement(id) {
+    return (this.data.announcements || []).find(a => a.id === id);
+  },
+
+  async saveAnnouncement(ann) {
+    if (!this.isHR) throw new Error('เฉพาะ admin / HR เท่านั้น');
+    const row = this._annToDB(ann);
+    if (ann.id) row.id = ann.id;
+    if (!ann.id && this.user?.id) row.created_by = this.user.id;
+    const { data, error } = await this.client.from('company_announcements').upsert(row).select().single();
+    if (error) throw error;
+    const mapped = this._annFromDB(data);
+    const idx = this.data.announcements.findIndex(a => a.id === mapped.id);
+    if (idx >= 0) this.data.announcements[idx] = mapped;
+    else this.data.announcements.unshift(mapped);
+    return mapped;
+  },
+
+  async deleteAnnouncement(id) {
+    if (!this.isHR) throw new Error('เฉพาะ admin / HR เท่านั้น');
+    // ลบรูปใน storage ก่อน (ถ้ามี)
+    const ann = this.getAnnouncement(id);
+    if (ann?.imageUrl) {
+      try {
+        const path = ann.imageUrl.split('/announcement-images/')[1];
+        if (path) await this.client.storage.from('announcement-images').remove([path]);
+      } catch (e) { /* image อาจถูกลบไปแล้ว — ปล่อยผ่าน */ }
+    }
+    const { error } = await this.client.from('company_announcements').delete().eq('id', id);
+    if (error) throw error;
+    this.data.announcements = this.data.announcements.filter(a => a.id !== id);
+  },
+
+  // upload รูปประกาศ → คืน public URL
+  async uploadAnnouncementImage(file) {
+    if (!this.isHR) throw new Error('เฉพาะ admin / HR เท่านั้น');
+    if (!file) throw new Error('ไม่พบไฟล์');
+    if (file.size > 5 * 1024 * 1024) throw new Error('ไฟล์ใหญ่เกิน 5 MB');
+    // สร้างชื่อไฟล์ unique
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    const path = `ann-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { error: uploadError } = await this.client.storage
+      .from('announcement-images')
+      .upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type || 'image/jpeg' });
+    if (uploadError) throw uploadError;
+    const { data } = this.client.storage.from('announcement-images').getPublicUrl(path);
+    return data.publicUrl;
   },
 
   // ─── PROBATION DUE — พนักงานที่อายุงานครบ N วันในเดือนนี้ ───
