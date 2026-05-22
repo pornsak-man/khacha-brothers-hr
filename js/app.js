@@ -399,10 +399,13 @@ const router = {
   pages: {},
   register(name, fn) { this.pages[name] = fn; },
   go(name) {
+    const _tGoStart = performance.now();
     const isNavigation = this.current !== name;
     this.current = name;
     // destroy charts ก่อนเปลี่ยนหน้า — canvas เก่าจะถูกทิ้ง, ป้องกัน memory leak + ghost tooltips
+    const _tDestroy = performance.now();
     if (typeof destroyAllCharts === 'function') destroyAllCharts();
+    const _destroyMs = performance.now() - _tDestroy;
     $$('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.page === name));
     const titles = {
       dashboard: 'แดชบอร์ด',
@@ -430,14 +433,22 @@ const router = {
     $('#pageTitle').textContent = titles[name] || name;
     const fn = this.pages[name];
     const content = $('#content');
-    content.innerHTML = fn ? fn() : '<p>ไม่พบหน้า</p>';
+    const _tHtml = performance.now();
+    const _html = fn ? fn() : '<p>ไม่พบหน้า</p>';
+    const _htmlBuildMs = performance.now() - _tHtml;
+    const _tInsert = performance.now();
+    content.innerHTML = _html;
+    const _insertMs = performance.now() - _tInsert;
     // ใส่ animation class เฉพาะตอนเปลี่ยนหน้าจริงๆ (ไม่ใส่ตอน refresh จาก realtime)
     if (isNavigation) {
       content.classList.remove('sw-anim-enter');
       void content.offsetWidth; // force reflow → ให้ animation รันใหม่
       content.classList.add('sw-anim-enter');
     }
+    const _tAfter = performance.now();
     if (window.afterRender) { window.afterRender(); window.afterRender = null; }
+    const _afterMs = performance.now() - _tAfter;
+    console.log(`[router] go(${name}): destroy=${_destroyMs.toFixed(1)}ms, htmlBuild=${_htmlBuildMs.toFixed(1)}ms, htmlSize=${(_html.length/1024).toFixed(1)}KB, insert=${_insertMs.toFixed(1)}ms, afterRender=${_afterMs.toFixed(1)}ms, total=${(performance.now() - _tGoStart).toFixed(1)}ms`);
     if (name === 'employees') wireEmployeePage();
     if (name === 'recruit') wireRecruitPage();
     if (name === 'settings' && typeof renderEmpAccounts === 'function') renderEmpAccounts();
@@ -728,23 +739,23 @@ router.register('dashboard', () => {
 
   // ─── Perf instrumentation (ใช้ debug หน้าแดชบอร์ดช้า — ดู console) ───
   const _tStart = performance.now();
-  const _t = {};
-  const _time = (label, fn) => { const t = performance.now(); const v = fn(); _t[label] = +(performance.now() - t).toFixed(1); return v; };
+  const _t = [];
+  const _time = (label, fn) => { const t = performance.now(); const v = fn(); _t.push(`${label}=${(performance.now() - t).toFixed(1)}ms`); return v; };
   const s = _time('getStats', () => DB.getStats());
   const kpi = _time('getDashboardKPI', () => DB.getDashboardKPI());
   const yearly = _time('getYearlyHireExit', () => DB.getYearlyHireExit());
   const monthly = yearly.months;
-  const trailing12 = _time('getMonthlyHireExit(12)', () => DB.getMonthlyHireExit(12));
+  const trailing12 = _time('getMonthlyHireExit', () => DB.getMonthlyHireExit(12));
   const branchStats = _time('getBranchStats', () => DB.getBranchStats());
   const recentEmps = _time('recentEmps', () => DB.getEmployees()
     .filter(e => DB.empStatus(e) !== 'resigned')
     .sort((a, b) => (b.hireDate || '').localeCompare(a.hireDate || ''))
     .slice(0, 10));
-  const reach90 = _time('getProbationDue(90)', () => DB.getProbationDue(90));
-  const reach119 = _time('getProbationDue(119)', () => DB.getProbationDue(119));
-  const probByBranch = _time('getProbationPassByBranch', () => DB.getProbationPassByBranch());
-  const pendingUniform = _time('getUniformRequests', () => DB.getUniformRequests({ status: 'pending' }));
-  console.log('[dashboard] data calls:', _t, 'total:', +(performance.now() - _tStart).toFixed(1) + 'ms', 'emps:', DB.data?.employees?.length);
+  const reach90 = _time('reach90', () => DB.getProbationDue(90));
+  const reach119 = _time('reach119', () => DB.getProbationDue(119));
+  const probByBranch = _time('probByBranch', () => DB.getProbationPassByBranch());
+  const pendingUniform = _time('pendingUniform', () => DB.getUniformRequests({ status: 'pending' }));
+  console.log('[dashboard] data:', _t.join(', '), '| total=' + (performance.now() - _tStart).toFixed(1) + 'ms', 'emps=' + DB.data?.employees?.length);
 
   window.afterRender = () => {
     const t0 = performance.now();
