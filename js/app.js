@@ -371,7 +371,9 @@ const auth = {
     $$('.nav-admin-only').forEach(el => { el.style.display = DB.isAdmin ? '' : 'none'; });
     $$('.nav-hr-only').forEach(el => { el.style.display = DB.isHR ? '' : 'none'; });
     const isStaffOnly = (DB.role === 'branch_staff' || DB.role === 'viewer');
-    $$('.nav-staff-hide').forEach(el => { if (isStaffOnly) el.style.display = 'none'; });
+    // ใช้ ternary 2 ทางเพื่อ reset display ตอน login ใหม่เป็น role ที่ต่างจากเดิม
+    // (ก่อนหน้านี้ใช้ if-only — ทำให้ inline display:none ค้างเมื่อ login จาก staff → admin)
+    $$('.nav-staff-hide').forEach(el => { el.style.display = isStaffOnly ? 'none' : ''; });
     router.go('dashboard');
   }
 };
