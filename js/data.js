@@ -2269,8 +2269,9 @@ const DB = {
       visibleEmpIds.has(r.employeeId)
     );
 
-    // ─── อัตราผ่านทดลองงาน (120 วันแรก) ───
-    // Cohort: พนักงานที่จ้างใน 12 เดือนล่าสุด + เลย 120 วันแรกแล้ว
+    // ─── อัตราผ่านทดลองงาน (120 วันแรก) — เฉพาะพนักงานประจำ ───
+    // Cohort: พนักงานประจำที่จ้างใน 12 เดือนล่าสุด + เลย 120 วันแรกแล้ว
+    //   (ไม่รวม part-time/contract/probation/intern/daily — รวมเฉพาะ ปจ.)
     //   (ไม่นับคนที่ยังไม่ครบ 120 วัน เพราะยังตัดสินไม่ได้)
     // Passed = ยังทำงานอยู่ หรือ ลาออก หลัง วันจ้าง + 120 วัน
     // Failed = ลาออก ภายใน 120 วันแรก
@@ -2285,8 +2286,9 @@ const DB = {
       const d = new Date(ty, tm - 13, todayDay);
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     })();
-    // Cohort: hireDate ใน 12 เดือนย้อนหลัง + (hireDate + 120) <= today
+    // Cohort: เฉพาะพนักงานประจำ + hireDate ใน 12 เดือนย้อนหลัง + (hireDate + 120) <= today
     const cohort = emps.filter(e => {
+      if (!isFullTime(e)) return false;  // เฉพาะพนักงานประจำ
       if (!e.hireDate || e.hireDate < twelveMonthsAgo || e.hireDate > today) return false;
       const day120 = addDays(e.hireDate, 120);
       return day120 && day120 <= today;  // ผ่าน 120 วันแล้ว (รู้ผลแล้ว)
@@ -2305,8 +2307,9 @@ const DB = {
     const probationPassRate = probationCohortSize > 0
       ? (probationPassed / probationCohortSize * 100)
       : null;
-    // คนกำลังทดลอง (ยังไม่ครบ 120 วัน + ไม่พ้นสภาพ)
+    // คนกำลังทดลอง (พนักงานประจำ + ยังไม่ครบ 120 วัน + ไม่พ้นสภาพ)
     const inProbation = emps.filter(e => {
+      if (!isFullTime(e)) return false;
       if (!e.hireDate || this.empStatus(e) === 'resigned') return false;
       const day120 = addDays(e.hireDate, 120);
       return day120 && day120 > today && e.hireDate <= today;
