@@ -3733,9 +3733,36 @@ async function deleteBranch(id) {
   } catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
 }
 
+// state การเรียงของหน้า "ฝ่าย" — คงอยู่ตลอด session (รีเฟรชแล้ว reset)
+let _deptSort = { by: 'name', dir: 'asc' };
+function setDeptSort(by) {
+  if (_deptSort.by === by) _deptSort.dir = _deptSort.dir === 'asc' ? 'desc' : 'asc';
+  else { _deptSort.by = by; _deptSort.dir = 'asc'; }
+  if (router.current === 'departments') router.go('departments');
+}
+
 router.register('departments', () => {
   const depts = DB.getDepartments();
   const emps = DB.getEmployees({ status: 'active' });
+  // นับพนักงานต่อฝ่ายล่วงหน้า — เร็วกว่า filter ใน loop
+  const countByDept = new Map();
+  for (const e of emps) countByDept.set(e.department, (countByDept.get(e.department) || 0) + 1);
+  // จัดเรียงตาม state (default = ชื่อฝ่าย asc — เหมือนเดิม)
+  const sortedDepts = depts.slice().sort((a, b) => {
+    let cmp = 0;
+    if (_deptSort.by === 'id') cmp = (a.id || '').localeCompare(b.id || '');
+    else if (_deptSort.by === 'name') cmp = (a.name || '').localeCompare(b.name || '', 'th');
+    else if (_deptSort.by === 'count') cmp = (countByDept.get(a.id) || 0) - (countByDept.get(b.id) || 0);
+    else if (_deptSort.by === 'manager') {
+      const ma = a.manager ? (DB.getEmployee(a.manager)?.firstName || '') : '';
+      const mb = b.manager ? (DB.getEmployee(b.manager)?.firstName || '') : '';
+      cmp = ma.localeCompare(mb, 'th');
+    }
+    return _deptSort.dir === 'asc' ? cmp : -cmp;
+  });
+  // helper สำหรับสร้างหัวคอลัมน์ที่กดได้
+  const arrow = (key) => _deptSort.by === key ? `<span style="color:var(--primary);margin-left:4px">${_deptSort.dir === 'asc' ? '▲' : '▼'}</span>` : '<span style="opacity:0.25;margin-left:4px">↕</span>';
+  const sortHead = (key, label, cls = '') => `<th class="${cls}" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setDeptSort('${key}')" title="คลิกเพื่อเรียงตาม${label}">${label}${arrow(key)}</th>`;
   return `
     <div class="sw-page-header">
       <div>
@@ -3748,16 +3775,23 @@ router.register('departments', () => {
       <div class="sw-chart-header">
         <div>
           <div class="sw-chart-title">รายการฝ่าย <span class="sw-chart-count">${fmt.num(depts.length)}</span></div>
-          <div class="sw-chart-sub">ฝ่ายที่มีพนักงานจริงและฝ่ายที่จัดตั้งไว้ · ระบุหัวหน้าฝ่ายเพื่อใช้อนุมัติเอกสารต่อไป</div>
+          <div class="sw-chart-sub">คลิกหัวคอลัมน์เพื่อจัดเรียง · คลิกซ้ำเพื่อสลับน้อย→มาก / มาก→น้อย</div>
         </div>
       </div>
       ${depts.length ? `
       <div class="table-wrap"><table class="table table-compact sw-emp-table">
-        <thead><tr><th>รหัส</th><th>ชื่อฝ่าย</th><th>หัวหน้าฝ่าย</th><th class="num">จำนวนพนักงาน</th><th>หมายเหตุ</th><th></th></tr></thead>
+        <thead><tr>
+          ${sortHead('id', 'รหัส')}
+          ${sortHead('name', 'ชื่อฝ่าย')}
+          ${sortHead('manager', 'หัวหน้าฝ่าย')}
+          ${sortHead('count', 'จำนวนพนักงาน', 'num')}
+          <th>หมายเหตุ</th>
+          <th></th>
+        </tr></thead>
         <tbody>
-          ${depts.map(d => {
+          ${sortedDepts.map(d => {
             const mgr = d.manager ? DB.getEmployee(d.manager) : null;
-            const count = emps.filter(e => e.department === d.id).length;
+            const count = countByDept.get(d.id) || 0;
             return `<tr>
               <td><code style="font-size:11.5px;font-weight:600">${escapeHtml(d.id)}</code></td>
               <td><strong>${escapeHtml(d.name)}</strong></td>
