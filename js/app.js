@@ -726,22 +726,31 @@ router.register('dashboard', () => {
     return renderPersonalDashboard();
   }
 
-  const s = DB.getStats();
-  const kpi = DB.getDashboardKPI();
-  const yearly = DB.getYearlyHireExit();
+  // ─── Perf instrumentation (ใช้ debug หน้าแดชบอร์ดช้า — ดู console) ───
+  const _tStart = performance.now();
+  const _t = {};
+  const _time = (label, fn) => { const t = performance.now(); const v = fn(); _t[label] = +(performance.now() - t).toFixed(1); return v; };
+  const s = _time('getStats', () => DB.getStats());
+  const kpi = _time('getDashboardKPI', () => DB.getDashboardKPI());
+  const yearly = _time('getYearlyHireExit', () => DB.getYearlyHireExit());
   const monthly = yearly.months;
-  const trailing12 = DB.getMonthlyHireExit(12);
-  const branchStats = DB.getBranchStats();
-  const recentEmps = DB.getEmployees()
+  const trailing12 = _time('getMonthlyHireExit(12)', () => DB.getMonthlyHireExit(12));
+  const branchStats = _time('getBranchStats', () => DB.getBranchStats());
+  const recentEmps = _time('recentEmps', () => DB.getEmployees()
     .filter(e => DB.empStatus(e) !== 'resigned')
     .sort((a, b) => (b.hireDate || '').localeCompare(a.hireDate || ''))
-    .slice(0, 10);
-  const reach90 = DB.getProbationDue(90);
-  const reach119 = DB.getProbationDue(119);
-  const probByBranch = DB.getProbationPassByBranch();
-  const pendingUniform = DB.getUniformRequests({ status: 'pending' });
+    .slice(0, 10));
+  const reach90 = _time('getProbationDue(90)', () => DB.getProbationDue(90));
+  const reach119 = _time('getProbationDue(119)', () => DB.getProbationDue(119));
+  const probByBranch = _time('getProbationPassByBranch', () => DB.getProbationPassByBranch());
+  const pendingUniform = _time('getUniformRequests', () => DB.getUniformRequests({ status: 'pending' }));
+  console.log('[dashboard] data calls:', _t, 'total:', +(performance.now() - _tStart).toFixed(1) + 'ms', 'emps:', DB.data?.employees?.length);
 
-  window.afterRender = () => renderDashboardCharts(s, monthly, trailing12);
+  window.afterRender = () => {
+    const t0 = performance.now();
+    renderDashboardCharts(s, monthly, trailing12);
+    console.log('[dashboard] charts render:', +(performance.now() - t0).toFixed(1) + 'ms');
+  };
 
   const todayStr = new Date().toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' });
   const tvColor = kpi.turnoverAnnualized <= 5 ? 'var(--success)' : kpi.turnoverAnnualized <= 10 ? 'var(--warning)' : 'var(--danger)';
