@@ -554,6 +554,7 @@ const DB = {
   _annFromDB: (r) => ({
     id: r.id,
     type: r.type || 'announcement',
+    docNumber: r.doc_number || '',
     title: r.title,
     body: r.body || '',
     imageUrl: r.image_url || null,
@@ -567,6 +568,7 @@ const DB = {
   }),
   _annToDB: (a) => ({
     type: a.type || 'announcement',
+    doc_number: (a.docNumber || '').trim() || null,
     title: a.title,
     body: a.body || '',
     image_url: a.imageUrl || null,
@@ -2249,6 +2251,25 @@ const DB = {
 
   getAnnouncement(id) {
     return (this.data.announcements || []).find(a => a.id === id);
+  },
+
+  // เลขที่ถัดไป (เช่น "003/2569") — นับจากประกาศ/คำสั่งประเภทเดียวกันในปี พ.ศ. ปัจจุบัน
+  // คืน null ถ้ามีเลข custom format ที่ parse ไม่ออก (ปล่อยให้ user พิมพ์เอง)
+  suggestNextAnnouncementNumber(type = 'announcement') {
+    const today = new Date();
+    const beYear = today.getFullYear() + 543;
+    const list = (this.data.announcements || []).filter(a => a.type === type && a.docNumber);
+    // หา running number สูงสุดของปี BE นี้
+    let maxRunning = 0;
+    const yearStr = String(beYear);
+    for (const a of list) {
+      const m = String(a.docNumber).match(/^(\d+)\s*\/\s*(\d{4})$/);
+      if (!m) continue;
+      if (m[2] !== yearStr) continue;
+      const n = parseInt(m[1], 10);
+      if (!isNaN(n) && n > maxRunning) maxRunning = n;
+    }
+    return `${String(maxRunning + 1).padStart(3, '0')}/${beYear}`;
   },
 
   async saveAnnouncement(ann) {

@@ -8328,6 +8328,7 @@ router.register('announcements', () => {
     const dateStr = a.createdAt ? new Date(a.createdAt).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Bangkok' }) : '';
     const bodyPreview = (a.body || '').replace(/\s+/g, ' ').slice(0, 140);
     const isUnread = showUnread && !DB.isAnnouncementRead(a.id);
+    const docLabel = a.docNumber ? `${a.type === 'order' ? 'คำสั่งที่' : 'ประกาศที่'} ${a.docNumber}` : '';
     return `<div class="sw-ann-card ${a.pinned ? 'is-pinned' : ''}" style="${isUnread ? 'border-left:3px solid var(--danger);position:relative' : ''}" onclick="openAnnouncementDetail('${a.id}')">
       ${a.imageUrl ? `<div class="sw-ann-thumb" style="background-image:url('${escapeHtml(a.imageUrl)}')"></div>` : '<div class="sw-ann-thumb sw-ann-thumb-empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><path d="M3 11l18-5v12L3 14v-3z"/></svg></div>'}
       <div class="sw-ann-body">
@@ -8338,6 +8339,7 @@ router.register('announcements', () => {
           ${a.pinned ? '<span style="font-size:11px;color:var(--warning);font-weight:600">📌 ปักหมุด</span>' : ''}
           <span class="muted-2" style="font-size:11.5px;margin-left:auto">${dateStr}</span>
         </div>
+        ${docLabel ? `<div style="font-size:11.5px;font-weight:600;color:var(--primary);margin-bottom:4px;font-variant-numeric:tabular-nums">${escapeHtml(docLabel)}</div>` : ''}
         <div style="font-size:15px;font-weight:${isUnread ? '700' : '600'};color:var(--text);line-height:1.35;margin-bottom:4px">${escapeHtml(a.title)}</div>
         <div class="muted-2" style="font-size:12.5px;line-height:1.5">${escapeHtml(bodyPreview)}${a.body.length > 140 ? '...' : ''}</div>
       </div>
@@ -8398,6 +8400,7 @@ function openAnnouncementDetail(id) {
   const TYPE = { label: ANN_TYPE_LABEL[a.type] || a.type, cls: ANN_TYPE_BADGE[a.type] || 'badge' };
   const PRI = a.priority !== 'normal' ? { label: ANN_PRIORITY_LABEL[a.priority], cls: ANN_PRIORITY_BADGE[a.priority] } : null;
   const createdStr = a.createdAt ? new Date(a.createdAt).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  const docLabel = a.docNumber ? `${a.type === 'order' ? 'คำสั่งที่' : 'ประกาศที่'} ${a.docNumber}` : '';
   modal.open(a.title, `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px">
       <span class="badge ${TYPE.cls}">${TYPE.label}</span>
@@ -8405,6 +8408,7 @@ function openAnnouncementDetail(id) {
       ${a.pinned ? '<span style="font-size:12px;color:var(--warning);font-weight:600">📌 ปักหมุด</span>' : ''}
       <span class="muted-2" style="font-size:12px;margin-left:auto">${createdStr}</span>
     </div>
+    ${docLabel ? `<div style="font-size:14px;font-weight:700;color:var(--primary);margin-bottom:12px;font-variant-numeric:tabular-nums">${escapeHtml(docLabel)}</div>` : ''}
     ${a.imageUrl ? `<div style="margin-bottom:14px;border-radius:10px;overflow:hidden;border:1px solid var(--border)"><img src="${escapeHtml(a.imageUrl)}" style="width:100%;display:block;max-height:420px;object-fit:contain;background:var(--surface-2)"/></div>` : ''}
     ${(a.effectiveDate || a.expiresDate) ? `<div style="display:flex;gap:14px;font-size:12.5px;color:var(--text-2);padding:10px 14px;background:var(--surface-2);border-radius:8px;margin-bottom:14px">
       ${a.effectiveDate ? `<div><strong>มีผลตั้งแต่:</strong> ${fmt.date(a.effectiveDate)}</div>` : ''}
@@ -8482,13 +8486,14 @@ async function loadAnnouncementReaders(id) {
 function openAnnouncementForm(id = null) {
   if (!requireHR()) return;
   const editing = id ? DB.getAnnouncement(id) : null;
-  const a = editing || { type: 'announcement', title: '', body: '', imageUrl: null, priority: 'normal', pinned: false, effectiveDate: '', expiresDate: '' };
+  const a = editing || { type: 'announcement', docNumber: '', title: '', body: '', imageUrl: null, priority: 'normal', pinned: false, effectiveDate: '', expiresDate: '' };
   let pendingImageUrl = a.imageUrl;
+  const suggestedDoc = !editing ? DB.suggestNextAnnouncementNumber(a.type) : '';
   modal.open(editing ? 'แก้ไขประกาศ' : 'สร้างประกาศใหม่', `
     <form id="annForm">
       <div class="form-grid">
         <div class="form-group"><label>ประเภท *</label>
-          <select name="type" required>
+          <select name="type" id="annTypeSelect" required>
             <option value="announcement" ${a.type === 'announcement' ? 'selected' : ''}>📣 ประกาศ</option>
             <option value="order" ${a.type === 'order' ? 'selected' : ''}>📋 คำสั่ง</option>
           </select>
@@ -8499,6 +8504,11 @@ function openAnnouncementForm(id = null) {
             <option value="high" ${a.priority === 'high' ? 'selected' : ''}>สำคัญ</option>
             <option value="urgent" ${a.priority === 'urgent' ? 'selected' : ''}>ด่วนมาก</option>
           </select>
+        </div>
+        <div class="form-group span-2">
+          <label>เลขที่เอกสาร <span class="muted-2" style="font-weight:normal;font-size:11px">(เช่น 001/2569 — เว้นว่างได้)</span></label>
+          <input name="docNumber" id="annDocNumberInput" value="${escapeHtml(a.docNumber || '')}" maxlength="40" placeholder="เช่น 001/2569"/>
+          ${!editing ? `<div style="margin-top:6px"><button type="button" class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:11.5px" onclick="document.getElementById('annDocNumberInput').value=DB.suggestNextAnnouncementNumber(document.getElementById('annTypeSelect').value);document.getElementById('annDocNumberInput').focus()">↻ ใช้เลขถัดไป (<span id="annDocSuggested">${escapeHtml(suggestedDoc)}</span>)</button></div>` : ''}
         </div>
         <div class="form-group span-2"><label>หัวข้อ *</label>
           <input name="title" value="${escapeHtml(a.title)}" required maxlength="200" placeholder="เช่น ประกาศวันหยุดประจำปี 2569"/>
@@ -8557,6 +8567,12 @@ function openAnnouncementForm(id = null) {
     $('#annImageInput').value = '';
   });
 
+  // ปุ่ม "ใช้เลขถัดไป" ใช้ DB.suggestNextAnnouncementNumber → ต้องอัปเดตเมื่อเปลี่ยนประเภท
+  $('#annTypeSelect')?.addEventListener('change', (e) => {
+    const span = document.getElementById('annDocSuggested');
+    if (span) span.textContent = DB.suggestNextAnnouncementNumber(e.target.value);
+  });
+
   $('#annForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target).entries());
@@ -8564,6 +8580,7 @@ function openAnnouncementForm(id = null) {
       await DB.saveAnnouncement({
         id: editing?.id,
         type: data.type,
+        docNumber: data.docNumber || '',
         title: data.title,
         body: data.body,
         imageUrl: pendingImageUrl || null,
