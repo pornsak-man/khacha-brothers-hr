@@ -8280,12 +8280,62 @@ function openAnnouncementDetail(id) {
       ${a.expiresDate ? `<div><strong>สิ้นสุด:</strong> ${fmt.date(a.expiresDate)}</div>` : ''}
     </div>` : ''}
     <div style="font-size:14px;line-height:1.7;white-space:pre-wrap;color:var(--text)">${escapeHtml(a.body || '')}</div>
+    ${DB.isHR ? `<div id="annReadersBox" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
+      <div class="muted-2" style="font-size:12.5px">⏳ กำลังโหลดสถานะผู้อ่าน...</div>
+    </div>` : ''}
     <div class="form-actions">
       <button type="button" class="btn btn-secondary" data-close>ปิด</button>
       ${DB.isHR ? `<button type="button" class="btn btn-ghost" onclick="deleteAnnouncement('${a.id}')">ลบ</button>
       <button type="button" class="btn btn-primary" onclick="modal.close();openAnnouncementForm('${a.id}')">แก้ไข</button>` : ''}
     </div>
   `);
+  // พนักงาน: บันทึกว่าอ่านแล้ว (fire-and-forget) · admin/HR: โหลดรายชื่อผู้อ่าน
+  if (DB.isHR) loadAnnouncementReaders(a.id);
+  else DB.markAnnouncementRead(a.id);
+}
+
+async function loadAnnouncementReaders(id) {
+  const box = document.getElementById('annReadersBox');
+  if (!box) return;
+  let res;
+  try {
+    res = await DB.getAnnouncementReaders(id);
+  } catch (e) {
+    box.innerHTML = `<div class="muted-2" style="font-size:12.5px;color:var(--danger)">โหลดรายชื่อผู้อ่านไม่สำเร็จ: ${escapeHtml(e.message || String(e))}</div>`;
+    return;
+  }
+  const { readers, unread } = res;
+  const total = readers.length + unread.length;
+  const pct = total > 0 ? Math.round(readers.length / total * 100) : 0;
+  const fmtTime = (iso) => iso ? new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  const row = (e, extra = '') => `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px dashed var(--border);font-size:12.5px">
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600;color:var(--text)">${escapeHtml(e.name)}</div>
+      <div class="muted-2" style="font-size:11.5px">${escapeHtml(e.position || '-')} · ${escapeHtml(e.branch || '-')}</div>
+    </div>
+    ${extra}
+  </div>`;
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+      <div style="font-size:13.5px;font-weight:600;color:var(--text)">📊 สถานะผู้อ่าน</div>
+      <span class="badge badge-success" style="font-size:11px">อ่านแล้ว ${readers.length}</span>
+      <span class="badge" style="font-size:11px;background:rgba(220,38,38,0.12);color:var(--danger)">ยังไม่อ่าน ${unread.length}</span>
+      <span class="muted-2" style="font-size:11.5px;margin-left:auto">${pct}% ของพนักงานที่ปฏิบัติงาน</span>
+    </div>
+    <div class="sw-bar-bg" style="margin-bottom:14px"><div class="sw-bar-fill" style="width:${pct}%;background:var(--success)"></div></div>
+    <details ${readers.length ? 'open' : ''} style="margin-bottom:10px">
+      <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--success);padding:4px 0">✓ อ่านแล้ว (${readers.length})</summary>
+      <div style="max-height:240px;overflow-y:auto;margin-top:6px">
+        ${readers.length ? readers.map(e => row(e, `<div style="font-size:11px;color:var(--text-3);text-align:right;flex-shrink:0">${fmtTime(e.readAt)}</div>`)).join('') : '<div class="muted-2" style="font-size:12px;padding:8px 0">— ยังไม่มีพนักงานอ่าน —</div>'}
+      </div>
+    </details>
+    <details style="margin-bottom:4px">
+      <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--danger);padding:4px 0">✗ ยังไม่อ่าน (${unread.length})</summary>
+      <div style="max-height:240px;overflow-y:auto;margin-top:6px">
+        ${unread.length ? unread.map(e => row(e)).join('') : '<div class="muted-2" style="font-size:12px;padding:8px 0">— อ่านครบทุกคนแล้ว 🎉 —</div>'}
+      </div>
+    </details>
+  `;
 }
 
 function openAnnouncementForm(id = null) {

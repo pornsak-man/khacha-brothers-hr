@@ -2206,6 +2206,53 @@ const DB = {
     this.data.announcements = this.data.announcements.filter(a => a.id !== id);
   },
 
+  // ─── ANNOUNCEMENT READ RECEIPTS ───
+  // mark = พนักงานเปิดอ่าน (ignore duplicate — เก็บเวลาอ่านครั้งแรก)
+  // admin/HR ไม่ถูกบันทึก (พวกเขาเป็นคนสร้าง — ไม่ใช่ผู้รับสาร)
+  async markAnnouncementRead(announcementId) {
+    if (this.isHR) return;  // ไม่บันทึกผู้สร้างประกาศ
+    const empId = this.profile?.employee_id;
+    if (!empId) return;     // ไม่มี employee_id (เช่น admin ที่ไม่ผูกพนักงาน)
+    try {
+      await this.client.from('announcement_reads').upsert({
+        announcement_id: announcementId,
+        employee_id: empId,
+        user_id: this.user?.id || null
+      }, { onConflict: 'announcement_id,employee_id', ignoreDuplicates: true });
+    } catch (e) {
+      console.warn('[ann-read] mark failed:', e.message || e);
+    }
+  },
+
+  // ดึงรายชื่อผู้อ่าน + ผู้ที่ยังไม่อ่าน — เฉพาะ admin/HR
+  // คืน { readers: [{employeeId, name, branch, position, readAt}], unread: [...] }
+  async getAnnouncementReaders(announcementId) {
+    if (!this.isHR) return { readers: [], unread: [] };
+    const { data, error } = await this.client.from('announcement_reads')
+      .select('employee_id, read_at')
+      .eq('announcement_id', announcementId)
+      .order('read_at', { ascending: false });
+    if (error) throw error;
+    const empById = new Map(this.data.employees.map(e => [e.id, e]));
+    const readMap = new Map((data || []).map(r => [r.employee_id, r.read_at]));
+    const fmt = (e) => ({
+      employeeId: e.id,
+      name: `${e.firstName || ''} ${e.lastName || ''}`.trim() || e.id,
+      branch: e.branch || '',
+      position: e.positionTitle || ''
+    });
+    const readers = (data || []).map(r => {
+      const e = empById.get(r.employee_id);
+      return e ? { ...fmt(e), readAt: r.read_at } : { employeeId: r.employee_id, name: r.employee_id, branch: '', position: '', readAt: r.read_at };
+    });
+    // ยังไม่อ่าน: พนักงานที่ยังปฏิบัติงาน + ไม่อยู่ใน readMap
+    const unread = this.data.employees
+      .filter(e => this.empStatus(e) !== 'resigned' && !readMap.has(e.id))
+      .map(fmt)
+      .sort((a, b) => (a.branch || '').localeCompare(b.branch || '', 'th') || a.name.localeCompare(b.name, 'th'));
+    return { readers, unread };
+  },
+
   // upload รูปประกาศ → คืน public URL
   async uploadAnnouncementImage(file) {
     if (!this.isHR) throw new Error('เฉพาะ admin / HR เท่านั้น');
