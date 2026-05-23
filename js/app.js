@@ -5,6 +5,21 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+// ─── Performance helpers ───
+// debounce — รวม event ติดๆ กันให้ run แค่ครั้งสุดท้าย (เช่น พิมพ์เร็วใน search)
+// trailing-edge: รอจน user หยุดพิมพ์ ms มิลลิวินาทีก่อน fire
+function debounce(fn, ms = 150) {
+  let t;
+  return function (...args) {
+    clearTimeout(t);
+    t = setTimeout(() => fn.apply(this, args), ms);
+  };
+}
+// runWhenIdle — ทำงานเมื่อเบราว์เซอร์ว่าง (ไม่ block main thread)
+// fallback: setTimeout 1 เมื่อไม่มี requestIdleCallback (Safari < 17.4)
+const runWhenIdle = (fn, timeout = 1000) =>
+  (window.requestIdleCallback || ((cb) => setTimeout(cb, 1)))(fn, { timeout });
+
 // ─── TIMEZONE: บังคับใช้เวลาประเทศไทย (Asia/Bangkok) ───
 // ทุก default/computed date ใช้เวลาไทย ไม่ขึ้นกับ browser/server TZ
 const TZ = 'Asia/Bangkok';
@@ -877,10 +892,12 @@ router.register('dashboard', () => {
   const pendingUniform = DB.getUniformRequests({ status: 'pending' });
 
   window.afterRender = () => {
-    renderDashboardCharts(s, monthly, trailing12);
+    // render charts ตอน main thread ว่าง — กัน initial render กระตุก
+    runWhenIdle(() => renderDashboardCharts(s, monthly, trailing12));
+    const goDash = debounce(() => router.go('dashboard'), 80);
     document.getElementById('dashScope')?.addEventListener('change', (e) => {
       dashState.scope = e.target.value;
-      router.go('dashboard');
+      goDash();
     });
   };
 
@@ -4018,6 +4035,7 @@ router.register('departments', () => {
 });
 
 function wireDepartmentsPage() {
+  const goDept = debounce(() => router.go('departments'), 80);
   $('#deptSearch')?.addEventListener('input', (e) => {
     clearTimeout(_deptSearchTimer);
     _deptSearchTimer = setTimeout(() => {
@@ -4025,8 +4043,8 @@ function wireDepartmentsPage() {
       router.go('departments');
     }, 200);
   });
-  $('#deptScope')?.addEventListener('change', (e)   => { deptState.scope   = e.target.value; router.go('departments'); });
-  $('#deptHasEmps')?.addEventListener('change', (e) => { deptState.hasEmps = e.target.value; router.go('departments'); });
+  $('#deptScope')?.addEventListener('change', (e)   => { deptState.scope   = e.target.value; goDept(); });
+  $('#deptHasEmps')?.addEventListener('change', (e) => { deptState.hasEmps = e.target.value; goDept(); });
 }
 
 function clearDeptFilters() {
@@ -4208,6 +4226,8 @@ router.register('positions', () => {
 });
 
 function wirePositionsPage() {
+  // debounce route — รวม dropdown change ติดๆ กันให้ render ครั้งเดียว
+  const goPos = debounce(() => router.go('positions'), 80);
   $('#posSearch')?.addEventListener('input', (e) => {
     clearTimeout(_posSearchTimer);
     _posSearchTimer = setTimeout(() => {
@@ -4215,8 +4235,8 @@ function wirePositionsPage() {
       router.go('positions');
     }, 200);
   });
-  $('#posScope')?.addEventListener('change', (e)   => { posState.scope = e.target.value;   router.go('positions'); });
-  $('#posHasEmps')?.addEventListener('change', (e) => { posState.hasEmps = e.target.value; router.go('positions'); });
+  $('#posScope')?.addEventListener('change', (e)   => { posState.scope = e.target.value;   goPos(); });
+  $('#posHasEmps')?.addEventListener('change', (e) => { posState.hasEmps = e.target.value; goPos(); });
 }
 
 function clearPosFilters() {

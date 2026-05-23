@@ -40,10 +40,40 @@ const DB = {
   _empIndex: null,
   _deptIndex: null,
   _posIndex: null,
+  // ─── STATS CACHE (memoize expensive computations) ───
+  // คีย์ = `{method}:{params}:{dataVersion}` — เพิ่ม dataVersion เมื่อ data เปลี่ยน
+  // → invalidate อัตโนมัติเมื่อ realtime update / save methods เรียก _invalidateIndex
+  _statsCache: new Map(),
+  _dataVersion: 0,
   _invalidateIndex(table) {
     if (table === 'employees' || !table) this._empIndex = null;
     if (table === 'departments' || !table) this._deptIndex = null;
     if (table === 'position_levels' || !table) this._posIndex = null;
+    // Stats cache invalidate — table ที่กระทบ stats: employees, positions, depts, leaves, scopes
+    const statsAffected = ['employees', 'position_levels', 'departments', 'leave_requests', 'position_scopes'];
+    if (!table || statsAffected.includes(table)) {
+      this._dataVersion++;
+      this._statsCache.clear();
+    }
+  },
+  // Memoize wrapper สำหรับ stats methods — เก็บ Map ไม่เกิน 50 entries (LRU-ish: ลบที่เก่าสุดออก)
+  _cachedStats(key, computeFn) {
+    const cacheKey = `${this._dataVersion}:${key}`;
+    if (this._statsCache.has(cacheKey)) {
+      // touch — เลื่อนไป end ของ insertion order (รักษา hot entries)
+      const v = this._statsCache.get(cacheKey);
+      this._statsCache.delete(cacheKey);
+      this._statsCache.set(cacheKey, v);
+      return v;
+    }
+    const result = computeFn();
+    this._statsCache.set(cacheKey, result);
+    if (this._statsCache.size > 50) {
+      // ลบ entry แรกสุด (เก่าสุดตาม insertion order)
+      const firstKey = this._statsCache.keys().next().value;
+      this._statsCache.delete(firstKey);
+    }
+    return result;
   },
 
   // ─── INIT / AUTH ───
@@ -2659,6 +2689,9 @@ const DB = {
 
   // ─── DASHBOARD KPI (Safari-style) ───
   getDashboardKPI({ scope = '' } = {}) {
+    return this._cachedStats(`kpi:${scope}:${this.role || ''}`, () => this._computeDashboardKPI({ scope }));
+  },
+  _computeDashboardKPI({ scope = '' } = {}) {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
     const [ty, tm] = today.split('-').map(Number);
     const thisYM = `${ty}-${String(tm).padStart(2, '0')}`;
@@ -2762,6 +2795,9 @@ const DB = {
   },
 
   getBranchStats({ scope = '' } = {}) {
+    return this._cachedStats(`branchStats:${scope}`, () => this._computeBranchStats({ scope }));
+  },
+  _computeBranchStats({ scope = '' } = {}) {
     const counts = new Map();
     const list = this._filterByScope(this.data.employees, scope);
     for (const e of list) {
@@ -2778,6 +2814,9 @@ const DB = {
   // หา scope ผ่าน position FK: employee.position → positionLevels.scope → positionScopes.id
   // คนที่ไม่มี position หรือ position ไม่มี scope → จัดเป็น "ไม่ระบุ"
   getScopeStats() {
+    return this._cachedStats('scopeStats', () => this._computeScopeStats());
+  },
+  _computeScopeStats() {
     const counts = new Map();
     for (const e of this.data.employees) {
       if (this.empStatus(e) === 'resigned') continue;
@@ -2863,6 +2902,9 @@ const DB = {
 
   // ─── YEARLY HIRE / EXIT (ปฏิทินทั้งปี ม.ค.-ธ.ค.) ───
   getYearlyHireExit(year = null, { scope = '' } = {}) {
+    return this._cachedStats(`yearly:${year || 'auto'}:${scope}`, () => this._computeYearlyHireExit(year, { scope }));
+  },
+  _computeYearlyHireExit(year = null, { scope = '' } = {}) {
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
     const y = year || parseInt(todayStr.slice(0, 4), 10);
     const months = [];
@@ -2891,6 +2933,9 @@ const DB = {
 
   // ─── MONTHLY HIRE / EXIT (สำหรับ Dashboard chart) ───
   getMonthlyHireExit(monthsBack = 12, { scope = '' } = {}) {
+    return this._cachedStats(`monthly:${monthsBack}:${scope}`, () => this._computeMonthlyHireExit(monthsBack, { scope }));
+  },
+  _computeMonthlyHireExit(monthsBack = 12, { scope = '' } = {}) {
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
     const [ty, tm] = todayStr.split('-').map(Number);
     const months = [];
@@ -3038,6 +3083,9 @@ const DB = {
 
   // ─── STATS ───
   getStats({ scope = '' } = {}) {
+    return this._cachedStats(`stats:${scope}:${this.role || ''}`, () => this._computeStats({ scope }));
+  },
+  _computeStats({ scope = '' } = {}) {
     // ใช้ getEmployees() เพื่อ auto-scope ตาม RBAC + กรอง scope ที่ dashboard เลือก
     const emps = this._filterByScope(this.getEmployees(), scope);
     // ใช้ effective status (ตามวันพ้นสภาพ — ไม่ใช่ field 'status' ที่อาจ stale)
