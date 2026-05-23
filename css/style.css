@@ -178,6 +178,52 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   display: flex; align-items: center; justify-content: center;
   padding: 24px; z-index: 1000;
   overflow: hidden;
+  will-change: transform, opacity, filter;
+}
+
+/* ─── Auth slide transition — iOS-style push from login → app ─── */
+.login-screen.is-leaving {
+  animation: loginSlideOut 0.55s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+  pointer-events: none;
+}
+@keyframes loginSlideOut {
+  0%   { transform: translateX(0)     scale(1);    opacity: 1; filter: blur(0); }
+  100% { transform: translateX(-10%)  scale(0.96); opacity: 0; filter: blur(6px); }
+}
+.app.is-entering {
+  animation: appSlideIn 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: center;
+  will-change: transform, opacity;
+}
+@keyframes appSlideIn {
+  0%   { transform: translateX(8%);   opacity: 0; }
+  60%  {                              opacity: 1; }
+  100% { transform: translateX(0);    opacity: 1; }
+}
+/* Reverse — when user logs out (app slides right, login fades back in) */
+.app.is-leaving {
+  animation: appSlideOut 0.45s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+  pointer-events: none;
+}
+@keyframes appSlideOut {
+  0%   { transform: translateX(0)    scale(1);    opacity: 1; filter: blur(0); }
+  100% { transform: translateX(6%)   scale(0.98); opacity: 0; filter: blur(4px); }
+}
+.login-screen.is-entering {
+  animation: loginSlideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes loginSlideIn {
+  0%   { transform: translateX(-6%);  opacity: 0; }
+  100% { transform: translateX(0);    opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-screen.is-leaving,
+  .login-screen.is-entering,
+  .app.is-entering,
+  .app.is-leaving {
+    animation: none !important;
+  }
 }
 
 /* Animated mesh layer — ขับเคลื่อนช้าๆ ให้มีชีวิตชีวา */

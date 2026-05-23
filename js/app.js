@@ -448,12 +448,34 @@ const auth = {
     return null;
   },
   showLogin() {
-    $('#loginScreen').style.display = 'flex';
-    $('#app').style.display = 'none';
+    const login = $('#loginScreen');
+    const app = $('#app');
+    const appVisible = app && app.style.display && app.style.display !== 'none';
+    // เคลียร์ฟอร์มเก่าทุกครั้งเพื่อไม่ให้รหัสค้าง (security + UX)
+    const passField = $('#loginPass'); if (passField) passField.value = '';
+    const errEl = $('#loginError'); if (errEl) errEl.textContent = '';
+    if (appVisible) {
+      // logout / blocked — สไลด์ app ออกขวา, login เลื่อนเข้ามาจากซ้าย
+      login.classList.remove('is-leaving');
+      app.classList.remove('is-entering');
+      app.classList.add('is-leaving');
+      login.style.display = 'flex';
+      login.classList.add('is-entering');
+      setTimeout(() => {
+        app.style.display = 'none';
+        app.classList.remove('is-leaving');
+        login.classList.remove('is-entering');
+      }, 480);
+    } else {
+      login.style.display = 'flex';
+      app.style.display = 'none';
+    }
   },
   showApp() {
-    $('#loginScreen').style.display = 'none';
-    $('#app').style.display = 'grid';
+    const login = $('#loginScreen');
+    const app = $('#app');
+    const loginVisible = login && login.style.display && login.style.display !== 'none';
+    app.style.display = 'grid';
     const displayName = DB.profile?.name || DB.user?.email?.split('@')[0] || 'User';
     $('#userName').textContent = displayName;
     $('#userAvatar').textContent = displayName.charAt(0).toUpperCase();
@@ -483,6 +505,20 @@ const auth = {
     // (ก่อนหน้านี้ใช้ if-only — ทำให้ inline display:none ค้างเมื่อ login จาก staff → admin)
     $$('.nav-staff-hide').forEach(el => { el.style.display = isStaffOnly ? 'none' : ''; });
     router.go('dashboard');
+    // ─── Slide transition (เฉพาะ login → app, ไม่ทำตอน boot ที่มี session อยู่แล้ว) ───
+    if (loginVisible) {
+      app.classList.remove('is-leaving');
+      login.classList.remove('is-entering');
+      login.classList.add('is-leaving');
+      app.classList.add('is-entering');
+      setTimeout(() => {
+        login.style.display = 'none';
+        login.classList.remove('is-leaving');
+        app.classList.remove('is-entering');
+      }, 580);
+    } else {
+      login.style.display = 'none';
+    }
   }
 };
 
