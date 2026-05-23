@@ -1739,9 +1739,25 @@ const DB = {
   },
 
   // ─── PASSWORD ───
-  async changePassword(newPassword) {
-    const { error } = await this.client.auth.updateUser({ password: newPassword });
-    if (error) throw error;
+  // เปลี่ยนรหัสผ่านพนักงานเอง — verify รหัสเก่าก่อนเปลี่ยน
+  // newPassword ต้องอย่างน้อย 8 ตัว
+  async changePassword(oldPassword, newPassword) {
+    if (!this.user?.email) throw new Error('ไม่มี session ปัจจุบัน — กรุณา login ใหม่');
+    if (!oldPassword) throw new Error('กรุณากรอกรหัสผ่านปัจจุบัน');
+    if (!newPassword || newPassword.length < 8) throw new Error('รหัสผ่านใหม่ต้องอย่างน้อย 8 ตัว');
+    if (oldPassword === newPassword) throw new Error('รหัสผ่านใหม่ต้องต่างจากรหัสเดิม');
+    // ─── 1) Verify old password ผ่าน signInWithPassword ───
+    // ถ้าผ่าน session ใหม่จะ replace อันเดิม (เป็นคนเดิม) → ใช้งานต่อได้ทันที
+    const captchaToken = await this._getCaptchaToken('reauth');
+    const { error: verifyErr } = await this.client.auth.signInWithPassword({
+      email: this.user.email,
+      password: oldPassword,
+      options: captchaToken ? { captchaToken } : undefined
+    });
+    if (verifyErr) throw new Error('รหัสผ่านปัจจุบันไม่ถูกต้อง');
+    // ─── 2) Update เป็นรหัสใหม่ ───
+    const { error: updErr } = await this.client.auth.updateUser({ password: newPassword });
+    if (updErr) throw updErr;
   },
 
   // ─── EMPLOYEE ACCOUNT MANAGEMENT (admin only — RPC calls) ───

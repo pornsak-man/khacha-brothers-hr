@@ -305,6 +305,7 @@ const auth = {
     });
     $('#logoutBtn').addEventListener('click', () => this.logout());
     $('#impersonateBtn').addEventListener('click', () => this.toggleImpersonate());
+    $('#changePwdBtn').addEventListener('click', () => openChangePasswordModal());
   },
 
   toggleImpersonate() {
@@ -434,6 +435,60 @@ function requireHR() {
     return false;
   }
   return true;
+}
+
+// ─────────────── CHANGE PASSWORD (ทุกคน) ───────────────
+function openChangePasswordModal() {
+  if (!DB.user) { toast('กรุณา login ก่อน', 'error'); return; }
+  modal.open('🔑 เปลี่ยนรหัสผ่าน', `
+    <form id="changePwdForm">
+      <div class="form-group">
+        <label>รหัสผ่านปัจจุบัน *</label>
+        <input type="password" name="oldPwd" required autocomplete="current-password" autofocus />
+      </div>
+      <div class="form-group">
+        <label>รหัสผ่านใหม่ * <span class="muted-2" style="font-weight:normal;font-size:11px">(อย่างน้อย 8 ตัว)</span></label>
+        <input type="password" name="newPwd" required minlength="8" autocomplete="new-password" />
+      </div>
+      <div class="form-group">
+        <label>ยืนยันรหัสผ่านใหม่ *</label>
+        <input type="password" name="confirmPwd" required minlength="8" autocomplete="new-password" />
+      </div>
+      <div id="changePwdHint" style="font-size:12px;color:var(--text-3);padding:10px 12px;background:var(--surface-2);border-radius:8px;margin:8px 0">
+        💡 รหัสผ่านที่ดี: ผสม a-z, A-Z, 0-9 อย่างน้อย 8 ตัว · ไม่ใช้รหัสเดียวกับ email หรือเลขประชาชน
+      </div>
+      <div id="changePwdError" class="login-error" style="color:var(--danger);font-size:13px;margin:8px 0;display:none"></div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" data-close>ยกเลิก</button>
+        <button type="submit" class="btn btn-primary" id="changePwdSubmit">เปลี่ยนรหัสผ่าน</button>
+      </div>
+    </form>
+  `, { size: 'sm' });
+
+  const errEl = document.getElementById('changePwdError');
+  const showErr = (msg) => { errEl.textContent = msg; errEl.style.display = ''; };
+
+  document.getElementById('changePwdForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errEl.style.display = 'none';
+    const fd = new FormData(e.target);
+    const oldPwd = fd.get('oldPwd') || '';
+    const newPwd = fd.get('newPwd') || '';
+    const confirmPwd = fd.get('confirmPwd') || '';
+    if (newPwd !== confirmPwd) { showErr('รหัสผ่านใหม่ทั้ง 2 ช่องไม่ตรงกัน'); return; }
+    if (newPwd === oldPwd)    { showErr('รหัสผ่านใหม่ต้องต่างจากรหัสเดิม'); return; }
+    if (newPwd.length < 8)    { showErr('รหัสผ่านใหม่ต้องอย่างน้อย 8 ตัว'); return; }
+    const btn = document.getElementById('changePwdSubmit');
+    btn.disabled = true; btn.textContent = 'กำลังเปลี่ยน...';
+    try {
+      await DB.changePassword(oldPwd, newPwd);
+      modal.close();
+      toast('✓ เปลี่ยนรหัสผ่านสำเร็จ — login ครั้งต่อไปใช้รหัสใหม่', 'success');
+    } catch (ex) {
+      showErr(ex.message || String(ex));
+      btn.disabled = false; btn.textContent = 'เปลี่ยนรหัสผ่าน';
+    }
+  });
 }
 
 // ─────────────── ROUTER ───────────────
