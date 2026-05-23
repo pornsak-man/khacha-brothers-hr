@@ -3108,3 +3108,151 @@ textarea:disabled {
   .main { display: block; }
   body { background: #fff; color: #000; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   PREMIUM POLISH v3 — Phase 3
+   Toast redesign · Modal polish · Number animation · Bar charts
+   ═══════════════════════════════════════════════════════════ */
+
+/* ─── Toast v3 — premium notification with icon + glass ─── */
+.toast.toast-v3 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  min-width: 280px;
+  max-width: 420px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  background: var(--surface);
+  box-shadow: 0 12px 36px rgba(20, 20, 15, 0.12), 0 4px 12px rgba(20, 20, 15, 0.06);
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text);
+  animation: toastIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+  pointer-events: auto;
+  position: relative;
+  overflow: hidden;
+}
+.toast.toast-v3::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, currentColor 0%, transparent 8%);
+  opacity: 0.04;
+  pointer-events: none;
+}
+.toast-v3 .toast-icon {
+  flex-shrink: 0;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: currentColor;
+  color: currentColor;
+}
+.toast-v3 .toast-icon svg {
+  color: var(--surface);
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.18));
+}
+.toast-v3 .toast-msg {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  word-break: break-word;
+}
+.toast-v3 .toast-close {
+  flex-shrink: 0;
+  width: 24px; height: 24px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s var(--ease-out), color 0.15s var(--ease-out);
+}
+.toast-v3 .toast-close:hover { background: var(--surface-2); color: var(--text); }
+/* type accents — semantic color */
+.toast-v3.success { border-left-color: var(--success); color: var(--success); }
+.toast-v3.error   { border-left-color: var(--danger);  color: var(--danger); }
+.toast-v3.warning { border-left-color: var(--warning); color: var(--warning); }
+.toast-v3.info    { border-left-color: var(--info);    color: var(--info); }
+.toast-v3.toast-out {
+  animation: toastOut 0.26s cubic-bezier(0.5, 0, 0.75, 0) both;
+}
+@keyframes toastIn {
+  0%   { opacity: 0; transform: translateX(40px) scale(0.96); }
+  100% { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes toastOut {
+  0%   { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(40px); }
+}
+
+/* ─── Modal polish — smoother scale + spring easing ─── */
+.modal-backdrop {
+  animation: modalBackdropIn 0.22s var(--ease-out) both;
+}
+.modal {
+  animation: modalScaleIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: center 38%;
+}
+@keyframes modalBackdropIn {
+  from { opacity: 0; backdrop-filter: blur(0px); -webkit-backdrop-filter: blur(0px); }
+  to   { opacity: 1; backdrop-filter: blur(6px) saturate(140%); -webkit-backdrop-filter: blur(6px) saturate(140%); }
+}
+@keyframes modalScaleIn {
+  0%   { opacity: 0; transform: scale(0.96) translateY(8px); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ─── KPI counter — refined typography (works with animateCountUp JS) ─── */
+.sw-stat-value {
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.025em;
+  font-weight: 700;
+}
+
+/* ─── Animated bar fills (dashboard scope/branch charts) ─── */
+@media (prefers-reduced-motion: no-preference) {
+  .sw-bar-fill {
+    animation: barGrowIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+    transform-origin: left center;
+  }
+  @keyframes barGrowIn {
+    0%   { transform: scaleX(0); opacity: 0.4; }
+    100% { transform: scaleX(1); opacity: 1; }
+  }
+}
+
+/* ─── Recent item polish — refined hover lift ─── */
+.sw-recent-item {
+  transition: background 0.18s var(--ease-out),
+              transform 0.18s var(--ease-out),
+              box-shadow 0.18s var(--ease-out);
+}
+.sw-recent-item:hover {
+  transform: translateX(2px);
+}
+
+/* ─── Better empty states — premium illustration feel ─── */
+.empty-state {
+  animation: emptyStateIn 0.4s var(--ease-out) both;
+}
+@keyframes emptyStateIn {
+  0%   { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Badge subtle glow on hover (interactive contexts) ─── */
+.badge {
+  transition: filter 0.15s var(--ease-out);
+}
+a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
+  filter: brightness(1.06);
+}

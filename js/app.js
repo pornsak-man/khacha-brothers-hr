@@ -20,6 +20,42 @@ function debounce(fn, ms = 150) {
 const runWhenIdle = (fn, timeout = 1000) =>
   (window.requestIdleCallback || ((cb) => setTimeout(cb, 1)))(fn, { timeout });
 
+// ─── Number count-up animation — ใช้กับ KPI cards บน dashboard ───
+// อ่านเลขปลายทางจาก element textContent → animate จาก 0 → target ใน 600ms
+// ใช้ requestAnimationFrame + easeOutQuart ให้ดู smooth premium
+// รักษา formatting เดิม (comma separator, decimal places) ผ่าน parseFloat + format
+// respect prefers-reduced-motion → ตั้งค่า target ตรงเลย
+function animateCountUp(el, duration = 600) {
+  if (!el) return;
+  const raw = el.textContent.trim();
+  const m = raw.match(/^([\-+]?[\d,]+(?:\.\d+)?)(.*)$/);
+  if (!m) return;
+  const target = parseFloat(m[1].replace(/,/g, ''));
+  if (!isFinite(target)) return;
+  const suffix = m[2] || '';
+  const decimals = (m[1].split('.')[1] || '').length;
+  // Respect user preference
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    el.textContent = target.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + suffix;
+    return;
+  }
+  const start = performance.now();
+  const ease = (t) => 1 - Math.pow(1 - t, 4);  // easeOutQuart
+  const step = (now) => {
+    const p = Math.min(1, (now - start) / duration);
+    const v = target * ease(p);
+    el.textContent = v.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + suffix;
+    if (p < 1) requestAnimationFrame(step);
+  };
+  // เริ่มที่ 0 ทันที (กัน flash เลขเต็ม)
+  el.textContent = (0).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + suffix;
+  requestAnimationFrame(step);
+}
+// animate ทุก .sw-stat-value ที่อยู่ใน .sw-stats-grid (KPI cards เท่านั้น)
+function animateKPICounters() {
+  document.querySelectorAll('.sw-stats-grid .sw-stat-value').forEach(el => animateCountUp(el));
+}
+
 // ─── TIMEZONE: บังคับใช้เวลาประเทศไทย (Asia/Bangkok) ───
 // ทุก default/computed date ใช้เวลาไทย ไม่ขึ้นกับ browser/server TZ
 const TZ = 'Asia/Bangkok';
@@ -209,14 +245,30 @@ const ICON = {
 };
 
 // ─────────────── TOAST ───────────────
+// SVG icons สำหรับ toast แต่ละ type — รวมใน toast() เพื่อ premium feel
+const _toastIcons = {
+  success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+  error:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+  warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  info:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+};
 const toast = (msg, type = 'info') => {
   const root = $('#toastRoot');
+  if (!root) return;
   const el = document.createElement('div');
-  el.className = 'toast ' + type;
-  el.textContent = msg;
+  el.className = 'toast toast-v3 ' + type;
+  el.innerHTML = `
+    <span class="toast-icon">${_toastIcons[type] || _toastIcons.info}</span>
+    <span class="toast-msg"></span>
+    <button class="toast-close" aria-label="ปิด" type="button">&times;</button>`;
+  el.querySelector('.toast-msg').textContent = msg;
   root.appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(40px)'; el.style.transition = 'all .2s'; }, 2500);
-  setTimeout(() => el.remove(), 2800);
+  const dismiss = () => {
+    el.classList.add('toast-out');
+    setTimeout(() => el.remove(), 280);
+  };
+  el.querySelector('.toast-close').addEventListener('click', dismiss);
+  setTimeout(dismiss, 3200);
 };
 
 // ─────────────── MODAL ───────────────
@@ -892,6 +944,8 @@ router.register('dashboard', () => {
   const pendingUniform = DB.getUniformRequests({ status: 'pending' });
 
   window.afterRender = () => {
+    // animate KPI counters ก่อน — เห็นทันทีหลัง render เลข fade จาก 0
+    animateKPICounters();
     // render charts ตอน main thread ว่าง — กัน initial render กระตุก
     runWhenIdle(() => renderDashboardCharts(s, monthly, trailing12));
     const goDash = debounce(() => router.go('dashboard'), 80);
