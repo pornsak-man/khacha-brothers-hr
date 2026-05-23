@@ -9105,7 +9105,7 @@ async function deleteCalRec(id) {
 // ═══════════════════════════════════════════════════════
 //  PAGE: ANNOUNCEMENTS — ประกาศบริษัท + คำสั่งบริษัท
 // ═══════════════════════════════════════════════════════
-const _annState = { tab: 'all', search: '', year: '', docNumber: '', titleId: '' };
+const _annState = { tab: 'all', search: '', year: '', docNumber: '', titleId: '', unreadOnly: false };
 function setAnnFilter(k, v) {
   const newVal = (v ?? '').trim();
   if (_annState[k] === newVal) return;
@@ -9114,12 +9114,17 @@ function setAnnFilter(k, v) {
   if (k === 'tab') { _annState.docNumber = ''; _annState.titleId = ''; }
   router.go('announcements');
 }
+function toggleAnnUnreadOnly() {
+  _annState.unreadOnly = !_annState.unreadOnly;
+  router.go('announcements');
+}
 function clearAnnFilters() {
   _annState.tab = 'all';
   _annState.search = '';
   _annState.year = '';
   _annState.docNumber = '';
   _annState.titleId = '';
+  _annState.unreadOnly = false;
   router.go('announcements');
 }
 
@@ -9132,12 +9137,19 @@ router.register('announcements', () => {
   const all = DB.getAnnouncements();
   const todayYear = new Date().getFullYear();
 
+  // ผู้ที่ไม่ใช่ admin/HR เท่านั้นที่นับเป็นผู้รับ + เห็นป้าย/ตัวกรอง "ยังไม่อ่าน"
+  const showUnread = !DB.isHR && !!DB.profile?.employee_id;
+  const unreadCount = showUnread ? all.filter(a => !DB.isAnnouncementRead(a.id)).length : 0;
+  // ถ้าไม่มี read tracking → บังคับ unreadOnly กลับเป็น false (กัน state ค้าง)
+  if (!showUnread && _annState.unreadOnly) _annState.unreadOnly = false;
+
   // ─── Filter (apply ทีละขั้น) ───
   let filtered = all;
   if (_annState.tab !== 'all') filtered = filtered.filter(a => a.type === _annState.tab);
   if (_annState.year) filtered = filtered.filter(a => String(a.createdAt || '').startsWith(_annState.year));
   if (_annState.docNumber) filtered = filtered.filter(a => (a.docNumber || '') === _annState.docNumber);
   if (_annState.titleId) filtered = filtered.filter(a => a.id === _annState.titleId);
+  if (_annState.unreadOnly) filtered = filtered.filter(a => !DB.isAnnouncementRead(a.id));
   if (_annState.search) {
     const s = _annState.search.toLowerCase();
     filtered = filtered.filter(a => (a.title || '').toLowerCase().includes(s) || (a.body || '').toLowerCase().includes(s));
@@ -9165,10 +9177,8 @@ router.register('announcements', () => {
     .map(a => ({ id: a.id, title: a.title, type: a.type, docNumber: a.docNumber || '' }))
     .sort((a, b) => a.title.localeCompare(b.title, 'th'));
 
-  const hasFilters = !!(_annState.search || _annState.year || _annState.docNumber || _annState.titleId || _annState.tab !== 'all');
+  const hasFilters = !!(_annState.search || _annState.year || _annState.docNumber || _annState.titleId || _annState.tab !== 'all' || _annState.unreadOnly);
 
-  // ผู้ที่ไม่ใช่ admin/HR เท่านั้นที่เห็นป้าย "ยังไม่อ่าน" (admin/HR ไม่นับเป็นผู้รับ)
-  const showUnread = !DB.isHR && !!DB.profile?.employee_id;
   const renderCard = (a) => {
     const TYPE = { label: ANN_TYPE_LABEL[a.type] || a.type, cls: ANN_TYPE_BADGE[a.type] || 'badge' };
     const PRI = a.priority !== 'normal' ? { label: ANN_PRIORITY_LABEL[a.priority], cls: ANN_PRIORITY_BADGE[a.priority] } : null;
@@ -9237,6 +9247,9 @@ router.register('announcements', () => {
           return `<option value="${escapeHtml(o.id)}" ${_annState.titleId === o.id ? 'selected' : ''} title="${escapeHtml(o.title)}">${escapeHtml(fullLabel)}</option>`;
         }).join('')}
       </select>
+      ${showUnread ? `<button class="sw-filter-unread ${_annState.unreadOnly ? 'is-active' : ''}" onclick="toggleAnnUnreadOnly()" title="${_annState.unreadOnly ? 'แสดงทั้งหมด' : 'กรองเฉพาะที่ยังไม่ได้อ่าน'}">
+        <span class="sw-filter-unread-dot"></span>ยังไม่อ่าน${unreadCount ? `<span class="sw-filter-unread-count">${fmt.num(unreadCount)}</span>` : ''}
+      </button>` : ''}
       ${hasFilters ? `<button class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearAnnFilters()">✕ ล้างตัวกรอง</button>` : ''}
     </div>
 
@@ -9248,9 +9261,17 @@ router.register('announcements', () => {
     ` : `
       <div class="sw-chart-card">
         <div class="empty-state" style="padding:60px 20px">
-          <div style="font-size:42px;margin-bottom:12px;opacity:0.35">📣</div>
-          <div class="title" style="font-size:16px;font-weight:600">${hasFilters ? 'ไม่พบประกาศตามตัวกรอง' : 'ยังไม่มีประกาศหรือคำสั่ง'}</div>
-          <div class="hint" style="margin-top:6px">${hasFilters ? 'ลองล้างตัวกรองเพื่อดูทั้งหมด' : (DB.isHR ? 'กด + สร้างใหม่ เพื่อเริ่ม' : 'รอ HR ประกาศ')}</div>
+          <div style="font-size:42px;margin-bottom:12px;opacity:0.35">${_annState.unreadOnly && unreadCount === 0 ? '✓' : '📣'}</div>
+          <div class="title" style="font-size:16px;font-weight:600">${
+            _annState.unreadOnly && unreadCount === 0 ? 'อ่านครบทุกฉบับแล้ว'
+            : hasFilters ? 'ไม่พบประกาศตามตัวกรอง'
+            : 'ยังไม่มีประกาศหรือคำสั่ง'
+          }</div>
+          <div class="hint" style="margin-top:6px">${
+            _annState.unreadOnly && unreadCount === 0 ? 'เยี่ยมมาก — ไม่มีข่าวสารที่ยังไม่ได้อ่าน'
+            : hasFilters ? 'ลองล้างตัวกรองเพื่อดูทั้งหมด'
+            : (DB.isHR ? 'กด + สร้างใหม่ เพื่อเริ่ม' : 'รอ HR ประกาศ')
+          }</div>
         </div>
       </div>`}
   `;
