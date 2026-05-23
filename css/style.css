@@ -2958,12 +2958,14 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-/* Sidebar/topbar ไม่เปลี่ยน → ไม่ต้อง animate (ลด jank) */
-.sidebar, .topbar {
-  view-transition-name: shell;
-}
-::view-transition-old(shell),
-::view-transition-new(shell) {
+/* Sidebar/topbar ไม่เปลี่ยน → ไม่ต้อง animate (ลด jank)
+   หมายเหตุ: view-transition-name ต้อง unique ต่อ element — ตั้งแยกชื่อ */
+.sidebar { view-transition-name: shell-sidebar; }
+.topbar  { view-transition-name: shell-topbar; }
+::view-transition-old(shell-sidebar),
+::view-transition-new(shell-sidebar),
+::view-transition-old(shell-topbar),
+::view-transition-new(shell-topbar) {
   animation: none;
   mix-blend-mode: normal;
 }
