@@ -9271,6 +9271,8 @@ function renderLeaveTab() {
           const stat = LEAVE_STATUS_BADGE[r.status] || { label: r.status, cls: 'badge' };
           const approver = DB.getLeaveApprover(r.employeeId);
           const canApprove = DB.canApproveLeaveFor(r.employeeId);
+          // คำขอที่วันลาผ่านไปแล้วและไม่ใช่ประเภทที่ allowBackdate (ป่วย/คลอด) → ห้ามอนุมัติ
+          const isExpired = r.status === 'pending' && !typeCfg.allowBackdate && r.endDate && r.endDate < tz.today();
           const isSelfApprove = approver && approver.id === r.employeeId;
           let approverCell = '<span class="muted-2">—</span>';
           if (approver) {
@@ -9301,8 +9303,9 @@ function renderLeaveTab() {
             </td>
             <td>${approverCell}</td>
             <td class="actions">
-              ${r.status === 'pending' && canApprove ? `<button class="btn btn-success btn-sm" onclick="approveLeave('${r.id}')">อนุมัติ</button>
-                <button class="btn btn-danger btn-sm" onclick="rejectLeave('${r.id}')">ปฏิเสธ</button>` : ''}
+              ${isExpired ? `<span class="badge badge-danger" title="วันลาสิ้นสุด ${fmt.date(r.endDate)} ผ่านไปแล้ว — ประเภท ${escapeHtml(typeCfg.label)} ไม่อนุญาตให้อนุมัติย้อนหลัง" style="font-size:10.5px">⛔ เลยกำหนด — อนุมัติไม่ได้</span>` : ''}
+              ${r.status === 'pending' && canApprove && !isExpired ? `<button class="btn btn-success btn-sm" onclick="approveLeave('${r.id}')">อนุมัติ</button>` : ''}
+              ${r.status === 'pending' && canApprove ? `<button class="btn btn-danger btn-sm" onclick="rejectLeave('${r.id}')">ปฏิเสธ</button>` : ''}
               ${r.status === 'pending' && !canApprove ? `<span class="muted-2 sw-wait-note">รอหัวสาขา</span>` : ''}
               ${r.status === 'pending' ? `<button class="btn btn-ghost btn-sm" onclick="openLeaveRequestForm('${r.id}')">แก้</button>
                 <button class="btn btn-ghost btn-sm" onclick="cancelLeave('${r.id}')">ยกเลิก</button>` : ''}
@@ -9685,6 +9688,17 @@ function requireApprover(requestId) {
 
 async function approveLeave(id) {
   if (!requireApprover(id)) return;
+  // กฎ: ห้ามอนุมัติคำขอที่วันลาผ่านไปแล้ว ยกเว้นประเภท allowBackdate (ป่วย/คลอด)
+  // เช็คฝั่ง UI ก่อน เพื่อไม่ต้องเปิด prompt แล้วเด้ง error ตอน save
+  const req = DB.getLeaveRequest(id);
+  if (req) {
+    const cfg = DB.LEAVE_TYPES[req.leaveType];
+    const today = tz.today();
+    if (!cfg?.allowBackdate && req.endDate && req.endDate < today) {
+      toast(`ไม่สามารถอนุมัติได้ — วันลาผ่านไปแล้ว (สิ้นสุด ${fmt.date(req.endDate)}) · ประเภท "${cfg?.label || req.leaveType}" ไม่อนุญาตให้อนุมัติย้อนหลัง · กรุณาปฏิเสธหรือยกเลิก`, 'error');
+      return;
+    }
+  }
   const note = await modal.prompt('อนุมัติคำขอลา', 'หมายเหตุ (ถ้ามี):', '');
   if (note === null) return;
   try {

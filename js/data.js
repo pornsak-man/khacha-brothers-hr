@@ -2209,8 +2209,24 @@ const DB = {
     }
   },
 
+  // กฎทางธุรกิจ: ห้ามอนุมัติคำขอลาที่วันสิ้นสุดผ่านไปแล้ว
+  // ยกเว้นประเภทที่ allow_backdate (ลาป่วย / ลาคลอด / ลาคลอดช่วยภริยา) — มี admin คุม flag นี้ที่ tab "ตั้งค่าประเภท"
+  // applies ทุก role รวมถึง admin/HR เพราะเป็นกฎทางธุรกิจ ไม่ใช่กฎ permission
+  _ensureLeaveDateApprovable(req) {
+    const cfg = this.LEAVE_TYPES[req.leaveType];
+    if (cfg?.allowBackdate) return;
+    const today = this.todayBkk();
+    if (req.endDate && req.endDate < today) {
+      const label = cfg?.label || req.leaveType;
+      throw new Error(`ไม่สามารถอนุมัติได้ — วันลาผ่านไปแล้ว (สิ้นสุด ${req.endDate}) · ประเภท "${label}" ไม่อนุญาตให้อนุมัติย้อนหลัง · กรุณาปฏิเสธหรือยกเลิกคำขอนี้`);
+    }
+  },
+
   async approveLeaveRequest(id, note = '') {
     this._ensureCanApproveLeave(id);
+    const req = this.getLeaveRequest(id);
+    if (!req) throw new Error('ไม่พบคำขอลา');
+    this._ensureLeaveDateApprovable(req);
     const { data, error } = await this.client.from('leave_requests')
       .update({ status: 'approved', approved_by: this.user?.id || null, approved_at: new Date().toISOString(), approver_note: note || null })
       .eq('id', id).select().single();
