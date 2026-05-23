@@ -9272,7 +9272,8 @@ function renderLeaveTab() {
           const approver = DB.getLeaveApprover(r.employeeId);
           const canApprove = DB.canApproveLeaveFor(r.employeeId);
           // คำขอที่วันลาผ่านไปแล้วและไม่ใช่ประเภทที่ allowBackdate (ป่วย/คลอด) → ห้ามอนุมัติ
-          const isExpired = r.status === 'pending' && !typeCfg.allowBackdate && r.endDate && r.endDate < tz.today();
+          // ยกเว้น admin/HR ที่ override ได้ทุกกรณี
+          const isExpired = !DB.isHR && r.status === 'pending' && !typeCfg.allowBackdate && r.endDate && r.endDate < tz.today();
           const isSelfApprove = approver && approver.id === r.employeeId;
           let approverCell = '<span class="muted-2">—</span>';
           if (approver) {
@@ -9689,14 +9690,16 @@ function requireApprover(requestId) {
 async function approveLeave(id) {
   if (!requireApprover(id)) return;
   // กฎ: ห้ามอนุมัติคำขอที่วันลาผ่านไปแล้ว ยกเว้นประเภท allowBackdate (ป่วย/คลอด)
-  // เช็คฝั่ง UI ก่อน เพื่อไม่ต้องเปิด prompt แล้วเด้ง error ตอน save
-  const req = DB.getLeaveRequest(id);
-  if (req) {
-    const cfg = DB.LEAVE_TYPES[req.leaveType];
-    const today = tz.today();
-    if (!cfg?.allowBackdate && req.endDate && req.endDate < today) {
-      toast(`ไม่สามารถอนุมัติได้ — วันลาผ่านไปแล้ว (สิ้นสุด ${fmt.date(req.endDate)}) · ประเภท "${cfg?.label || req.leaveType}" ไม่อนุญาตให้อนุมัติย้อนหลัง · กรุณาปฏิเสธหรือยกเลิก`, 'error');
-      return;
+  // admin/HR override ได้ทุกกรณี (ทำได้ทุกอย่างไม่มีข้อยกเว้น) → skip check
+  if (!DB.isHR) {
+    const req = DB.getLeaveRequest(id);
+    if (req) {
+      const cfg = DB.LEAVE_TYPES[req.leaveType];
+      const today = tz.today();
+      if (!cfg?.allowBackdate && req.endDate && req.endDate < today) {
+        toast(`ไม่สามารถอนุมัติได้ — วันลาผ่านไปแล้ว (สิ้นสุด ${fmt.date(req.endDate)}) · ประเภท "${cfg?.label || req.leaveType}" ไม่อนุญาตให้อนุมัติย้อนหลัง · กรุณาปฏิเสธหรือยกเลิก`, 'error');
+        return;
+      }
     }
   }
   const note = await modal.prompt('อนุมัติคำขอลา', 'หมายเหตุ (ถ้ามี):', '');

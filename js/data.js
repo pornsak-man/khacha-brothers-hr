@@ -2210,9 +2210,11 @@ const DB = {
   },
 
   // กฎทางธุรกิจ: ห้ามอนุมัติคำขอลาที่วันสิ้นสุดผ่านไปแล้ว
-  // ยกเว้นประเภทที่ allow_backdate (ลาป่วย / ลาคลอด / ลาคลอดช่วยภริยา) — มี admin คุม flag นี้ที่ tab "ตั้งค่าประเภท"
-  // applies ทุก role รวมถึง admin/HR เพราะเป็นกฎทางธุรกิจ ไม่ใช่กฎ permission
+  // ยกเว้น (1) ประเภทที่ allow_backdate (ลาป่วย / ลาคลอด / ลาคลอดช่วยภริยา)
+  //       (2) admin / HR — override ได้ทุกกรณี (ทำได้ทุกอย่างไม่มีข้อยกเว้น)
+  // ใช้กับ branch_manager / area_manager เท่านั้น
   _ensureLeaveDateApprovable(req) {
+    if (this.isHR) return; // admin + hr bypass ทุกกรณี
     const cfg = this.LEAVE_TYPES[req.leaveType];
     if (cfg?.allowBackdate) return;
     const today = this.todayBkk();
