@@ -4,17 +4,17 @@
    ═══════════════════════════════════════════════════════════ */
 
 :root {
-  /* ─── Brand — Slate Royal (cleaner, more modern than navy) ─── */
-  --navy-50:  #F1F5F9;
-  --navy-100: #E2E8F0;
-  --navy-200: #CBD5E1;
-  --navy-300: #94A3B8;
-  --navy-400: #475569;
-  --navy-500: #1E293B;   /* Primary — slate-800 royal (modern, clean) */
-  --navy-600: #0F172A;
-  --navy-700: #0B1220;
-  --navy-800: #050810;
-  --navy-900: #020409;
+  /* ─── Brand — Royal Sapphire Blue (vivid, premium banking, not dark) ─── */
+  --navy-50:  #EFF6FF;     /* blue-50 */
+  --navy-100: #DBEAFE;     /* blue-100 */
+  --navy-200: #BFDBFE;     /* blue-200 */
+  --navy-300: #93C5FD;     /* blue-300 */
+  --navy-400: #3B82F6;     /* blue-500 */
+  --navy-500: #1D4ED8;     /* Primary — blue-700 royal sapphire (vivid, premium) */
+  --navy-600: #1E40AF;     /* blue-800 hover */
+  --navy-700: #1E3A8A;     /* blue-900 */
+  --navy-800: #172554;     /* blue-950 */
+  --navy-900: #0F172A;     /* slate-900 — deepest */
 
   --primary:       var(--navy-500);
   --primary-hover: var(--navy-600);
@@ -428,44 +428,44 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 
 /* PRIMARY — Deep navy gradient with subtle gloss */
 .btn-primary {
-  /* Polished slate royal — modern luxe with reflection highlight */
+  /* Royal Sapphire — vivid blue with glossy reflection */
   background:
     linear-gradient(180deg,
-      rgba(255, 255, 255, 0.10) 0%,
+      rgba(255, 255, 255, 0.16) 0%,
       rgba(255, 255, 255, 0) 50%
     ),
-    linear-gradient(180deg, #334155 0%, #1E293B 55%, #0F172A 100%);
+    linear-gradient(180deg, #3B82F6 0%, #2563EB 55%, #1D4ED8 100%);
   color: #fff;
-  border-color: rgba(15, 23, 42, 0.5);
+  border-color: rgba(29, 78, 216, 0.55);
   letter-spacing: 0.01em;
   font-weight: 600;
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.18) inset,
-    0 -1px 0 rgba(0, 0, 0, 0.18) inset,
-    0 2px 4px rgba(15, 23, 42, 0.18),
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+    0 1px 0 rgba(255, 255, 255, 0.24) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.16) inset,
+    0 4px 10px rgba(29, 78, 216, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset;
 }
 .btn-primary:hover:not(:disabled) {
   background:
     linear-gradient(180deg,
-      rgba(255, 255, 255, 0.14) 0%,
+      rgba(255, 255, 255, 0.22) 0%,
       rgba(255, 255, 255, 0) 50%
     ),
-    linear-gradient(180deg, #475569 0%, #25324A 55%, #0F172A 100%);
-  border-color: rgba(11, 18, 32, 0.6);
+    linear-gradient(180deg, #60A5FA 0%, #3B82F6 55%, #1E40AF 100%);
+  border-color: rgba(30, 58, 138, 0.65);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.24) inset,
-    0 -1px 0 rgba(0, 0, 0, 0.20) inset,
-    0 8px 22px rgba(30, 41, 59, 0.30),
-    0 2px 6px rgba(15, 23, 42, 0.20);
+    0 1px 0 rgba(255, 255, 255, 0.30) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.18) inset,
+    0 10px 26px rgba(29, 78, 216, 0.38),
+    0 2px 6px rgba(30, 58, 138, 0.20);
   transform: translateY(-1px);
 }
 .btn-primary:active:not(:disabled) {
   transform: translateY(0);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.10) inset,
+    0 1px 0 rgba(255, 255, 255, 0.14) inset,
     0 -1px 0 rgba(0, 0, 0, 0.22) inset,
-    0 1px 2px rgba(15, 23, 42, 0.20);
+    0 1px 2px rgba(29, 78, 216, 0.25);
 }
 
 /* SECONDARY — Outlined with refined hover lift */

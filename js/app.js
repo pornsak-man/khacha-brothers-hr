@@ -1260,7 +1260,7 @@ function destroyAllCharts() {
 // ─── Premium Chart Palette ─────────────────────────────────
 // Cohesive editorial palette — navy + sage green accent + refined semantics
 const CHART_PALETTE = {
-  primary:   '#1E293B',  primaryHover:   '#0F172A',  primaryLight:   'rgba(30, 41, 59, 0.10)',
+  primary:   '#1D4ED8',  primaryHover:   '#1E40AF',  primaryLight:   'rgba(29, 78, 216, 0.10)',
   emerald:   '#10B981',  emeraldHover:   '#059669',  emeraldLight:   'rgba(16, 185, 129, 0.10)',
   crimson:   '#EF4444',  crimsonHover:   '#DC2626',  crimsonLight:   'rgba(239, 68, 68, 0.10)',
   amber:     '#F97316',  amberHover:     '#EA580C',  amberLight:     'rgba(249, 115, 22, 0.10)',
