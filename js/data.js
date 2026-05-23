@@ -900,9 +900,11 @@ const DB = {
       const pos = this.getPosition(filter.position);
       const posName = (pos?.name || '').trim();
       const posNameLc = posName.toLowerCase();
-      // escape regex meta-chars (เช่น "Act.RM" มี '.') + boundary = ตัวอักษร/ตัวเลข/ไทย → ป้องกัน match กับคำที่ embed อยู่ใน word อื่น เช่น "ARM"
+      // escape regex meta-chars (เช่น "Act.RM" มี '.') + boundary = ตัวอักษร/ตัวเลข/ไทย/จุด
+      // รวม '.' เป็นส่วนของคำ เพราะตัวย่อตำแหน่งใช้ '.' เชื่อมคำเดียวกัน เช่น "Act.RM" = Acting RM
+      // (เป็นตำแหน่งคนละตัวกับ "RM") — ถ้าไม่รวม จะทำให้กรอง "RM" แล้ว match "Act.RM" ผิด
       const escaped = posName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const reTitle = posName ? new RegExp(`(^|[^A-Za-z0-9ก-๙])${escaped}($|[^A-Za-z0-9ก-๙])`, 'i') : null;
+      const reTitle = posName ? new RegExp(`(^|[^A-Za-z0-9ก-๙.])${escaped}($|[^A-Za-z0-9ก-๙.])`, 'i') : null;
       list = list.filter(e => {
         if (e.position === filter.position) return true;          // FK match ปกติ
         if (posName && e.position === posName) return true;         // legacy: position เก็บเป็นชื่อ
