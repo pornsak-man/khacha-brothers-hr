@@ -587,6 +587,7 @@ const router = {
       recruit: 'รับสมัครงาน',
       uniform: 'จัดชุดพนักงาน',
       audit: 'ประวัติการแก้ไข',
+      blacklist: 'รายชื่อห้ามจ้าง',
       leave: 'การลางาน',
       'salary-adjust': 'ปรับค่าจ้าง / ตำแหน่ง / สาขา',
       loans: 'การกู้เงินบริษัท',
@@ -623,6 +624,7 @@ const router = {
     if (name === 'employees') wireEmployeePage();
     if (name === 'positions') wirePositionsPage();
     if (name === 'departments') wireDepartmentsPage();
+    if (name === 'blacklist') wireBlacklistPage();
     if (name === 'recruit') wireRecruitPage();
     if (name === 'settings' && typeof renderEmpAccounts === 'function') renderEmpAccounts();
     if (name === 'user-roles' && typeof renderEmpAccounts === 'function') renderEmpAccounts();
@@ -7918,6 +7920,7 @@ router.register('reports', () => {
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+        <button class="btn btn-primary" onclick="openMultiSheetExportModal()" style="justify-content:flex-start;padding:14px 16px">${ICON.download}<span style="margin-left:8px">📊 Multi-sheet (เลือกตัวกรอง)</span></button>
         <button class="btn btn-secondary" onclick="exportEmployeesXLSX()" style="justify-content:flex-start;padding:14px 16px">${ICON.download}<span style="margin-left:8px">พนักงาน (Excel)</span></button>
         <button class="btn btn-secondary" onclick="exportPayrollXLSX()" style="justify-content:flex-start;padding:14px 16px">${ICON.download}<span style="margin-left:8px">บัญชีเงินเดือน (Excel)</span></button>
         <button class="btn btn-secondary" onclick="exportLoansXLSX()" style="justify-content:flex-start;padding:14px 16px">${ICON.download}<span style="margin-left:8px">รายการกู้ (Excel)</span></button>
@@ -8040,6 +8043,211 @@ function exportLoansXLSX() {
   XLSX.utils.book_append_sheet(wb, ws, 'การกู้');
   XLSX.writeFile(wb, `คชา-รายการกู้-${tz.today()}.xlsx`);
   toast('ส่งออกแล้ว', 'success');
+}
+
+// ─── MULTI-SHEET EXPORT — เลือกตัวกรอง + สรุปข้อมูลใน 1 ไฟล์ Excel ─────
+// User เลือก scope (สาขา/ฝ่าย/สายงาน/ช่วงเวลา/แสดงเงินเดือน) ก่อน → ไฟล์เดียวมี
+// 5-7 sheet: พนักงาน + การลา + ประวัติเงินเดือน + master ที่เกี่ยวข้อง
+function openMultiSheetExportModal() {
+  if (!requireHR()) return;
+  const branches = DB.getBranches();
+  const depts = DB.getDepartments();
+  const scopes = DB.getScopes();
+  modal.open('📊 Export หลาย Sheet พร้อมตัวกรอง', `
+    <form id="mseForm">
+      <div class="form-grid">
+        <div class="form-group"><label>สาขา</label><select name="branch">
+          <option value="">— ทุกสาขา —</option>
+          ${branches.map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('')}
+        </select></div>
+        <div class="form-group"><label>ฝ่าย</label><select name="department">
+          <option value="">— ทุกฝ่าย —</option>
+          ${depts.map(d => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)}</option>`).join('')}
+        </select></div>
+        <div class="form-group"><label>สายงาน</label><select name="scope">
+          <option value="">— ทุกสายงาน —</option>
+          ${scopes.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.label)}</option>`).join('')}
+        </select></div>
+        <div class="form-group"><label>สถานะ</label><select name="status">
+          <option value="active">เฉพาะปฏิบัติงาน (default)</option>
+          <option value="all">ทั้งหมด (รวมพ้นสภาพ)</option>
+          <option value="resigned">เฉพาะพ้นสภาพ</option>
+        </select></div>
+        <div class="form-group"><label>วันเริ่มงาน — ตั้งแต่</label><input name="hireFrom" type="date"/></div>
+        <div class="form-group"><label>วันเริ่มงาน — ถึง</label><input name="hireTo" type="date"/></div>
+        <div class="form-group span-2"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" name="includeSalary" checked/> รวมข้อมูลเงินเดือน + รายได้
+        </label><div class="muted-2" style="font-size:11.5px;margin-top:4px">ถ้าไม่เลือก → คอลัมน์เงินเดือน/ค่าตอบแทนจะแสดง "***" (ใช้กรณี share ไฟล์กับคนอื่น)</div></div>
+        <div class="form-group span-2"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" name="includeLeave" checked/> รวม sheet "การลาย้อนหลัง 12 เดือน"
+        </label></div>
+        <div class="form-group span-2"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" name="includeMaster" checked/> รวม sheet master (สาขา / ฝ่าย / ตำแหน่ง / สายงาน)
+        </label></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" data-close>ยกเลิก</button>
+        <button type="submit" class="btn btn-primary">📥 Export</button>
+      </div>
+    </form>
+  `);
+  $('#mseForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    data.includeSalary = data.includeSalary === 'on';
+    data.includeLeave = data.includeLeave === 'on';
+    data.includeMaster = data.includeMaster === 'on';
+    modal.close();
+    runWhenIdle(() => doMultiSheetExport(data));
+  });
+}
+
+function doMultiSheetExport(opts) {
+  if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(() => doMultiSheetExport(opts), 800); return; }
+  const cs = csvSafe;
+  // ── Apply filters to employees ──
+  let emps = DB.getEmployees().slice();
+  if (opts.branch)     emps = emps.filter(e => e.branch === opts.branch);
+  if (opts.department) emps = emps.filter(e => e.department === opts.department);
+  if (opts.scope)      emps = DB._filterByScope(emps, opts.scope);
+  if (opts.status === 'active')   emps = emps.filter(e => DB.empStatus(e) !== 'resigned');
+  else if (opts.status === 'resigned') emps = emps.filter(e => DB.empStatus(e) === 'resigned');
+  if (opts.hireFrom)   emps = emps.filter(e => (e.hireDate || '') >= opts.hireFrom);
+  if (opts.hireTo)     emps = emps.filter(e => (e.hireDate || '') <= opts.hireTo);
+
+  if (emps.length === 0) { toast('ไม่พบพนักงานที่ตรงกับตัวกรอง', 'warning'); return; }
+
+  const mask = (v) => opts.includeSalary ? Number(v || 0) : '***';
+  const empSet = new Set(emps.map(e => e.id));
+  const wb = XLSX.utils.book_new();
+
+  // ── Sheet 1: พนักงาน ──
+  const empRows = emps.map(e => ({
+    'รหัส': excelNum(e.id), 'คำนำหน้า': cs(e.title), 'ชื่อ': cs(e.firstName), 'นามสกุล': cs(e.lastName),
+    'ชื่อเล่น': cs(e.nickname),
+    'เลขประชาชน': excelNum(e.nationalId), 'วันเกิด': excelDate(e.dob), 'เพศ': cs(e.gender),
+    'สัญชาติ': cs(e.nationality),
+    'เบอร์โทร': cs(e.phone), 'อีเมล': cs(e.email),
+    'ฝ่าย': cs((DB.getDepartment(e.department) || {}).name || ''),
+    'สาขา': cs(e.branch),
+    'ตำแหน่ง': cs(e.positionTitle),
+    'สาย': cs((DB.getScope((DB.getPosition(e.position) || {}).scope) || {}).label || ''),
+    'ประเภทพนักงาน': cs(e.employeeType),
+    'วันเริ่มงาน': excelDate(e.hireDate),
+    'วันพ้นสภาพ': excelDate(e.terminationDate),
+    'เงินเดือน': mask(e.salary),
+    'ค่าตำแหน่ง': mask(e.allowancePosition),
+    'ค่าเดินทาง': mask(e.allowanceTravel),
+    'ค่าอาหาร': mask(e.allowanceFood),
+    'ค่าเบี้ยเลี้ยง': mask(e.allowancePerDiem),
+    'ค่าภาษา': mask(e.allowanceLanguage),
+    'ค่าอื่นๆ': mask(e.allowanceOther),
+    'รวมรายได้': opts.includeSalary ? totalIncome(e) : '***',
+    'สถานะ': DB.empStatus(e) === 'resigned' ? 'พ้นสภาพ' : 'ปฏิบัติงาน'
+  }));
+  const wsEmp = XLSX.utils.json_to_sheet(empRows);
+  wsEmp['!cols'] = Object.keys(empRows[0] || {}).map(k => ({ wch: k === 'เลขประชาชน' ? 16 : k === 'ที่อยู่' ? 30 : 12 }));
+  XLSX.utils.book_append_sheet(wb, wsEmp, 'พนักงาน');
+
+  // ── Sheet 2: การลา 12 เดือนย้อนหลัง ──
+  if (opts.includeLeave) {
+    const today = tz.today();
+    const oneYearAgo = (() => {
+      const d = new Date(today); d.setFullYear(d.getFullYear() - 1);
+      return d.toISOString().slice(0, 10);
+    })();
+    const leaves = (DB.data.leaveRequests || [])
+      .filter(r => empSet.has(r.employeeId) && (r.startDate || '') >= oneYearAgo)
+      .sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''));
+    const leaveRows = leaves.map(r => {
+      const e = DB.getEmployee(r.employeeId) || {};
+      const lt = DB.LEAVE_TYPES?.[r.leaveType];
+      return {
+        'รหัสพนักงาน': excelNum(r.employeeId),
+        'ชื่อ-นามสกุล': cs(((e.firstName || '') + ' ' + (e.lastName || '')).trim()),
+        'สาขา': cs(e.branch),
+        'ประเภทการลา': cs(lt?.label || r.leaveType),
+        'วันเริ่ม': excelDate(r.startDate),
+        'วันสิ้นสุด': excelDate(r.endDate),
+        'จำนวนวัน': Number(r.days || 0),
+        'เหตุผล': cs(r.reason),
+        'สถานะ': r.status === 'approved' ? 'อนุมัติ' : r.status === 'rejected' ? 'ปฏิเสธ' : r.status === 'cancelled' ? 'ยกเลิก' : 'รอ',
+        'ผู้อนุมัติ': cs(r.approverNote)
+      };
+    });
+    if (leaveRows.length) {
+      const wsLeave = XLSX.utils.json_to_sheet(leaveRows);
+      wsLeave['!cols'] = Object.keys(leaveRows[0]).map(() => ({ wch: 14 }));
+      XLSX.utils.book_append_sheet(wb, wsLeave, 'การลา');
+    }
+  }
+
+  // ── Sheet 3-6: Master tables ──
+  if (opts.includeMaster) {
+    const branchRows = DB.getBranches().map(b => ({ 'รหัสสาขา': b, 'จำนวนพนักงาน': emps.filter(e => e.branch === b).length }));
+    if (branchRows.length) {
+      const ws = XLSX.utils.json_to_sheet(branchRows);
+      ws['!cols'] = [{ wch: 16 }, { wch: 16 }];
+      XLSX.utils.book_append_sheet(wb, ws, 'สาขา');
+    }
+    const deptRows = DB.getDepartments().map(d => ({
+      'รหัส': d.id, 'ชื่อฝ่าย': d.name,
+      'สาย': (DB.getScope(d.scope) || {}).label || '',
+      'จำนวนพนักงาน': emps.filter(e => e.department === d.id).length
+    }));
+    if (deptRows.length) {
+      const ws = XLSX.utils.json_to_sheet(deptRows);
+      ws['!cols'] = [{ wch: 10 }, { wch: 24 }, { wch: 20 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, 'ฝ่าย');
+    }
+    const posRows = DB.getPositions().sort((a, b) => (b.level || 0) - (a.level || 0)).map(p => ({
+      'รหัส': p.id, 'ชื่อตำแหน่ง': p.name,
+      'สาย': (DB.getScope(p.scope) || {}).label || '',
+      'ระดับ': Number(p.level || 0),
+      'เงินเดือนต่ำสุด': opts.includeSalary ? Number(p.minSalary || 0) : '***',
+      'เงินเดือนสูงสุด': opts.includeSalary ? Number(p.maxSalary || 0) : '***',
+      'จำนวนพนักงาน': emps.filter(e => e.position === p.id).length
+    }));
+    if (posRows.length) {
+      const ws = XLSX.utils.json_to_sheet(posRows);
+      ws['!cols'] = [{ wch: 10 }, { wch: 22 }, { wch: 20 }, { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, 'ตำแหน่ง');
+    }
+    const scopeRows = DB.getScopes().map(s => ({ 'รหัส': s.id, 'ชื่อสาย': s.label }));
+    if (scopeRows.length) {
+      const ws = XLSX.utils.json_to_sheet(scopeRows);
+      ws['!cols'] = [{ wch: 12 }, { wch: 26 }];
+      XLSX.utils.book_append_sheet(wb, ws, 'สายงาน');
+    }
+  }
+
+  // ── Sheet สุดท้าย: Summary + filter ที่ใช้ ──
+  const summary = [
+    ['📊 Multi-sheet Export Summary'],
+    [''],
+    ['วันที่ส่งออก', new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })],
+    ['ส่งออกโดย', DB.profile?.employee_id || DB.user?.email || '-'],
+    [''],
+    ['── ตัวกรอง ──'],
+    ['สาขา', opts.branch || 'ทุกสาขา'],
+    ['ฝ่าย', opts.department ? (DB.getDepartment(opts.department) || {}).name : 'ทุกฝ่าย'],
+    ['สายงาน', opts.scope ? (DB.getScope(opts.scope) || {}).label : 'ทุกสายงาน'],
+    ['สถานะ', { active: 'เฉพาะปฏิบัติงาน', all: 'ทั้งหมด', resigned: 'เฉพาะพ้นสภาพ' }[opts.status] || opts.status],
+    ['วันเริ่มงานตั้งแต่', opts.hireFrom || '-'],
+    ['วันเริ่มงานถึง', opts.hireTo || '-'],
+    ['รวมเงินเดือน', opts.includeSalary ? '✓ ใช่' : '✗ ไม่ (แสดง ***)'],
+    ['รวมการลา', opts.includeLeave ? '✓ ใช่' : '✗ ไม่'],
+    ['รวม master', opts.includeMaster ? '✓ ใช่' : '✗ ไม่'],
+    [''],
+    ['── สรุป ──'],
+    ['จำนวนพนักงานที่ export', emps.length]
+  ];
+  const wsSum = XLSX.utils.aoa_to_sheet(summary);
+  wsSum['!cols'] = [{ wch: 24 }, { wch: 40 }];
+  XLSX.utils.book_append_sheet(wb, wsSum, 'สรุป');
+
+  XLSX.writeFile(wb, `คชา-multi-${tz.today()}.xlsx`);
+  toast(`ส่งออกแล้ว · ${emps.length} คน · ${wb.SheetNames.length} sheet`, 'success');
 }
 
 function exportDataJSON() {
@@ -9292,6 +9500,215 @@ const AUDIT_TABLE_LABELS = {
   holiday_swap_requests: 'คำขอเปลี่ยนวันหยุด',
   company_announcements: 'ประกาศ & คำสั่ง'
 };
+// ═══════════════════════════════════════════════════════
+//  PAGE: BLACKLIST (รายชื่อห้ามจ้าง)
+// ═══════════════════════════════════════════════════════
+const BL_CATEGORY = {
+  theft:       { label: 'ขโมย/ฉ้อโกง',    badge: 'badge-danger' },
+  fraud:       { label: 'ทุจริต',           badge: 'badge-danger' },
+  violence:    { label: 'ความรุนแรง',     badge: 'badge-danger' },
+  conduct:     { label: 'ฝ่าฝืนระเบียบ',  badge: 'badge-warning' },
+  performance: { label: 'ผลงาน',           badge: 'badge-warning' },
+  attendance:  { label: 'ขาดงานบ่อย',     badge: 'badge-warning' },
+  other:       { label: 'อื่นๆ',             badge: 'badge-neutral' }
+};
+const BL_SEVERITY = {
+  permanent: { label: '⛔ ห้ามถาวร',  badge: 'badge-danger' },
+  temporary: { label: '⏳ ห้ามชั่วคราว', badge: 'badge-warning' },
+  review:    { label: '⚠️ ทบทวน',       badge: 'badge-info' }
+};
+const blState = { list: [], loading: false, includeRemoved: false, search: '', category: '', severity: '' };
+let _blSearchTimer;
+
+async function loadBlacklist() {
+  if (!DB.isHR) return;
+  blState.loading = true;
+  try {
+    blState.list = await DB.getBlacklist({ includeRemoved: blState.includeRemoved });
+  } catch (ex) {
+    toast('โหลด blacklist ไม่สำเร็จ: ' + (ex.message || ex), 'error');
+    blState.list = [];
+  } finally {
+    blState.loading = false;
+    router.go('blacklist');
+  }
+}
+
+router.register('blacklist', () => {
+  if (!DB.canManageBlacklist()) {
+    return `<div class="sw-chart-card"><div class="empty-state" style="padding:80px 20px"><div style="font-size:48px;margin-bottom:14px;opacity:0.4">🔒</div><div class="title" style="font-size:17px;font-weight:600">เฉพาะ admin / HR เท่านั้น</div></div></div>`;
+  }
+  // โหลดครั้งแรก
+  if (!blState.list.length && !blState.loading && !blState._loaded) {
+    blState._loaded = true;
+    runWhenIdle(() => loadBlacklist());
+  }
+  const sLc = (blState.search || '').toLowerCase().trim();
+  const filtered = blState.list.filter(b => {
+    if (blState.category && b.category !== blState.category) return false;
+    if (blState.severity && b.severity !== blState.severity) return false;
+    if (sLc) {
+      const hay = (b.national_id + ' ' + (b.full_name || '') + ' ' + (b.nickname || '') + ' ' + (b.previous_emp_id || '') + ' ' + (b.reason || '')).toLowerCase();
+      if (!hay.includes(sLc)) return false;
+    }
+    return true;
+  });
+
+  const hasFilter = blState.search || blState.category || blState.severity || blState.includeRemoved;
+
+  return `
+    <div class="sw-page-header">
+      <div>
+        <div class="sw-page-title">🚫 รายชื่อห้ามจ้าง</div>
+        <div class="sw-page-subtitle">บันทึกบุคคลที่ไม่ควรรับเข้าทำงาน · ระบบเช็คอัตโนมัติเมื่อกรอกเลข ปชช.</div>
+      </div>
+      <div class="sw-page-actions">
+        <button class="btn btn-primary" onclick="openBlacklistForm()">+ เพิ่มรายชื่อ</button>
+      </div>
+    </div>
+    <div class="sw-chart-card">
+      <div class="sw-chart-header">
+        <div>
+          <div class="sw-chart-title">รายการ ${hasFilter ? `<span class="sw-chart-count">${fmt.num(filtered.length)} / ${fmt.num(blState.list.length)}</span>` : `<span class="sw-chart-count">${fmt.num(blState.list.length)}</span>`}</div>
+          <div class="sw-chart-sub">⚠️ ข้อมูลละเอียดอ่อน (PDPA) — เก็บเฉพาะที่มีหลักฐานยืนยัน · ทบทวนทุก 6-12 เดือน</div>
+        </div>
+      </div>
+      <div class="sw-filter-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--border)">
+        <input id="blSearch" class="sw-filter-input" type="search" placeholder="🔍 ค้นชื่อ / เลข ปชช. / เหตุผล" value="${escapeHtml(blState.search)}" style="flex:1;min-width:200px"/>
+        <select class="sw-filter-select" id="blCategory">
+          <option value="">— ทุกหมวด —</option>
+          ${Object.entries(BL_CATEGORY).map(([k, v]) => `<option value="${k}" ${blState.category === k ? 'selected' : ''}>${escapeHtml(v.label)}</option>`).join('')}
+        </select>
+        <select class="sw-filter-select" id="blSeverity">
+          <option value="">— ทุกระดับ —</option>
+          ${Object.entries(BL_SEVERITY).map(([k, v]) => `<option value="${k}" ${blState.severity === k ? 'selected' : ''}>${escapeHtml(v.label)}</option>`).join('')}
+        </select>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-2);cursor:pointer">
+          <input type="checkbox" id="blIncludeRemoved" ${blState.includeRemoved ? 'checked' : ''}/> แสดงที่ลบแล้ว
+        </label>
+        ${hasFilter ? `<button class="btn btn-ghost btn-sm" onclick="clearBlFilters()">✕ ล้างตัวกรอง</button>` : ''}
+      </div>
+      ${blState.loading ? `<div class="empty-state" style="padding:40px 20px"><div class="skeleton" style="height:14px;width:160px;margin:0 auto 8px"></div><div class="muted-2" style="font-size:12px">กำลังโหลด...</div></div>` :
+        filtered.length === 0 ? `<div class="empty-state" style="padding:40px 20px">
+          <div style="font-size:32px;margin-bottom:8px;opacity:0.3">${hasFilter ? '🔍' : '✓'}</div>
+          <div class="title" style="font-size:14px;font-weight:600">${hasFilter ? 'ไม่พบรายการที่ตรงกับตัวกรอง' : 'ยังไม่มีรายชื่อห้ามจ้าง'}</div>
+          <div class="hint" style="margin-top:4px">${hasFilter ? 'ลองล้างตัวกรอง' : 'กดปุ่ม + เพิ่มรายชื่อ เพื่อเริ่ม'}</div>
+        </div>` : `<div class="table-wrap"><table class="table table-compact">
+        <thead><tr>
+          <th>เลข ปชช.</th><th>ชื่อ-นามสกุล</th><th>หมวด</th><th>ระดับ</th>
+          <th>เหตุผล</th><th>รหัสเดิม</th><th>บันทึกโดย</th><th>วันที่</th><th>สถานะ</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${filtered.map(b => {
+            const cat = BL_CATEGORY[b.category] || { label: b.category, badge: 'badge' };
+            const sev = BL_SEVERITY[b.severity] || { label: b.severity, badge: 'badge' };
+            const isRemoved = !!b.removed_at;
+            return `<tr style="${isRemoved ? 'opacity:0.55' : ''}">
+              <td><code style="font-size:11.5px;font-weight:600">${escapeHtml(b.national_id)}</code></td>
+              <td><strong>${escapeHtml(b.full_name)}</strong>${b.nickname ? ` <span class="muted-2">(${escapeHtml(b.nickname)})</span>` : ''}</td>
+              <td><span class="badge ${cat.badge}">${escapeHtml(cat.label)}</span></td>
+              <td><span class="badge ${sev.badge}">${escapeHtml(sev.label)}</span>${b.review_date ? `<div class="muted-2" style="font-size:11px;margin-top:2px">ทบทวน ${fmt.date(b.review_date)}</div>` : ''}</td>
+              <td class="sw-reason-cell">${escapeHtml(b.reason)}</td>
+              <td class="sw-cell-meta">${b.previous_emp_id ? `<code style="font-size:11.5px">${escapeHtml(b.previous_emp_id)}</code>` : '—'}</td>
+              <td class="sw-cell-meta">${escapeHtml(b.created_by || '-')}</td>
+              <td class="sw-cell-meta">${fmt.date(b.created_at)}</td>
+              <td>${isRemoved ? `<span class="badge badge-neutral">✓ ถอดแล้ว</span><div class="muted-2" style="font-size:10.5px;margin-top:2px">${fmt.date(b.removed_at)}</div>` : `<span class="badge badge-danger">active</span>`}</td>
+              <td class="actions">
+                ${isRemoved ? '' : `<button class="btn btn-ghost btn-sm" onclick="openBlacklistForm(${b.id})">แก้</button>
+                  <button class="btn btn-ghost btn-sm" onclick="removeBlacklistEntry(${b.id})">ถอด</button>`}
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table></div>`}
+    </div>`;
+});
+
+function wireBlacklistPage() {
+  $('#blSearch')?.addEventListener('input', (e) => {
+    clearTimeout(_blSearchTimer);
+    _blSearchTimer = setTimeout(() => { blState.search = e.target.value; router.go('blacklist'); }, 200);
+  });
+  $('#blCategory')?.addEventListener('change', (e) => { blState.category = e.target.value; router.go('blacklist'); });
+  $('#blSeverity')?.addEventListener('change', (e) => { blState.severity = e.target.value; router.go('blacklist'); });
+  $('#blIncludeRemoved')?.addEventListener('change', (e) => {
+    blState.includeRemoved = e.target.checked;
+    blState._loaded = false;
+    loadBlacklist();
+  });
+}
+function clearBlFilters() {
+  blState.search = '';
+  blState.category = '';
+  blState.severity = '';
+  blState.includeRemoved = false;
+  blState._loaded = false;
+  loadBlacklist();
+}
+
+function openBlacklistForm(id = null) {
+  if (!DB.canManageBlacklist()) return;
+  const b = id ? (blState.list.find(x => x.id === id) || {}) : {};
+  const isEdit = !!id;
+  modal.open(isEdit ? 'แก้ไขรายชื่อห้ามจ้าง' : 'เพิ่มรายชื่อห้ามจ้าง', `
+    <form id="blForm">
+      <div class="form-grid">
+        <div class="form-group"><label>เลข ปชช. *</label><input name="nationalId" value="${escapeHtml(b.national_id || '')}" required maxlength="20" ${isEdit ? 'readonly' : ''} placeholder="13 หลัก"/></div>
+        <div class="form-group"><label>ชื่อ-นามสกุล *</label><input name="fullName" value="${escapeHtml(b.full_name || '')}" required placeholder="เช่น นาย ก. นามสมมุติ"/></div>
+        <div class="form-group"><label>ชื่อเล่น</label><input name="nickname" value="${escapeHtml(b.nickname || '')}"/></div>
+        <div class="form-group"><label>เบอร์โทร</label><input name="phone" value="${escapeHtml(b.phone || '')}"/></div>
+        <div class="form-group"><label>รหัสพนักงานเดิม</label><input name="previousEmpId" value="${escapeHtml(b.previous_emp_id || '')}" placeholder="ถ้าเคยทำงาน"/></div>
+        <div class="form-group"><label>หมวด *</label><select name="category" required>
+          ${Object.entries(BL_CATEGORY).map(([k, v]) => `<option value="${k}" ${b.category === k ? 'selected' : ''}>${escapeHtml(v.label)}</option>`).join('')}
+        </select></div>
+        <div class="form-group"><label>ระดับ *</label><select name="severity" id="blFormSeverity" required>
+          ${Object.entries(BL_SEVERITY).map(([k, v]) => `<option value="${k}" ${(b.severity || 'permanent') === k ? 'selected' : ''}>${escapeHtml(v.label)}</option>`).join('')}
+        </select></div>
+        <div class="form-group" id="blFormReviewWrap"><label>วันที่ทบทวน <span class="muted-2" style="font-weight:normal;font-size:11px">(สำหรับ "ห้ามชั่วคราว")</span></label>
+          <input name="reviewDate" type="date" value="${b.review_date || ''}"/>
+        </div>
+        <div class="form-group span-2"><label>เหตุผล *</label><input name="reason" value="${escapeHtml(b.reason || '')}" required maxlength="200" placeholder="สรุปสั้นๆ"/></div>
+        <div class="form-group span-2"><label>รายละเอียดเพิ่ม + หลักฐาน</label><textarea name="notes" rows="3" placeholder="เช่น วันที่เกิดเหตุ ลักษณะ มูลค่า เอกสารอ้างอิง">${escapeHtml(b.notes || '')}</textarea></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" data-close>ยกเลิก</button>
+        <button type="submit" class="btn btn-primary">บันทึก</button>
+      </div>
+    </form>`);
+  const toggleReview = () => {
+    const sev = $('#blFormSeverity')?.value;
+    const wrap = $('#blFormReviewWrap');
+    if (wrap) wrap.style.display = sev === 'temporary' ? '' : 'none';
+  };
+  $('#blFormSeverity')?.addEventListener('change', toggleReview);
+  toggleReview();
+  $('#blForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const data = Object.fromEntries(new FormData(e.target).entries());
+      if (isEdit) data.id = id;
+      await DB.saveBlacklistEntry(data);
+      modal.close();
+      toast(isEdit ? 'แก้ไขแล้ว' : 'เพิ่มแล้ว', 'success');
+      blState._loaded = false;
+      loadBlacklist();
+    } catch (ex) { toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
+  });
+}
+
+async function removeBlacklistEntry(id) {
+  if (!DB.canManageBlacklist()) return;
+  const reason = await modal.prompt('ถอดจาก blacklist',
+    'ระบุเหตุผลที่ถอด (เช่น "ทำงานครบ 2 ปี ไม่มีปัญหา", "ผ่านการทบทวน"):', '');
+  if (reason === null) return;
+  try {
+    await DB.removeBlacklistEntry(id, reason);
+    toast('ถอดออกแล้ว — เก็บไว้เป็น audit trail', 'success');
+    blState._loaded = false;
+    loadBlacklist();
+  } catch (ex) { toast('ถอดไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
+}
+
 const AUDIT_ACTION_LABELS = { INSERT: 'เพิ่ม', UPDATE: 'แก้ไข', DELETE: 'ลบ' };
 const AUDIT_ACTION_COLORS = { INSERT: 'badge-success', UPDATE: 'badge-info', DELETE: 'badge-danger' };
 
