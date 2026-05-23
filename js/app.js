@@ -2432,30 +2432,91 @@ function openEmployeeForm(id = null, init = null, onSaved = null) {
     warn.textContent = msg || '';
     warn.classList.toggle('show', !!msg);
   };
+  // ─── ENHANCED VALIDATION: live progress + positive feedback ───
+  // ปรับใหม่ — แสดง hint ขณะพิมพ์ ("พิมพ์ต่อ 8/13") + ✅ เขียวเมื่อถูก
+  const setFieldFeedback = (inputSel, warnId, state, msg) => {
+    // state: 'ok' | 'progress' | 'error' | ''
+    const input = $(inputSel);
+    const warn = $('#' + warnId);
+    if (!input || !warn) return;
+    input.classList.remove('invalid', 'valid', 'progress');
+    if (state) input.classList.add(state === 'ok' ? 'valid' : state === 'error' ? 'invalid' : 'progress');
+    warn.textContent = msg || '';
+    warn.classList.toggle('show', !!msg);
+    warn.classList.toggle('warn-ok', state === 'ok');
+    warn.classList.toggle('warn-progress', state === 'progress');
+  };
   const checkPhone = () => {
     const v = $('#empForm [name="phone"]')?.value || '';
+    if (!v) return setFieldFeedback('#empForm [name="phone"]', 'phoneWarn', '', '');
     const r = validatePhone(v);
-    setFieldWarn('#empForm [name="phone"]', 'phoneWarn', r.ok ? '' : r.msg);
+    if (r.ok) {
+      const d = v.replace(/\D/g, '');
+      const type = d.length === 10 ? 'มือถือ' : 'โทรศัพท์บ้าน';
+      setFieldFeedback('#empForm [name="phone"]', 'phoneWarn', 'ok', `✓ เบอร์${type}ถูกต้อง`);
+    } else {
+      setFieldFeedback('#empForm [name="phone"]', 'phoneWarn', 'error', '✗ ' + r.msg);
+    }
   };
   const checkNid = () => {
     const v = $('#empForm [name="nationalId"]')?.value || '';
     const nat = $('#empForm [name="nationality"]')?.value || '';
+    if (!v) return setFieldFeedback('#empForm [name="nationalId"]', 'nidWarn', '', '');
+    const isThai = !nat || String(nat).trim() === 'ไทย';
+    const digits = v.replace(/\D/g, '');
+    // ต่างชาติ → ไม่ตรวจเข้มงวด
+    if (!isThai) {
+      const r = validateNationalId(v, nat);
+      return setFieldFeedback('#empForm [name="nationalId"]', 'nidWarn',
+        r.ok ? 'ok' : 'error',
+        r.ok ? '🌐 ผู้มีสัญชาติต่างชาติ — ไม่ตรวจ checksum' : '✗ ' + r.msg);
+    }
+    // ไทย — show progress ขณะพิมพ์
+    if (digits.length < 13) {
+      return setFieldFeedback('#empForm [name="nationalId"]', 'nidWarn',
+        'progress', `⏳ พิมพ์ต่อ... (${digits.length}/13 หลัก)`);
+    }
     const r = validateNationalId(v, nat);
-    setFieldWarn('#empForm [name="nationalId"]', 'nidWarn', r.ok ? '' : r.msg);
+    setFieldFeedback('#empForm [name="nationalId"]', 'nidWarn',
+      r.ok ? 'ok' : 'error',
+      r.ok ? '✓ เลขประจำตัวประชาชนถูกต้อง' : '✗ ' + r.msg);
   };
   $('#empForm [name="phone"]')?.addEventListener('input', checkPhone);
   $('#empForm [name="nationalId"]')?.addEventListener('input', checkNid);
   $('#empForm [name="nationality"]')?.addEventListener('input', checkNid);
   $('#empForm [name="nationality"]')?.addEventListener('change', checkNid);
-  // ตรวจครั้งแรกเมื่อโหลดฟอร์ม (ถ้ามีค่าเดิมที่ผิด — เตือนทันที)
+  // ตรวจครั้งแรกเมื่อโหลดฟอร์ม
   checkPhone(); checkNid();
 
-  // ─── AUTO: เพศ ← คำนำหน้าชื่อ ───
+  // ─── AUTO: เพศ ← คำนำหน้าชื่อ (รองรับ neutral prefix อย่าง ดร./ผศ.) ───
+  // ปัจจุบันถ้า prefix ไม่ตรง female → ตั้งเป็น "ชาย" ผิด เมื่อเป็น "ดร." ที่ไม่ระบุเพศ
+  // แก้: prefix ที่ไม่ระบุเพศ → ไม่ override ค่าเดิม + แสดง hint ให้ user เลือกเอง
+  const _femalePrefixes = ['นางสาว', 'นาง', 'เด็กหญิง', 'ด.ญ.'];
+  const _malePrefixes = ['นาย', 'เด็กชาย', 'ด.ช.'];
+  const _genderHint = document.createElement('small');
+  _genderHint.className = 'form-warn';
+  _genderHint.style.fontSize = '11px';
+  _genderHint.style.color = 'var(--text-3)';
+  $('#empForm [name="gender"]')?.parentNode.appendChild(_genderHint);
   $('#empForm [name="title"]')?.addEventListener('change', (ev) => {
-    const t = ev.target.value;
-    const female = ['นางสาว', 'นาง', 'เด็กหญิง'].includes(t);
+    const t = (ev.target.value || '').trim();
     const genderSel = $('#empForm [name="gender"]');
-    if (genderSel) genderSel.value = female ? 'หญิง' : 'ชาย';
+    if (!genderSel) return;
+    if (_femalePrefixes.includes(t)) {
+      genderSel.value = 'หญิง';
+      _genderHint.textContent = '✓ ตั้งเป็น "หญิง" อัตโนมัติจากคำนำหน้า';
+      _genderHint.style.color = 'var(--success)';
+    } else if (_malePrefixes.includes(t)) {
+      genderSel.value = 'ชาย';
+      _genderHint.textContent = '✓ ตั้งเป็น "ชาย" อัตโนมัติจากคำนำหน้า';
+      _genderHint.style.color = 'var(--success)';
+    } else if (t) {
+      // neutral prefix (ดร./ผศ./รศ./ฯลฯ) → ไม่ override กรุณาเลือกเอง
+      _genderHint.textContent = '⚠️ คำนำหน้านี้ไม่ระบุเพศ — กรุณาเลือกเอง';
+      _genderHint.style.color = 'var(--warning)';
+    } else {
+      _genderHint.textContent = '';
+    }
   });
 
   // ─── AUTO: ตำแหน่ง (positionTitle) ← ระดับตำแหน่งงาน (position) ───

@@ -1621,23 +1621,40 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 }
 .form-group input[readonly] { background: var(--surface-2); color: var(--text-2); }
 .form-group input.invalid {
-  border-color: var(--warning);
+  border-color: var(--danger);
 }
 .form-group input.invalid:focus {
-  border-color: var(--warning);
-  box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.15);
+  border-color: var(--danger);
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15);
+}
+.form-group input.valid {
+  border-color: var(--success);
+}
+.form-group input.valid:focus {
+  border-color: var(--success);
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.15);
+}
+.form-group input.progress {
+  border-color: var(--info);
+}
+.form-group input.progress:focus {
+  border-color: var(--info);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
 }
 .form-warn {
   display: none;
   font-size: 11.5px;
-  color: var(--warning-text);
+  color: var(--danger-text);
   margin-top: 4px;
   font-weight: 500;
   line-height: 1.3;
 }
-.form-warn::before { content: '⚠ '; }
 .form-warn.show { display: block; }
-[data-theme="dark"] .form-warn { color: #fcd34d; }
+.form-warn.warn-ok       { color: var(--success-text); }
+.form-warn.warn-progress { color: var(--info-text); }
+[data-theme="dark"] .form-warn             { color: #fca5a5; }
+[data-theme="dark"] .form-warn.warn-ok     { color: #86efac; }
+[data-theme="dark"] .form-warn.warn-progress { color: #93c5fd; }
 .form-group textarea { resize: vertical; min-height: 80px; }
 
 /* select optgroup — กลุ่มตำแหน่ง */
