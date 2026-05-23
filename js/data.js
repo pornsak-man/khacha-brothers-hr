@@ -1804,45 +1804,34 @@ const DB = {
     return { password: `kacha${emp.id}`, source: 'kacha+รหัส' };
   },
 
-  // สร้างบัญชี 1 คนด้วย Supabase signUp — เก็บ admin session ไว้ก่อน, signUp, แล้ว restore กลับ
-  // handle_new_user trigger จะ auto-link employee_id จาก raw_user_meta_data
+  // [Security H5] สร้างบัญชีพนักงานผ่าน SECURITY DEFINER RPC แทน public signUp
+  // เดิม: signUp() เปิด public → attacker เดา employee_id แล้ว claim ได้
+  // ใหม่: RPC create_employee_user เช็ค is_hr_or_admin() ก่อน — ปลอดภัยแม้ปิด public signup
   async createEmployeeAccount(employeeId) {
     if (!this.isHR) throw new Error('ต้องเป็น admin หรือ HR');
     const emp = this.getEmployee(employeeId);
     if (!emp) throw new Error('ไม่พบพนักงาน ' + employeeId);
 
-    const email = `${String(employeeId).toLowerCase()}@kacha.local`;
     const { password, source } = this._computeInitialPassword(emp);
-    const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
+    const email = `${String(employeeId).toLowerCase()}@kacha.local`;
 
-    // เก็บ session admin ไว้ก่อน — เพราะ signUp จะ auto-login เป็น user ใหม่
-    const { data: { session: adminSession } } = await this.client.auth.getSession();
-    if (!adminSession) throw new Error('ไม่มี admin session');
+    const { data, error } = await this.client.rpc('create_employee_user', {
+      p_employee_id: employeeId,
+      p_password: password
+    });
+    if (error) throw error;
 
-    try {
-      const captchaToken = await this._getCaptchaToken('signUp');
-      const { data, error } = await this.client.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { employee_id: employeeId, name: fullName },
-          ...(captchaToken ? { captchaToken } : {})
-        }
-      });
-      if (error) throw error;
+    // refresh local user_profiles cache (handle_new_user trigger สร้าง row ใหม่ใน DB แล้ว)
+    await this.refetchUserProfiles();
 
-      // restore admin session ทันที (กัน UI สลับเป็น user ใหม่)
-      await this.client.auth.setSession({
-        access_token: adminSession.access_token,
-        refresh_token: adminSession.refresh_token
-      });
-
-      return { user_id: data.user?.id, email, password, source, created: true, message: 'สร้างบัญชีสำเร็จ' };
-    } catch (ex) {
-      // ถ้าล้มเหลว — กู้ admin session กลับ
-      try { await this.client.auth.setSession({ access_token: adminSession.access_token, refresh_token: adminSession.refresh_token }); } catch {}
-      throw ex;
-    }
+    return {
+      user_id: data?.user_id,
+      email: data?.email || email,
+      password,
+      source,
+      created: true,
+      message: data?.message || 'สร้างบัญชีสำเร็จ'
+    };
   },
 
   async bulkCreateEmployeeAccounts() {
