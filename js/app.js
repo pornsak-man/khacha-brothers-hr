@@ -546,6 +546,7 @@ const router = {
     if (window.afterRender) { window.afterRender(); window.afterRender = null; }
     if (name === 'employees') wireEmployeePage();
     if (name === 'positions') wirePositionsPage();
+    if (name === 'departments') wireDepartmentsPage();
     if (name === 'recruit') wireRecruitPage();
     if (name === 'settings' && typeof renderEmpAccounts === 'function') renderEmpAccounts();
     if (name === 'user-roles' && typeof renderEmpAccounts === 'function') renderEmpAccounts();
@@ -3853,12 +3854,29 @@ function setDeptSort(by) {
   if (router.current === 'departments') router.go('departments');
 }
 
+const deptState = { search: '', scope: '', hasEmps: '' };
+let _deptSearchTimer;
+
 router.register('departments', () => {
-  const depts = DB.getDepartments();
+  const allDepts = DB.getDepartments();
   const emps = DB.getEmployees({ status: 'active' });
   // นับพนักงานต่อฝ่ายล่วงหน้า — เร็วกว่า filter ใน loop
   const countByDept = new Map();
   for (const e of emps) countByDept.set(e.department, (countByDept.get(e.department) || 0) + 1);
+
+  // ── apply filter ──
+  const sLc = (deptState.search || '').toLowerCase().trim();
+  const depts = allDepts.filter(d => {
+    if (deptState.scope && d.scope !== deptState.scope) return false;
+    if (deptState.hasEmps === 'with'    && (countByDept.get(d.id) || 0) === 0) return false;
+    if (deptState.hasEmps === 'without' && (countByDept.get(d.id) || 0)  >  0) return false;
+    if (sLc) {
+      const hay = (d.id + ' ' + (d.name || '')).toLowerCase();
+      if (!hay.includes(sLc)) return false;
+    }
+    return true;
+  });
+
   // จัดเรียงตาม state (default = ชื่อฝ่าย asc — เหมือนเดิม)
   const sortedDepts = depts.slice().sort((a, b) => {
     let cmp = 0;
@@ -3875,20 +3893,39 @@ router.register('departments', () => {
   // helper สำหรับสร้างหัวคอลัมน์ที่กดได้
   const arrow = (key) => _deptSort.by === key ? `<span style="color:var(--primary);margin-left:4px">${_deptSort.dir === 'asc' ? '▲' : '▼'}</span>` : '<span style="opacity:0.25;margin-left:4px">↕</span>';
   const sortHead = (key, label, cls = '') => `<th class="${cls}" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setDeptSort('${key}')" title="คลิกเพื่อเรียงตาม${label}">${label}${arrow(key)}</th>`;
+
+  const filtered = deptState.search || deptState.scope || deptState.hasEmps;
+  const countLabel = filtered
+    ? `<span class="sw-chart-count">${fmt.num(depts.length)} / ${fmt.num(allDepts.length)}</span>`
+    : `<span class="sw-chart-count">${fmt.num(allDepts.length)}</span>`;
+
   return `
     <div class="sw-page-header">
       <div>
         <div class="sw-page-title">ฝ่ายงาน</div>
-        <div class="sw-page-subtitle">โครงสร้างฝ่ายภายในบริษัท · ${fmt.num(depts.length)} ฝ่าย · พนักงานปัจจุบัน ${fmt.num(emps.length)} คน</div>
+        <div class="sw-page-subtitle">โครงสร้างฝ่ายภายในบริษัท · ${fmt.num(allDepts.length)} ฝ่าย · พนักงานปัจจุบัน ${fmt.num(emps.length)} คน</div>
       </div>
       <div class="sw-page-actions">${DB.isHR ? '<button class="btn btn-primary" onclick="openDeptForm()">+ เพิ่มฝ่าย</button>' : ''}</div>
     </div>
     <div class="sw-chart-card">
       <div class="sw-chart-header">
         <div>
-          <div class="sw-chart-title">รายการฝ่าย <span class="sw-chart-count">${fmt.num(depts.length)}</span></div>
+          <div class="sw-chart-title">รายการฝ่าย ${countLabel}</div>
           <div class="sw-chart-sub">คลิกหัวคอลัมน์เพื่อจัดเรียง · คลิกซ้ำเพื่อสลับน้อย→มาก / มาก→น้อย</div>
         </div>
+      </div>
+      <div class="sw-filter-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--border)">
+        <input id="deptSearch" class="sw-filter-input" type="search" placeholder="🔍 ค้นชื่อ / รหัส" value="${escapeHtml(deptState.search)}" style="flex:1;min-width:200px"/>
+        <select class="sw-filter-select" id="deptScope">
+          <option value="">— ทุกสาย —</option>
+          ${DB.getScopes().map(s => `<option value="${escapeHtml(s.id)}" ${deptState.scope === s.id ? 'selected' : ''}>${escapeHtml(s.label)}</option>`).join('')}
+        </select>
+        <select class="sw-filter-select" id="deptHasEmps">
+          <option value="">— ทุกฝ่าย —</option>
+          <option value="with"    ${deptState.hasEmps === 'with'    ? 'selected' : ''}>มีพนักงาน</option>
+          <option value="without" ${deptState.hasEmps === 'without' ? 'selected' : ''}>ไม่มีพนักงาน</option>
+        </select>
+        <button id="deptClearFilter" class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearDeptFilters()" style="${filtered ? '' : 'display:none'}">✕ ล้างตัวกรอง</button>
       </div>
       ${depts.length ? `
       <div class="table-wrap"><table class="table table-compact sw-emp-table">
@@ -3920,13 +3957,32 @@ router.register('departments', () => {
             </tr>`;
           }).join('')}
         </tbody>
-      </table></div>` : `<div class="empty-state" style="padding:60px 20px">
-        <div style="font-size:42px;margin-bottom:12px;opacity:0.35">🗂️</div>
-        <div class="title" style="font-size:16px;font-weight:600">ยังไม่มีฝ่าย</div>
-        <div class="hint" style="margin-top:6px">กดปุ่ม + เพิ่มฝ่าย เพื่อเริ่ม</div>
+      </table></div>` : `<div class="empty-state" style="padding:40px 20px">
+        <div style="font-size:32px;margin-bottom:8px;opacity:0.3">${filtered ? '🔍' : '🗂️'}</div>
+        <div class="title" style="font-size:14px;font-weight:600">${filtered ? 'ไม่พบฝ่ายที่ตรงกับตัวกรอง' : 'ยังไม่มีฝ่าย'}</div>
+        <div class="hint" style="margin-top:4px">${filtered ? 'ลองล้างตัวกรองเพื่อดูทั้งหมด' : 'กดปุ่ม + เพิ่มฝ่าย เพื่อเริ่ม'}</div>
       </div>`}
     </div>`;
 });
+
+function wireDepartmentsPage() {
+  $('#deptSearch')?.addEventListener('input', (e) => {
+    clearTimeout(_deptSearchTimer);
+    _deptSearchTimer = setTimeout(() => {
+      deptState.search = e.target.value;
+      router.go('departments');
+    }, 200);
+  });
+  $('#deptScope')?.addEventListener('change', (e)   => { deptState.scope   = e.target.value; router.go('departments'); });
+  $('#deptHasEmps')?.addEventListener('change', (e) => { deptState.hasEmps = e.target.value; router.go('departments'); });
+}
+
+function clearDeptFilters() {
+  deptState.search = '';
+  deptState.scope = '';
+  deptState.hasEmps = '';
+  router.go('departments');
+}
 
 function openDeptForm(id = null) {
   if (!requireHR()) return;
