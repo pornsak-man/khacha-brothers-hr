@@ -54,7 +54,7 @@ DROP POLICY IF EXISTS "read_authenticated" ON public.position_scopes;
 DROP POLICY IF EXISTS "write_hr"           ON public.position_scopes;
 CREATE POLICY "read_authenticated" ON public.position_scopes FOR SELECT TO authenticated USING (true);
 CREATE POLICY "write_hr"           ON public.position_scopes FOR ALL    TO authenticated
-  USING (public.is_hr()) WITH CHECK (public.is_hr());
+  USING (public.is_hr_or_admin()) WITH CHECK (public.is_hr_or_admin());
 
 -- ─── Auto-update updated_at ─────────────────────────────
 CREATE OR REPLACE FUNCTION public.set_position_scopes_updated_at()
