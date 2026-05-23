@@ -123,8 +123,8 @@
   --sidebar-text: #d0d0c4;
   --sidebar-text-2: #8e8e83;
   --primary-soft: rgba(78, 112, 176, 0.12);
-  --sage-soft:    rgba(135, 169, 107, 0.10);
-  --gold-soft:    var(--sage-soft);
+  --gold-soft:    rgba(196, 165, 116, 0.12);   /* champagne gold tint (dark) */
+  --sage-soft:    var(--gold-soft);             /* backward-compat alias */
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.30);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.40), 0 1px 2px rgba(0, 0, 0, 0.25);
@@ -172,7 +172,7 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   position: fixed; inset: 0;
   background:
     radial-gradient(ellipse 80% 60% at 15% 20%, rgba(78, 112, 176, 0.35), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 85% 80%, rgba(135, 169, 107, 0.22), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 85% 80%, rgba(196, 165, 116, 0.22), transparent 55%),
     radial-gradient(ellipse 100% 80% at 50% 100%, rgba(30, 58, 138, 0.25), transparent 60%),
     linear-gradient(135deg, #0a0e1a 0%, #141a2e 40%, #0d1424 100%);
   display: flex; align-items: center; justify-content: center;
@@ -185,7 +185,7 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   content: ''; position: absolute; inset: -15%;
   background:
     radial-gradient(circle at 30% 40%, rgba(78, 112, 176, 0.18), transparent 38%),
-    radial-gradient(circle at 70% 60%, rgba(135, 169, 107, 0.12), transparent 38%);
+    radial-gradient(circle at 70% 60%, rgba(196, 165, 116, 0.12), transparent 38%);
   animation: meshDrift 25s ease-in-out infinite alternate;
   pointer-events: none;
   filter: blur(40px);
@@ -206,7 +206,7 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 [data-theme="dark"] .login-screen {
   background:
     radial-gradient(ellipse 80% 60% at 15% 20%, rgba(78, 112, 176, 0.40), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 85% 80%, rgba(135, 169, 107, 0.25), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 85% 80%, rgba(196, 165, 116, 0.25), transparent 55%),
     #03060e;
 }
 
@@ -248,7 +248,7 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .login-card::after {
   content: ''; position: absolute; top: 0; left: 28%; right: 28%;
   height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(78, 112, 176, 0.6), rgba(135, 169, 107, 0.6), transparent);
+  background: linear-gradient(90deg, transparent, rgba(78, 112, 176, 0.6), rgba(196, 165, 116, 0.6), transparent);
   border-radius: 0 0 99px 99px;
 }
 
@@ -659,7 +659,7 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   background: var(--sidebar-bg);
   background-image:
     radial-gradient(ellipse at 50% 0%, rgba(78, 112, 176, 0.10), transparent 55%),
-    radial-gradient(ellipse at 0% 100%, rgba(135, 169, 107, 0.05), transparent 50%),
+    radial-gradient(ellipse at 0% 100%, rgba(196, 165, 116, 0.05), transparent 50%),
     linear-gradient(180deg, var(--sidebar-bg-2) 0%, var(--sidebar-bg) 100%);
   color: var(--sidebar-text);
   display: flex; flex-direction: column;
@@ -1581,14 +1581,14 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .badge-danger  { background: var(--danger-soft);  color: var(--danger-text);  border-color: rgba(215, 38, 38, 0.22); }
 .badge-info    { background: var(--info-soft);    color: var(--info-text);    border-color: rgba(30, 127, 196, 0.22); }
 .badge-neutral { background: var(--surface-2);    color: var(--text-2);       border-color: var(--border); }
-.badge-sage    { background: var(--sage-soft);    color: var(--sage-text);    border-color: rgba(135, 169, 107, 0.32); }
-.badge-gold    { background: var(--sage-soft);    color: var(--sage-text);    border-color: rgba(135, 169, 107, 0.32); }
+.badge-sage    { background: var(--gold-soft);    color: var(--gold-text);    border-color: rgba(196, 165, 116, 0.32); }
+.badge-gold    { background: var(--gold-soft);    color: var(--gold-text);    border-color: rgba(196, 165, 116, 0.32); }
 [data-theme="dark"] .badge-success { background: rgba(21, 146, 63, 0.16); color: #86efac; border-color: rgba(21, 146, 63, 0.30); }
 [data-theme="dark"] .badge-warning { background: rgba(201, 119, 6, 0.16); color: #fcd34d; border-color: rgba(201, 119, 6, 0.30); }
 [data-theme="dark"] .badge-danger  { background: rgba(215, 38, 38, 0.16); color: #fca5a5; border-color: rgba(215, 38, 38, 0.30); }
 [data-theme="dark"] .badge-info    { background: rgba(30, 127, 196, 0.16); color: #93c5fd; border-color: rgba(30, 127, 196, 0.30); }
-[data-theme="dark"] .badge-sage    { background: rgba(135, 169, 107, 0.16); color: #b8d599; border-color: rgba(135, 169, 107, 0.32); }
-[data-theme="dark"] .badge-gold    { background: rgba(135, 169, 107, 0.16); color: #b8d599; border-color: rgba(135, 169, 107, 0.32); }
+[data-theme="dark"] .badge-sage    { background: rgba(196, 165, 116, 0.16); color: #e3d2a8; border-color: rgba(196, 165, 116, 0.32); }
+[data-theme="dark"] .badge-gold    { background: rgba(196, 165, 116, 0.16); color: #e3d2a8; border-color: rgba(196, 165, 116, 0.32); }
 
 /* ═════════════ FORMS ═════════════ */
 .form-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
@@ -2210,13 +2210,13 @@ html { scroll-behavior: smooth; }
 body {
   background-image:
     radial-gradient(ellipse 70% 50% at 50% -8%, rgba(29, 63, 143, 0.030), transparent 65%),
-    radial-gradient(ellipse 90% 70% at 50% 110%, rgba(135, 169, 107, 0.030), transparent 55%);
+    radial-gradient(ellipse 90% 70% at 50% 110%, rgba(196, 165, 116, 0.030), transparent 55%);
   background-attachment: fixed;
 }
 [data-theme="dark"] body {
   background-image:
     radial-gradient(ellipse 75% 55% at 50% -10%, rgba(78, 112, 176, 0.14), transparent 60%),
-    radial-gradient(ellipse 90% 70% at 50% 110%, rgba(135, 169, 107, 0.05), transparent 55%);
+    radial-gradient(ellipse 90% 70% at 50% 110%, rgba(196, 165, 116, 0.05), transparent 55%);
 }
 
 /* Refined card surfaces — subtle warmth via faint inner-top highlight */
