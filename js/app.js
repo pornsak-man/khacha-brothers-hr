@@ -2488,6 +2488,69 @@ function openEmployeeForm(id = null, init = null, onSaved = null) {
   // ตรวจครั้งแรกเมื่อโหลดฟอร์ม
   checkPhone(); checkNid();
 
+  // ─── BLACKLIST AUTO-CHECK ───
+  // เมื่อกรอกเลขประชาชน 13 หลักครบ → ตรวจ blacklist (debounce 500ms กัน RPC ถี่)
+  // ถ้า match → แสดง modal เตือนสีแดง พร้อม "continue anyway" / "cancel"
+  // ทำงานเฉพาะตอน "เพิ่มใหม่" — แก้ไขพนักงานเดิม skip (เพราะอยู่ในระบบแล้ว)
+  if (!id) {
+    let _blacklistChecked = '';
+    const checkBlacklist = debounce(async () => {
+      const v = $('#empForm [name="nationalId"]')?.value || '';
+      const digits = v.replace(/\D/g, '');
+      if (digits.length !== 13) { _blacklistChecked = ''; return; }
+      if (_blacklistChecked === digits) return;  // ตรวจซ้ำเลขเดิม → skip
+      _blacklistChecked = digits;
+      try {
+        const matches = await DB.checkBlacklist(digits);
+        if (matches.length === 0) return;
+        // มี match → แสดง modal เตือน
+        const top = matches[0];
+        const severityLabel = {
+          permanent: '⛔ ห้ามจ้างถาวร',
+          temporary: '⏳ ห้ามจ้างชั่วคราว',
+          review:    '⚠️ พิจารณาก่อนจ้าง'
+        }[top.severity] || top.severity;
+        const categoryLabel = {
+          theft: 'ขโมย/ฉ้อโกง', fraud: 'ทุจริต',
+          violence: 'ความรุนแรง', conduct: 'ฝ่าฝืนระเบียบ',
+          performance: 'ผลงาน', attendance: 'ขาดงานบ่อย', other: 'อื่นๆ'
+        }[top.category] || top.category;
+        const reviewWarn = top.severity === 'review';
+        const allowContinue = reviewWarn;  // severity=review ให้เลือก continue ได้, อื่นๆ force cancel
+        modal.open(`${severityLabel} — พบในรายชื่อห้ามจ้าง`, `
+          <div style="padding:8px 0">
+            <div style="padding:14px;background:rgba(239,68,68,0.08);border:1px solid var(--danger);border-radius:8px;margin-bottom:12px">
+              <div style="font-size:14px;font-weight:600;color:var(--danger);margin-bottom:8px">${escapeHtml(top.full_name)}${top.nickname ? ` <span class="muted-2">(${escapeHtml(top.nickname)})</span>` : ''}</div>
+              <div style="font-size:13px;line-height:1.6">
+                <div><strong>เลข ปชช.:</strong> ${escapeHtml(top.national_id)}</div>
+                <div><strong>หมวด:</strong> ${escapeHtml(categoryLabel)}</div>
+                <div><strong>เหตุผล:</strong> ${escapeHtml(top.reason)}</div>
+                ${top.previous_emp_id ? `<div><strong>รหัสเดิม:</strong> ${escapeHtml(top.previous_emp_id)}</div>` : ''}
+                ${top.review_date ? `<div><strong>ทบทวน:</strong> ${escapeHtml(top.review_date)}</div>` : ''}
+                ${top.notes ? `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border)"><strong>หมายเหตุ:</strong> ${escapeHtml(top.notes)}</div>` : ''}
+                <div style="margin-top:6px"><strong>บันทึกโดย:</strong> ${escapeHtml(top.created_by || '-')} · ${fmt.date(top.created_at)}</div>
+              </div>
+            </div>
+            ${matches.length > 1 ? `<div class="muted-2" style="font-size:12px;margin-bottom:10px">+ มีอีก ${matches.length - 1} รายการในประวัติ — เปิดดูที่หน้า "Blacklist"</div>` : ''}
+            <div style="font-size:13px;color:var(--text-2);line-height:1.5">
+              ${allowContinue
+                ? 'ระบบเตือนเพื่อให้พิจารณาเท่านั้น — สามารถเลือก "บันทึกต่อไป" ได้'
+                : 'ไม่แนะนำให้จ้างบุคคลนี้ — หากต้องการดำเนินการจริงๆ กด "บันทึกต่อไป" และระบุเหตุผลในการอนุมัติ'}
+            </div>
+          </div>
+          <div class="form-actions" style="margin-top:14px">
+            <button type="button" class="btn btn-secondary" data-close>ยกเลิก</button>
+            <button type="button" class="btn ${allowContinue ? 'btn-warning' : 'btn-danger'}" id="blContinueBtn">บันทึกต่อไป (ยอมรับความเสี่ยง)</button>
+          </div>
+        `);
+        $('#blContinueBtn')?.addEventListener('click', () => modal.close());
+      } catch (ex) {
+        console.warn('Blacklist check error:', ex);
+      }
+    }, 500);
+    $('#empForm [name="nationalId"]')?.addEventListener('input', checkBlacklist);
+  }
+
   // ─── AUTO: เพศ ← คำนำหน้าชื่อ (รองรับ neutral prefix อย่าง ดร./ผศ.) ───
   // ปัจจุบันถ้า prefix ไม่ตรง female → ตั้งเป็น "ชาย" ผิด เมื่อเป็น "ดร." ที่ไม่ระบุเพศ
   // แก้: prefix ที่ไม่ระบุเพศ → ไม่ override ค่าเดิม + แสดง hint ให้ user เลือกเอง

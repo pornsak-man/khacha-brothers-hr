@@ -197,6 +197,7 @@ const DB = {
   canManageUsers()  { return this.isHR; },         // HR ตั้งสิทธิ์/จัดการ user ได้
   canEditCompany()  { return this.isAdmin; },      // "ตั้งค่าระบบ" company info = admin only
   canSeeAudit()     { return this.isHR; },
+  canManageBlacklist() { return this.isHR; },  // จัดการ blacklist เฉพาะ admin/HR
   canApproveLeave() {
     return ['admin', 'hr', 'operation_manager', 'area_manager', 'branch_manager'].includes(this.role);
   },
@@ -1609,6 +1610,72 @@ const DB = {
     return list.sort((a, b) => (b.appliedDate || '').localeCompare(a.appliedDate || ''));
   },
   getApplicant(id) { return this.data.applicants.find(a => a.id === id); },
+
+  // ─── BLACKLIST ───
+  // จัดการรายชื่อบุคคลที่ห้ามจ้าง — auto-check ตอน add employee + แสดง modal เตือน
+  // ใช้ RPC check_blacklist เพื่อ bypass RLS (SECURITY DEFINER)
+  async checkBlacklist(nationalId) {
+    if (!nationalId) return [];
+    const digits = String(nationalId).replace(/\D/g, '');
+    if (!digits) return [];
+    try {
+      const { data, error } = await this.client.rpc('check_blacklist', { p_national_id: digits });
+      if (error) {
+        // ถ้า RPC ไม่มี (ยังไม่ได้รัน migration) → return [] เงียบๆ
+        if (String(error.message || '').includes('does not exist')) return [];
+        throw error;
+      }
+      return data || [];
+    } catch (ex) {
+      console.warn('checkBlacklist failed:', ex);
+      return [];
+    }
+  },
+  async getBlacklist({ includeRemoved = false } = {}) {
+    if (!this.isHR) return [];
+    let q = this.client.from('employee_blacklist').select('*').order('created_at', { ascending: false });
+    if (!includeRemoved) q = q.is('removed_at', null);
+    const { data, error } = await q;
+    if (error) {
+      if (String(error.message || '').includes('does not exist')) return [];
+      throw error;
+    }
+    return data || [];
+  },
+  async saveBlacklistEntry(entry) {
+    if (!this.isHR) throw new Error('ต้องเป็น admin หรือ HR');
+    const row = {
+      national_id: String(entry.nationalId || '').replace(/\D/g, ''),
+      full_name: (entry.fullName || '').trim(),
+      nickname: entry.nickname || null,
+      phone: entry.phone || null,
+      previous_emp_id: entry.previousEmpId || null,
+      reason: (entry.reason || '').trim(),
+      category: entry.category || 'other',
+      severity: entry.severity || 'permanent',
+      review_date: entry.reviewDate || null,
+      notes: entry.notes || null,
+      created_by: this.profile?.employee_id || this.user?.email || 'HR'
+    };
+    if (!row.national_id) throw new Error('ต้องระบุเลขประจำตัวประชาชน');
+    if (!row.full_name) throw new Error('ต้องระบุชื่อ-นามสกุล');
+    if (!row.reason) throw new Error('ต้องระบุเหตุผล');
+    if (row.severity === 'temporary' && !row.review_date) throw new Error('ลักษณะ "ห้ามชั่วคราว" ต้องระบุ review_date');
+    if (entry.id) row.id = entry.id;
+    const { data, error } = await this.client.from('employee_blacklist').upsert(row).select().single();
+    if (error) throw error;
+    return data;
+  },
+  async removeBlacklistEntry(id, reason = '') {
+    if (!this.isHR) throw new Error('ต้องเป็น admin หรือ HR');
+    const { error } = await this.client.from('employee_blacklist').update({
+      removed_at: new Date().toISOString(),
+      removed_by: this.profile?.employee_id || this.user?.email || 'HR',
+      removed_reason: reason || null
+    }).eq('id', id);
+    if (error) throw error;
+  },
+
   async saveApplicant(appl) {
     const row = this._applToDB(appl);
     if (appl.id) row.id = appl.id;
