@@ -1280,17 +1280,6 @@ const DB = {
     return affected.length;
   },
 
-  // Manual full-sync — เรียกจากปุ่ม UI ในหน้าตั้งค่าตำแหน่ง
-  // loop ทุก position แล้ว sync employees ที่มี FK link ให้ตรงกับ name ปัจจุบัน
-  // ใช้สำหรับซ่อม legacy data ที่ snapshot หลุดจาก master (เช่น import เก่าๆ)
-  async syncAllPositionTitles() {
-    if (!this.isHR) throw new Error('ต้องเป็น admin หรือ HR');
-    let total = 0;
-    for (const p of this.data.positionLevels) {
-      total += await this._syncEmployeePositionTitle(p.id, (p.name || '').trim());
-    }
-    return total;
-  },
   async deletePosition(id) {
     if (this.data.employees.some(e => e.position === id)) return false;
     const { error } = await this.client.from('position_levels').delete().eq('id', id);
