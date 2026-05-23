@@ -178,58 +178,6 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   display: flex; align-items: center; justify-content: center;
   padding: 24px; z-index: 1000;
   overflow: hidden;
-  will-change: transform, opacity, filter;
-}
-
-/* ─── Auth slide transition — carousel push (ไม่มีภาพซ้อนระหว่างเคลื่อน) ───
-   หลักการ: ทั้ง 2 หน้าเคลื่อนคู่กันเหมือนกระดาษ 2 แผ่นต่อกัน 100vw
-   login (-100%) ⇆ จุดศูนย์ ⇆ app (+100%) — ที่จุดใดก็ตามมีแค่หน้าเดียว
-   ที่ครอบจอ ไม่มี opacity/blur/scale ที่ทำให้เกิดภาพทับ */
-body.is-auth-transitioning { overflow: hidden; }
-.login-screen.is-leaving,
-.login-screen.is-entering,
-.app.is-entering,
-.app.is-leaving { will-change: transform; }
-
-.login-screen.is-leaving {
-  animation: loginSlideOut 0.5s cubic-bezier(0.45, 0.05, 0.25, 1) forwards;
-  pointer-events: none;
-}
-@keyframes loginSlideOut {
-  from { transform: translateX(0); }
-  to   { transform: translateX(-100%); }
-}
-.app.is-entering {
-  animation: appSlideIn 0.5s cubic-bezier(0.45, 0.05, 0.25, 1) both;
-}
-@keyframes appSlideIn {
-  from { transform: translateX(100%); }
-  to   { transform: translateX(0); }
-}
-/* Reverse — ตอน logout: app เลื่อนออกขวา, login เลื่อนเข้าจากซ้าย */
-.app.is-leaving {
-  animation: appSlideOut 0.45s cubic-bezier(0.45, 0.05, 0.25, 1) forwards;
-  pointer-events: none;
-}
-@keyframes appSlideOut {
-  from { transform: translateX(0); }
-  to   { transform: translateX(100%); }
-}
-.login-screen.is-entering {
-  animation: loginSlideIn 0.45s cubic-bezier(0.45, 0.05, 0.25, 1) both;
-}
-@keyframes loginSlideIn {
-  from { transform: translateX(-100%); }
-  to   { transform: translateX(0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .login-screen.is-leaving,
-  .login-screen.is-entering,
-  .app.is-entering,
-  .app.is-leaving {
-    animation: none !important;
-  }
 }
 
 /* Animated mesh layer — ขับเคลื่อนช้าๆ ให้มีชีวิตชีวา */
