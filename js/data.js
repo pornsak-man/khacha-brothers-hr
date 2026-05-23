@@ -895,14 +895,21 @@ const DB = {
     if (filter.branch) list = list.filter(e => e.branch === filter.branch);
     if (filter.position) {
       // dropdown ส่ง position.id มา — แต่บางแถว (legacy import) มี e.position เป็น "" / ชื่อตำแหน่ง / id เก่า
-      // จึง fallback เปรียบเทียบกับ positionTitle ด้วย — ให้ dropdown filter ครอบคลุมเท่ากับ search box (ที่ใช้ positionTitle อยู่แล้ว)
+      // หรือ positionTitle อาจเขียนเป็น "Restaurant Manager (RM)" / "Sr. RM" / "RM-BKK" ที่ exact match ไม่เจอ
+      // → ใช้ word-boundary regex บน positionTitle (รองรับทั้ง Latin และ Thai) เพื่อให้ครอบคลุมเท่ากับ search box
       const pos = this.getPosition(filter.position);
-      const posName = pos?.name || '';
+      const posName = (pos?.name || '').trim();
       const posNameLc = posName.toLowerCase();
+      // escape regex meta-chars (เช่น "Act.RM" มี '.') + boundary = ตัวอักษร/ตัวเลข/ไทย → ป้องกัน match กับคำที่ embed อยู่ใน word อื่น เช่น "ARM"
+      const escaped = posName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const reTitle = posName ? new RegExp(`(^|[^A-Za-z0-9ก-๙])${escaped}($|[^A-Za-z0-9ก-๙])`, 'i') : null;
       list = list.filter(e => {
         if (e.position === filter.position) return true;          // FK match ปกติ
         if (posName && e.position === posName) return true;         // legacy: position เก็บเป็นชื่อ
-        if (posNameLc && (e.positionTitle || '').toLowerCase() === posNameLc) return true; // เทียบ snapshot title
+        const title = (e.positionTitle || '').trim();
+        if (!title) return false;
+        if (title.toLowerCase() === posNameLc) return true;         // เทียบ snapshot title ตรงๆ
+        if (reTitle && reTitle.test(title)) return true;            // word-boundary match เช่น "Sr. RM" / "RM (BKK)"
         return false;
       });
     }
