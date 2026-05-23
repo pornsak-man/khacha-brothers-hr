@@ -19,6 +19,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"
           integrity="sha384-rwykjmWNwVxboyFmvK9OXN0wj9hnMHA2aAHtits54DuACyCq0M2PrSNxhRb+hvXT"
           crossorigin="anonymous" defer></script>
+  <!-- hCaptcha (invisible mode) — token แนบกับ signIn/signUp กัน bot bruteforce -->
+  <script src="https://js.hcaptcha.com/1/api.js?render=explicit" async defer></script>
   <link rel="stylesheet" href="css/style.css" />
   <script>
     (function(){
@@ -61,6 +63,8 @@
       <div class="login-error" id="loginError"></div>
       <button type="submit" class="btn btn-primary btn-block" id="loginBtn">เข้าสู่ระบบ</button>
       <div class="login-hint">กรอกรหัสพนักงาน (หรืออีเมลถ้าเป็นบัญชีพิเศษ)</div>
+      <!-- hCaptcha invisible widget container — รัน background, ส่ง token ไป Supabase -->
+      <div id="hcaptcha-container" style="display:none"></div>
     </form>
   </div>
 </div>

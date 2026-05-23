@@ -72,8 +72,41 @@ const DB = {
     });
   },
 
+  // ─── hCaptcha invisible widget ───
+  // ขอ token ก่อนเรียก auth endpoint ที่ต้องการ captcha (signIn, signUp ใน Supabase)
+  // SITE_KEY ว่าง = ปิด captcha (สำหรับ dev/local) → คืน undefined → Supabase ไม่ require
+  _hcaptchaWidgetId: null,
+  async _getCaptchaToken(actionLabel = 'auth') {
+    const siteKey = window.KB_CONFIG?.HCAPTCHA_SITE_KEY;
+    if (!siteKey) return undefined;  // ปิด captcha
+    // รอจน hCaptcha API พร้อม (lazy-loaded script)
+    const ready = await new Promise((resolve) => {
+      let tries = 0;
+      const check = () => {
+        if (window.hcaptcha?.render && window.hcaptcha?.execute) return resolve(true);
+        if (++tries > 100) return resolve(false);  // 10s timeout
+        setTimeout(check, 100);
+      };
+      check();
+    });
+    if (!ready) throw new Error('Captcha ยังโหลดไม่เสร็จ — ลองใหม่ในอีกครู่');
+    // render widget ครั้งแรก (reuse ครั้งต่อๆ ไป)
+    if (this._hcaptchaWidgetId === null) {
+      const container = document.getElementById('hcaptcha-container')
+        || (() => { const d = document.createElement('div'); d.id = 'hcaptcha-container'; d.style.display = 'none'; document.body.appendChild(d); return d; })();
+      this._hcaptchaWidgetId = window.hcaptcha.render(container, { sitekey: siteKey, size: 'invisible' });
+    }
+    // ขอ token (invisible mode — ปกติไม่มี challenge ขึ้น, ถ้า traffic น่าสงสัยอาจมี)
+    const { response } = await window.hcaptcha.execute(this._hcaptchaWidgetId, { async: true });
+    return response;
+  },
+
   async signIn(email, password) {
-    const { data, error } = await this.client.auth.signInWithPassword({ email, password });
+    const captchaToken = await this._getCaptchaToken('signIn');
+    const { data, error } = await this.client.auth.signInWithPassword({
+      email, password,
+      options: captchaToken ? { captchaToken } : undefined
+    });
     if (error) throw error;
     this.user = data.user;
     await this.loadProfile();
@@ -1755,11 +1788,13 @@ const DB = {
     if (!adminSession) throw new Error('ไม่มี admin session');
 
     try {
+      const captchaToken = await this._getCaptchaToken('signUp');
       const { data, error } = await this.client.auth.signUp({
         email,
         password,
         options: {
-          data: { employee_id: employeeId, name: fullName }
+          data: { employee_id: employeeId, name: fullName },
+          ...(captchaToken ? { captchaToken } : {})
         }
       });
       if (error) throw error;
