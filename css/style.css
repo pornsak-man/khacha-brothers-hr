@@ -418,38 +418,25 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 }
 .btn svg { width: 16px; height: 16px; flex-shrink: 0; }
 
-/* PRIMARY — Royal Sapphire Blue (vivid, premium, not dark) */
+/* PRIMARY — Deep midnight indigo gradient with subtle gloss (v4 original) */
 .btn-primary {
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0) 50%),
-    linear-gradient(180deg, #60A5FA 0%, #3B82F6 55%, #2563EB 100%);
+  background: linear-gradient(180deg, var(--navy-500) 0%, var(--navy-600) 100%);
   color: #fff;
-  border-color: rgba(37, 99, 235, 0.55);
-  letter-spacing: -0.005em;
+  border-color: var(--navy-700);
   box-shadow:
-    0 1px 0 rgba(255,255,255,0.24) inset,
-    0 -1px 0 rgba(0,0,0,0.14) inset,
-    0 4px 10px rgba(59, 130, 246, 0.30),
-    0 0 0 1px rgba(255,255,255,0.06) inset;
+    0 1px 2px rgba(8, 16, 42, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08);
 }
 .btn-primary:hover:not(:disabled) {
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0) 50%),
-    linear-gradient(180deg, #93C5FD 0%, #60A5FA 55%, #2563EB 100%);
-  border-color: rgba(29, 78, 216, 0.65);
+  background: linear-gradient(180deg, var(--navy-600) 0%, var(--navy-700) 100%);
+  border-color: var(--navy-800);
   box-shadow:
-    0 1px 0 rgba(255,255,255,0.30) inset,
-    0 -1px 0 rgba(0,0,0,0.16) inset,
-    0 10px 26px rgba(59, 130, 246, 0.40),
-    0 2px 6px rgba(37, 99, 235, 0.22);
+    0 6px 16px rgba(30, 58, 138, 0.28),
+    0 1px 3px rgba(8, 16, 42, 0.20),
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
-}
-.btn-primary:active:not(:disabled) {
-  transform: translateY(0);
-  box-shadow:
-    0 1px 0 rgba(255,255,255,0.14) inset,
-    0 -1px 0 rgba(0,0,0,0.22) inset,
-    0 1px 2px rgba(29, 78, 216, 0.28);
 }
 
 /* SECONDARY — Outlined with refined hover lift */
