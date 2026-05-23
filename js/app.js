@@ -458,6 +458,7 @@ const auth = {
       // logout / blocked — สไลด์ app ออกขวา, login เลื่อนเข้ามาจากซ้าย
       login.classList.remove('is-leaving');
       app.classList.remove('is-entering');
+      document.body.classList.add('is-auth-transitioning');
       app.classList.add('is-leaving');
       login.style.display = 'flex';
       login.classList.add('is-entering');
@@ -465,7 +466,8 @@ const auth = {
         app.style.display = 'none';
         app.classList.remove('is-leaving');
         login.classList.remove('is-entering');
-      }, 480);
+        document.body.classList.remove('is-auth-transitioning');
+      }, 470);
     } else {
       login.style.display = 'flex';
       app.style.display = 'none';
@@ -509,13 +511,15 @@ const auth = {
     if (loginVisible) {
       app.classList.remove('is-leaving');
       login.classList.remove('is-entering');
+      document.body.classList.add('is-auth-transitioning');
       login.classList.add('is-leaving');
       app.classList.add('is-entering');
       setTimeout(() => {
         login.style.display = 'none';
         login.classList.remove('is-leaving');
         app.classList.remove('is-entering');
-      }, 580);
+        document.body.classList.remove('is-auth-transitioning');
+      }, 520);
     } else {
       login.style.display = 'none';
     }
