@@ -4622,3 +4622,38 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 .schedule-approver-cell strong {
   color: var(--text); font-weight: 600;
 }
+
+/* === SCHEDULE: เซลล์วันที่ผ่านมาแล้ว + วันเริ่มงาน + status note === */
+.schedule-cell-past {
+  cursor: not-allowed;
+  opacity: 0.55;
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent, transparent 6px,
+    rgba(120, 120, 120, 0.06) 6px,
+    rgba(120, 120, 120, 0.06) 12px
+  );
+}
+.schedule-cell-past:hover { background: rgba(120,120,120,0.06); }
+
+.schedule-emp-tenure {
+  font-size: 10px;
+  color: var(--text-3);
+  margin-top: 1px;
+  font-style: italic;
+}
+
+.schedule-info-warn {
+  background: var(--warning-soft);
+  color: var(--warning-text);
+  border-left-color: var(--warning);
+}
+.schedule-info-danger {
+  background: rgba(220, 38, 38, 0.08);
+  color: #991b1b;
+  border-left-color: #dc2626;
+}
+[data-theme="dark"] .schedule-info-danger {
+  background: rgba(220, 38, 38, 0.18);
+  color: #fecaca;
+}

@@ -12542,10 +12542,25 @@ router.register('schedule', () => {
             : '<span class="muted-2">— ยังไม่ได้ตั้ง AM ที่ดูแลสาขา —</span>'}
         </div>
       </div>
-      ${status === 'approved' ? `<div class="schedule-info-note" style="margin:12px 0 0 0">
-        <strong>ตารางอนุมัติแล้ว</strong> — ถ้าต้องแก้ ให้ผู้อนุมัติกด <strong>"เปิดให้แก้ไข"</strong> ก่อน
-        · ถ้าพนักงานลา ระบบจะแสดงป้าย "ลา" ทับเซลล์ให้อัตโนมัติ (ไม่ต้องแก้ตารางถ้าไม่ต้องหาคนแทน)
-      </div>` : ''}
+      ${(() => {
+        if (status === 'approved') return `<div class="schedule-info-note" style="margin:12px 0 0 0">
+          <strong>ตารางอนุมัติแล้ว</strong> — ถ้าต้องแก้ ให้ผู้อนุมัติกด <strong>"เปิดให้แก้ไข"</strong> ก่อน
+          · ถ้าพนักงานลา ระบบจะแสดงป้าย "ลา" ทับเซลล์ให้อัตโนมัติ (ไม่ต้องแก้ตารางถ้าไม่ต้องหาคนแทน)
+        </div>`;
+        if (status === 'draft') return `<div class="schedule-info-note schedule-info-warn" style="margin:12px 0 0 0">
+          <strong>ยังเป็นแบบร่าง</strong> — ผู้จัดการสาขาต้องกด <strong>"ส่งขออนุมัติ"</strong> เพื่อส่งให้ AM อนุมัติ
+          · ตารางนี้ยังเปลี่ยนแปลงได้ พนักงานควรรอจนกว่าจะอนุมัติก่อนจึงยึดถือ
+        </div>`;
+        if (status === 'submitted') return `<div class="schedule-info-note schedule-info-warn" style="margin:12px 0 0 0">
+          <strong>รออนุมัติ</strong> — ส่งให้ AM อนุมัติแล้ว · ระหว่างนี้ผู้จัดการสาขายังแก้ได้ (จะ revert กลับเป็นแบบร่างถ้าแก้)
+          · ตารางจะเริ่มใช้งานหลังจาก AM กดอนุมัติ
+        </div>`;
+        if (status === 'rejected') return `<div class="schedule-info-note schedule-info-danger" style="margin:12px 0 0 0">
+          <strong>ตารางถูกปฏิเสธ</strong>${week?.rejectReason ? ` — เหตุผล: <em>${escapeHtml(week.rejectReason)}</em>` : ''}
+          · ผู้จัดการสาขาต้องแก้แล้ว <strong>"ส่งขออนุมัติ"</strong> ใหม่
+        </div>`;
+        return '';
+      })()}
     </div>
 
     <div id="scheduleGridWrap">${renderScheduleGrid(branchId, weekStart, canEdit)}</div>
@@ -12715,16 +12730,35 @@ function renderScheduleGrid(branchId, weekStart, canEdit) {
         cellExtraCls += ' schedule-cell-holiday';
       }
       const isToday = d === today;
+      const isPast = d < today;
       if (isToday) cellExtraCls += ' schedule-cell-today';
-      const clickAttr = canEdit && !leave && !awayEntry
+      if (isPast) cellExtraCls += ' schedule-cell-past';
+      const allowClick = canEdit && !leave && !awayEntry && (!isPast || DB.isHR);
+      const clickAttr = allowClick
         ? `onclick="openShiftPicker('${escapeHtml(emp.id)}', '${d}', ${entry ? `'${entry.id}'` : 'null'})"`
         : '';
       return `<td class="schedule-cell${cellExtraCls}" id="${cellId}" ${clickAttr}>
-        ${cellContent || (canEdit ? '<span class="schedule-cell-empty">+</span>' : '<span class="muted-2">—</span>')}
+        ${cellContent || (allowClick ? '<span class="schedule-cell-empty">+</span>' : '<span class="muted-2">—</span>')}
       </td>`;
     }).join('');
 
     const summary = week ? DB.calcScheduleHours(week.id, emp.id) : { hours: 0, offDays: 0, shiftCount: 0 };
+    // คำนวณอายุงาน (ปี / เดือน) ถ้ามี hireDate
+    let tenureText = '';
+    if (emp.hireDate) {
+      const hd = parseYMD(emp.hireDate);
+      if (hd) {
+        const [ty, tm, td] = parseYMD(today);
+        let yrs = ty - hd[0];
+        let mos = tm - hd[1];
+        if (td < hd[2]) mos--;
+        if (mos < 0) { yrs--; mos += 12; }
+        if (yrs < 0) tenureText = '';
+        else if (yrs === 0) tenureText = `${mos} ด.`;
+        else if (mos === 0) tenureText = `${yrs} ปี`;
+        else tenureText = `${yrs} ปี ${mos} ด.`;
+      }
+    }
     return `<tr class="${isHelper ? 'schedule-row-helper' : ''}">
       <th class="schedule-emp-cell">
         <div class="schedule-emp-name">
@@ -12737,6 +12771,7 @@ function renderScheduleGrid(branchId, weekStart, canEdit) {
           ${escapeHtml(pos?.name || emp.position || '')}
           ${emp.employeeType ? ` · ${escapeHtml(emp.employeeType)}` : ''}
         </div>
+        ${emp.hireDate ? `<div class="schedule-emp-meta schedule-emp-tenure" title="วันเริ่มงาน ${fmt.date(emp.hireDate)}">เริ่ม ${fmt.date(emp.hireDate)}${tenureText ? ` · ${tenureText}` : ''}</div>` : ''}
       </th>
       ${cells}
       <td class="schedule-summary-cell">
@@ -12837,50 +12872,55 @@ function openShiftPicker(empId, workDate, entryId) {
   modal.open('เลือกกะ', body, { footer });
   const root = $('#modalRoot');
   root.querySelectorAll('.shift-picker-option').forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', () => {
       if (btn.dataset.custom === '1') {
-        // เปิดฟอร์มกะกำหนดเอง
         openCustomShiftForm(empId, workDate, existingEntry);
         return;
       }
       const shiftId = btn.dataset.shiftId;
-      try {
-        const w = await DB.ensureScheduleWeek(branchId, weekStart);
-        const isCrossBranch = emp.branch !== branchId;
-        await DB.saveScheduleEntry({
-          id: existingEntry?.id,
-          scheduleWeekId: w.id,
-          employeeId: empId,
-          workDate,
-          shiftId,
-          branchId,
-          isCrossBranch,
-          note: existingEntry?.note || '',
-          // ล้าง custom เมื่อเปลี่ยนเป็น shift master
-          customStartTime: '',
-          customEndTime: '',
-          customBreakMinutes: 0,
-          customLabel: ''
-        });
-        modal.close();
-        router.go('schedule');
-        toast('บันทึกกะแล้ว', 'success');
-      } catch (ex) {
-        toast(ex.message || String(ex), 'error');
-      }
+      // ปิด modal ทันที + save แบบ async (ไม่ block UI) → ลด lag
+      modal.close();
+      (async () => {
+        try {
+          const w = await DB.ensureScheduleWeek(branchId, weekStart);
+          const isCrossBranch = emp.branch !== branchId;
+          await DB.saveScheduleEntry({
+            id: existingEntry?.id,
+            scheduleWeekId: w.id,
+            employeeId: empId,
+            workDate,
+            shiftId,
+            branchId,
+            isCrossBranch,
+            note: existingEntry?.note || '',
+            customStartTime: '',
+            customEndTime: '',
+            customBreakMinutes: 0,
+            customLabel: ''
+          });
+          if (router.current === 'schedule') router.go('schedule');
+          toast('บันทึกกะแล้ว', 'success');
+        } catch (ex) {
+          toast(ex.message || String(ex), 'error');
+          if (router.current === 'schedule') router.go('schedule');
+        }
+      })();
     });
   });
   const clearBtn = root.querySelector('[data-clear]');
   if (clearBtn) {
-    clearBtn.addEventListener('click', async () => {
-      try {
-        await DB.deleteScheduleEntry(existingEntry.id);
-        modal.close();
-        router.go('schedule');
-        toast('ล้างกะแล้ว', 'success');
-      } catch (ex) {
-        toast(ex.message || String(ex), 'error');
-      }
+    clearBtn.addEventListener('click', () => {
+      modal.close();
+      (async () => {
+        try {
+          await DB.deleteScheduleEntry(existingEntry.id);
+          if (router.current === 'schedule') router.go('schedule');
+          toast('ล้างกะแล้ว', 'success');
+        } catch (ex) {
+          toast(ex.message || String(ex), 'error');
+          if (router.current === 'schedule') router.go('schedule');
+        }
+      })();
     });
   }
 }

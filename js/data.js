@@ -3928,6 +3928,10 @@ const DB = {
     if (week.status === 'approved' && !this.isHR) {
       throw new Error('ตารางอนุมัติแล้ว — ต้องให้ AM ที่ดูแลสาขา (หรือ HR/admin) "เปิดให้แก้ไข" ก่อน');
     }
+    // ห้ามจัด/แก้กะวันที่ผ่านมาแล้ว — HR/admin override ได้
+    if (entry.workDate && entry.workDate < this.todayBkk() && !this.isHR) {
+      throw new Error('ห้ามจัดหรือแก้กะวันที่ผ่านมาแล้ว · HR/admin เท่านั้นที่ override ได้');
+    }
     const row = this._schedEntryToDB(entry);
     if (entry.id) row.id = entry.id;
     const { data, error } = await this.client.from('schedule_entries')
@@ -3954,6 +3958,9 @@ const DB = {
     }
     if (week && week.status === 'approved' && !this.isHR) {
       throw new Error('ตารางอนุมัติแล้ว — ต้องให้ AM ที่ดูแลสาขา (หรือ HR/admin) "เปิดให้แก้ไข" ก่อน');
+    }
+    if (entry.workDate && entry.workDate < this.todayBkk() && !this.isHR) {
+      throw new Error('ห้ามลบกะวันที่ผ่านมาแล้ว · HR/admin เท่านั้นที่ override ได้');
     }
     const { error } = await this.client.from('schedule_entries').delete().eq('id', id);
     if (error) throw error;
