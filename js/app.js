@@ -11088,6 +11088,19 @@ function openLeaveRequestForm(id = null, prefilledType = null) {
     if (data.startDate < today && !DB.LEAVE_TYPES[data.leaveType]?.allowBackdate) {
       return toast('ห้ามลาย้อนหลังสำหรับประเภทนี้ (ดู config ที่ tab "ตั้งค่าประเภท")', 'error');
     }
+    // ─── DAYS SANITY CHECK — กันกรอก days ไม่สอดคล้องกับช่วงวันที่ ───
+    const inputDays = Number(data.days);
+    const calendarDays = Math.round((new Date(data.endDate) - new Date(data.startDate)) / 86400000) + 1;
+    if (!isFinite(inputDays) || inputDays < 0.5) {
+      return toast('จำนวนวันต้องอย่างน้อย 0.5 วัน', 'error');
+    }
+    if (inputDays > calendarDays) {
+      return toast(`จำนวนวัน (${inputDays}) มากกว่าช่วงวันที่ที่เลือก (${calendarDays} วัน) — ปรับให้ตรงกัน`, 'error');
+    }
+    // กรณี start=end อนุญาตได้แค่ 0.5 (ครึ่งวัน) หรือ 1 (เต็มวัน)
+    if (data.startDate === data.endDate && inputDays !== 0.5 && inputDays !== 1) {
+      return toast('ลาวันเดียว ใส่ได้ 0.5 (ครึ่งวัน) หรือ 1 (เต็มวัน) เท่านั้น', 'error');
+    }
     // ─── OVERLAP CHECK — กันลาซ้ำ + ลาตรงวันชดเชย swap ───
     const overlapLeaves = DB.findLeaveOverlap(data.employeeId, data.startDate, data.endDate, id);
     const overlapSwaps  = DB.findSwapOnDate(data.employeeId, data.startDate, data.endDate, null);
