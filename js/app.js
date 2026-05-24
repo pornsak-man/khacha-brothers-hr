@@ -3219,7 +3219,7 @@ const IMPORT_COLUMNS = [
   'วันเกิด', 'เลขประชาชน', 'Passport', 'Work Permit', 'สัญชาติ', 'ศาสนา', 'วุฒิการศึกษา',
   'เบอร์โทร', 'อีเมล',
   'ที่อยู่', 'แขวง/ตำบล', 'เขต/อำเภอ', 'จังหวัด', 'รหัสไปรษณีย์',
-  'รหัสฝ่าย', 'สาขา', 'รหัสระดับตำแหน่ง', 'ตำแหน่ง', 'ประเภทพนักงาน', 'วันเริ่มงาน',
+  'สายงาน', 'รหัสฝ่าย', 'สาขา', 'รหัสระดับตำแหน่ง', 'ตำแหน่ง', 'ประเภทพนักงาน', 'วันเริ่มงาน',
   'วันพ้นสภาพ', 'เหตุผลพ้นสภาพ', 'รายละเอียดพ้นสภาพ',
   'ธนาคาร', 'เลขบัญชี',
   'เงินเดือน', 'ค่าตำแหน่ง', 'ค่าเดินทาง', 'ค่าอาหาร', 'ค่าเบี้ยเลี้ยง', 'ค่าภาษา', 'ค่าโทรศัพท์', 'ค่าอื่นๆ',
@@ -3245,6 +3245,7 @@ async function downloadEmployeeTemplate() {
       'ที่อยู่': '123 หมู่ 4 ซอยสุขุมวิท 21 ถ.สุขุมวิท',
       'แขวง/ตำบล': 'คลองเตยเหนือ', 'เขต/อำเภอ': 'วัฒนา',
       'จังหวัด': 'กรุงเทพมหานคร', 'รหัสไปรษณีย์': '10110',
+      'สายงาน': 'office',
       'รหัสฝ่าย': 'D001', 'สาขา': 'สำนักงานใหญ่',
       'รหัสระดับตำแหน่ง': 'P03', 'ตำแหน่ง': 'หัวหน้าทีม',
       'ประเภทพนักงาน': 'พนักงานประจำ', 'วันเริ่มงาน': '01/01/2024',
@@ -3379,6 +3380,9 @@ function parseImportRow(row) {
     province: get('จังหวัด'),
     postalCode: get('รหัสไปรษณีย์'),
     department: get('รหัสฝ่าย'),
+    // _scope: ถ้า dept ไม่มีในระบบ จะ auto-create ตอน import พร้อม scope นี้
+    // ค่าที่ยอมรับ: 'operation' / 'office' / scope id ใดๆ ที่ตั้งไว้
+    _scope: (get('สายงาน') || '').toLowerCase().trim(),
     branch: get('สาขา'),
     position: get('รหัสระดับตำแหน่ง'),
     positionTitle: get('ตำแหน่ง'),
@@ -3431,8 +3435,9 @@ function validateImportRows(rows) {
     idsSeen.add(r.id);
     if (!r.firstName) errors.push({ row: rowNum, msg: 'ชื่อว่าง' });
     // นามสกุลไม่บังคับ — บางกรณีพนักงานมีชื่อเดียว (เช่น แรงงานต่างด้าว)
-    if (r.department && !deptIds.has(r.department))
-      errors.push({ row: rowNum, msg: `รหัสฝ่ายไม่มีในระบบ: ${r.department}` });
+    // ฝ่ายไม่มีในระบบ → error เฉพาะถ้า _scope ก็ไม่ระบุ (ถ้ามี scope → จะ auto-create ตอน import)
+    if (r.department && !deptIds.has(r.department) && !r._scope)
+      errors.push({ row: rowNum, msg: `รหัสฝ่ายไม่มีในระบบ: ${r.department} — เพิ่มคอลัมน์ "สายงาน" (operation/office) ในไฟล์เพื่อให้ระบบสร้างฝ่ายอัตโนมัติ` });
     if (r.position && !posIds.has(r.position))
       errors.push({ row: rowNum, msg: `รหัสระดับตำแหน่งไม่มีในระบบ: ${r.position}` });
   });
@@ -3521,6 +3526,38 @@ function openImportEmployees() {
       </div>
     `;
     const start = performance.now();
+
+    // ─── Auto-create departments ที่ยังไม่มีในระบบ (ตามคอลัมน์ "สายงาน") ───
+    // เก็บ uniq dept+scope จากทุกแถวที่ระบุทั้ง 2 ค่า + ยังไม่มีในระบบ
+    const existingDeptIds = new Set(DB.getDepartments().map(d => d.id));
+    const deptsToCreate = new Map();  // id → { name, scope }
+    for (const r of parsedRows) {
+      if (r.department && r._scope && !existingDeptIds.has(r.department) && !deptsToCreate.has(r.department)) {
+        deptsToCreate.set(r.department, { name: r.department, scope: r._scope });
+      }
+    }
+    let deptCreated = 0;
+    const deptErrors = [];
+    if (deptsToCreate.size > 0) {
+      $('#importBody').innerHTML = `<div class="card mt-4"><div>กำลังสร้างฝ่าย <strong>${deptsToCreate.size}</strong> ฝ่ายที่ยังไม่มีในระบบ...</div></div>`;
+      for (const [id, info] of deptsToCreate) {
+        try {
+          await DB.saveDepartment({ id, name: info.name, manager: '', note: '', scope: info.scope });
+          deptCreated++;
+          existingDeptIds.add(id);
+        } catch (ex) {
+          deptErrors.push({ id, message: ex.message || String(ex) });
+        }
+      }
+      $('#importBody').innerHTML = `
+        <div class="card mt-4">
+          <div style="color:var(--success);margin-bottom:6px">✓ สร้างฝ่ายอัตโนมัติ ${deptCreated} ฝ่าย${deptErrors.length ? ` (ผิดพลาด ${deptErrors.length})` : ''}</div>
+          <div style="margin-bottom:10px">กำลังนำเข้าพนักงาน <strong id="progressText">0</strong> / <strong>${parsedRows.length.toLocaleString()}</strong></div>
+          <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+        </div>
+      `;
+    }
+
     const result = await DB.bulkUpsertEmployees(parsedRows, (done, total) => {
       const pct = (done / total) * 100;
       const fill = $('#progressFill');
@@ -3577,6 +3614,8 @@ function openImportEmployees() {
       <div class="card mt-4">
         <div style="font-size:16px;font-weight:600;color:var(--success);margin-bottom:8px">✓ นำเข้าสำเร็จ</div>
         <div style="font-size:14px;line-height:1.8">
+          ${deptCreated ? `• สร้างฝ่ายอัตโนมัติ: <strong style="color:var(--success)">${deptCreated.toLocaleString()}</strong> ฝ่าย<br>` : ''}
+          ${deptErrors.length ? `• สร้างฝ่ายไม่สำเร็จ: <strong style="color:var(--danger)">${deptErrors.length.toLocaleString()}</strong> ฝ่าย<br>` : ''}
           • นำเข้าพนักงาน: <strong>${result.inserted.toLocaleString()}</strong> คน<br>
           ${result.failed ? `• ผิดพลาด (พนักงาน): <strong style="color:var(--danger)">${result.failed.toLocaleString()}</strong> คน<br>` : ''}
           ${DB.isHR ? `
