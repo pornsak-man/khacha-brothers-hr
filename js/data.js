@@ -304,9 +304,20 @@ const DB = {
   },
 
   async loadAll(profilePromise = null) {
+    // ─── PERF: per-query timing — log to console + window.__bootTimings ───
+    // ดูได้ใน DevTools Console; เก็บไว้ใน window.__bootTimings สำหรับ debug
+    const _bootT0 = performance.now();
+    window.__bootTimings = { _start: _bootT0, queries: {}, phases: {} };
+    const timed = (label, p) => {
+      const t0 = performance.now();
+      return Promise.resolve(p).then(
+        (r) => { const ms = performance.now() - t0; window.__bootTimings.queries[label] = Math.round(ms); return r; },
+        (e) => { const ms = performance.now() - t0; window.__bootTimings.queries[label] = Math.round(ms) + ' (err)'; throw e; }
+      );
+    };
     // ─── Phase 1 (critical) — รวม Promise.all เดียวให้ parallel สูงสุด ───
-    // ทุกตารางที่ต้องใช้สำหรับ: dashboard, sidebar badges, login profile
-    // = พนักงาน + master + leave + swap + user_profiles
+    // เฉพาะ table ที่ dashboard + sidebar badges ต้องใช้ทันที
+    // (5 queries ที่ใช้เฉพาะหน้า leave/calendar/swap/settings ย้ายไป Phase 2)
     //
     // Optimization: โหลด employees เฉพาะ active + พ้นสภาพไม่เกิน 1 ปีย้อนหลัง
     //   พนักงานเก่ากว่านั้น (เก็บประวัติยาว) → load Phase 2 background
@@ -350,37 +361,38 @@ const DB = {
     };
 
     const critical = await Promise.all([
-      this.client.from('departments').select('*').order('id'),
-      this.client.from('position_levels').select('*').order('id'),
-      this.client.from('calendar_items').select('*').order('date'),
-      this.client.from('company_settings').select('*').eq('id', 1).maybeSingle(),
-      fetchEmployeesActive(),
-      this._fetchAllPages('branches', 'id', true).catch(() => []),
-      this._fetchAllPages('leave_requests', 'start_date', false).catch(() => []),
-      this._fetchAllPages('leave_types', 'sort_order', true).catch(() => []),
-      this._fetchAllPages('holiday_swap_requests', 'requested_at', false).catch(() => []),
-      this.client.from('user_profiles').select('*').then(r => r.data || [], () => []),
-      this._fetchAllPages('company_announcements', 'created_at', false).catch(() => []),
-      fetchMyAnnReads().catch(() => []),
-      this._fetchAllPages('position_scopes', 'sort_order', true).catch(() => [])
+      timed('departments',     this.client.from('departments').select('*').order('id')),
+      timed('position_levels', this.client.from('position_levels').select('*').order('id')),
+      timed('employees',       fetchEmployeesActive()),
+      timed('branches',        this._fetchAllPages('branches', 'id', true).catch(() => [])),
+      timed('user_profiles',   this.client.from('user_profiles').select('*').then(r => r.data || [], () => [])),
+      timed('announcements',   this._fetchAllPages('company_announcements', 'created_at', false).catch(() => [])),
+      timed('ann_reads',       fetchMyAnnReads().catch(() => [])),
+      timed('position_scopes', this._fetchAllPages('position_scopes', 'sort_order', true).catch(() => []))
     ]);
-    const [deps, pos, cal, comp, emps, branchRows, leaves, lvTypes, swapReqs, ups, anns, myReads, scopes] = critical;
+    const [deps, pos, emps, branchRows, ups, anns, myReads, scopes] = critical;
+    window.__bootTimings.phases.phase1_total = Math.round(performance.now() - _bootT0);
 
     this.data.departments = (deps.data || []).map(this._depFromDB);
     this.data.positionLevels = (pos.data || []).map(this._posFromDB);
     this.data.positionScopes = (scopes || []).map(this._scopeFromDB);
-    this.data.calendar = (cal.data || []).map(this._calFromDB);
-    if (comp.data) this.data.company = this._compFromDB(comp.data);
     this.data.employees = emps.map(this._empFromDB);
     this.data.branches = (branchRows || []).map(this._branchFromDB);
-    this.data.leaveRequests = (leaves || []).map(this._leaveFromDB);
-    this.data.leaveTypes = (lvTypes || []).map(this._leaveTypeFromDB);
-    this.data.holidaySwapRequests = (swapReqs || []).map(this._swapReqFromDB);
     this.data.announcements = (anns || []).map(this._annFromDB);
     this._userProfiles = ups || [];
     this._myAnnReads = new Set((myReads || []).map(r => r.announcement_id));
 
     this._invalidateIndex();
+
+    // ─── PERF: log boot timings ทันทีหลัง Phase 1 เสร็จ (dashboard render ต่อ) ───
+    // เปิด DevTools Console เห็นว่า query ไหนช้า / ส่ง screenshot/log มาบอกได้
+    try {
+      const t = window.__bootTimings;
+      const slowest = Object.entries(t.queries).sort((a, b) => (parseInt(b[1]) || 0) - (parseInt(a[1]) || 0))[0];
+      console.log('%c⏱ Boot Phase 1 done in ' + t.phases.phase1_total + ' ms', 'color:#2e74ff;font-weight:bold');
+      console.table(t.queries);
+      if (slowest) console.log(`%c  slowest query: ${slowest[0]} (${slowest[1]} ms)`, 'color:#dc2626');
+    } catch (e) {}
 
     // ─── Phase 2 (deferred) — โหลดเบื้องหลังไม่ block login ───
     // ใช้ตอนผู้ใช้กดเข้าหน้าที่ต้องการ (เงินเดือน, ลา, จัดชุด, ฯลฯ)
@@ -406,20 +418,37 @@ const DB = {
       return all;
     };
 
+    const _p2T0 = performance.now();
     this._secondaryLoadPromise = Promise.all([
-      this._fetchAllPages('loans', 'date', false).catch(() => []),
-      this._fetchAllPages('advances', 'date', false).catch(() => []),
-      this._fetchAllPages('allowances', 'month', false).catch(() => []),
-      this._fetchAllPages('evaluations', 'date', false).catch(() => []),
-      this._fetchAllPages('salary_history', 'date', false).catch(() => []),
-      this._fetchAllPages('applicants', 'applied_date', false).catch(() => []),
-      this._fetchAllPages('uniform_items', 'name', true).catch(() => []),
-      this._fetchAllPages('uniform_requests', 'requested_date', false).catch(() => []),
-      this._fetchAllPages('uniform_issues', 'issued_date', false).catch(() => []),
-      this._fetchAllPages('uniform_delivery_schedule', 'branch_code', true).catch(() => []),
-      this.client.from('role_permission_matrix').select('*').order('sort_order').then(r => r.data || [], () => []),
-      fetchEmployeesArchive().catch(() => [])
-    ]).then(([loans, advs, allow, evals, sal, appls, uniItems, uniReqs, uniIssues, uniSched, rm, oldEmps]) => {
+      // ─── จาก Phase 1 (เดิม block login) ย้ายมา Phase 2 — ไม่จำเป็นต่อ dashboard ───
+      timed('calendar_items',          this.client.from('calendar_items').select('*').order('date').catch(() => ({ data: [] }))),
+      timed('company_settings',        this.client.from('company_settings').select('*').eq('id', 1).maybeSingle().catch(() => ({ data: null }))),
+      timed('leave_requests',          this._fetchAllPages('leave_requests', 'start_date', false).catch(() => [])),
+      timed('leave_types',             this._fetchAllPages('leave_types', 'sort_order', true).catch(() => [])),
+      timed('holiday_swap_requests',   this._fetchAllPages('holiday_swap_requests', 'requested_at', false).catch(() => [])),
+      // ─── เดิม Phase 2 ───
+      timed('loans',                   this._fetchAllPages('loans', 'date', false).catch(() => [])),
+      timed('advances',                this._fetchAllPages('advances', 'date', false).catch(() => [])),
+      timed('allowances',              this._fetchAllPages('allowances', 'month', false).catch(() => [])),
+      timed('evaluations',             this._fetchAllPages('evaluations', 'date', false).catch(() => [])),
+      timed('salary_history',          this._fetchAllPages('salary_history', 'date', false).catch(() => [])),
+      timed('applicants',              this._fetchAllPages('applicants', 'applied_date', false).catch(() => [])),
+      timed('uniform_items',           this._fetchAllPages('uniform_items', 'name', true).catch(() => [])),
+      timed('uniform_requests',        this._fetchAllPages('uniform_requests', 'requested_date', false).catch(() => [])),
+      timed('uniform_issues',          this._fetchAllPages('uniform_issues', 'issued_date', false).catch(() => [])),
+      timed('uniform_delivery_sched',  this._fetchAllPages('uniform_delivery_schedule', 'branch_code', true).catch(() => [])),
+      timed('role_permission_matrix',  this.client.from('role_permission_matrix').select('*').order('sort_order').then(r => r.data || [], () => [])),
+      timed('employees_archive',       fetchEmployeesArchive().catch(() => []))
+    ]).then(([cal, comp, leaves, lvTypes, swapReqs,
+              loans, advs, allow, evals, sal, appls,
+              uniItems, uniReqs, uniIssues, uniSched, rm, oldEmps]) => {
+      // ใหม่: ตาราง critical-but-not-dashboard ที่ย้ายมา
+      this.data.calendar = ((cal && cal.data) || []).map(this._calFromDB);
+      if (comp && comp.data) this.data.company = this._compFromDB(comp.data);
+      this.data.leaveRequests = (leaves || []).map(this._leaveFromDB);
+      this.data.leaveTypes = (lvTypes || []).map(this._leaveTypeFromDB);
+      this.data.holidaySwapRequests = (swapReqs || []).map(this._swapReqFromDB);
+      // เดิม
       this.data.loans = loans.map(this._loanFromDB);
       this.data.advances = advs.map(this._advFromDB);
       this.data.allowances = allow.map(this._allowFromDB);
@@ -439,9 +468,18 @@ const DB = {
         this._invalidateIndex();
       }
       this._secondaryLoaded = true;
+      window.__bootTimings.phases.phase2_total = Math.round(performance.now() - _p2T0);
+      try { console.log('%c⏱ Boot Phase 2 done in ' + window.__bootTimings.phases.phase2_total + ' ms (background)', 'color:#16a34a'); } catch (e) {}
+      // Refresh sidebar badges ที่อาศัย table ของ Phase 2 (leave / swap)
+      try {
+        if (typeof updateLeaveBadge === 'function') updateLeaveBadge();
+        if (typeof updateCalendarBadge === 'function') updateCalendarBadge();
+      } catch (e) { /* badges may not exist yet */ }
       // Re-render หน้าปัจจุบันถ้าผู้ใช้อยู่บนหน้าที่ใช้ secondary data
+      // เพิ่ม: dashboard (personal), leave, calendar — ใช้ table ที่เพิ่ง defer
       if (typeof router !== 'undefined' && router.current) {
-        const usesSecondary = ['loans', 'advances', 'allowance', 'evaluations', 'recruit', 'uniform', 'salary-adjust', 'employees'];
+        const usesSecondary = ['loans', 'advances', 'allowance', 'evaluations', 'recruit', 'uniform', 'salary-adjust', 'employees',
+                               'dashboard', 'leave', 'calendar'];
         if (usesSecondary.includes(router.current)) router.go(router.current);
       }
     }).catch(err => {
