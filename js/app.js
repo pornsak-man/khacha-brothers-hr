@@ -238,6 +238,67 @@ function icon(name, opts = {}) {
   return `<svg${cls} width="${size}" height="${size}" viewBox="0 0 24 24" fill="${fill}" stroke="${stroke}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
 }
 
+// ═══════════════════════════════════════════════════════════
+// UI LABELS — ภาษาไทยมาตรฐาน (consistent across pages)
+// ใช้แทนการเขียน "บันทึก"/"ยืนยัน"/"OK"/"Save" ปะปนกัน
+// ═══════════════════════════════════════════════════════════
+const LABELS = {
+  // Actions
+  save:       'บันทึก',
+  saveExit:   'บันทึกและปิด',
+  cancel:     'ยกเลิก',
+  confirm:    'ยืนยัน',
+  close:      'ปิด',
+  ok:         'ตกลง',
+  delete:     'ลบ',
+  edit:       'แก้ไข',
+  add:        'เพิ่ม',
+  create:     'สร้าง',
+  search:     'ค้นหา',
+  filter:     'ตัวกรอง',
+  clearFilter:'ล้างตัวกรอง',
+  reset:      'ล้างค่า',
+  back:       'ย้อนกลับ',
+  next:       'ถัดไป',
+  prev:       'ก่อนหน้า',
+  submit:     'ส่ง',
+  exportExcel:'ส่งออก Excel',
+  importExcel:'นำเข้า Excel',
+  print:      'พิมพ์',
+  download:   'ดาวน์โหลด',
+  upload:     'อัปโหลด',
+  refresh:    'รีเฟรช',
+  view:       'ดู',
+  viewDetail: 'รายละเอียด',
+  more:       'เพิ่มเติม',
+  // Approval workflow
+  approve:    'อนุมัติ',
+  reject:     'ปฏิเสธ',
+  endorse:    'เห็นชอบ',
+  decline:    'ไม่เห็นชอบ',
+  submitForApproval: 'ส่งขออนุมัติ',
+  reopen:     'เปิดให้แก้ไข',
+  // States
+  loading:    'กำลังโหลด...',
+  saving:     'กำลังบันทึก...',
+  empty:      'ไม่มีข้อมูล',
+  active:     'ใช้งาน',
+  inactive:   'ปิด',
+  pending:    'รอดำเนินการ',
+  approved:   'อนุมัติแล้ว',
+  rejected:   'ปฏิเสธ',
+  // Misc
+  required:   'จำเป็น',
+  optional:   'ไม่บังคับ',
+  yes:        'ใช่',
+  no:         'ไม่',
+  all:        'ทั้งหมด',
+  none:       '— ไม่มี —',
+  selectAll:  'เลือกทั้งหมด',
+  noResults:  'ไม่พบรายการ',
+  loginEmail: 'อีเมลเข้าใช้งาน'
+};
+
 // ─── REUSABLE BRANCH PICKER (premium multi-select for managed branches) ───
 // ใช้กับ Area / Operation Manager ที่ต้องเลือกสาขาในขอบเขตการดูแล
 // คืน HTML string. Call wireBranchPicker(rootEl) หลัง render เพื่อ attach search/select-all/clear
@@ -13221,7 +13282,7 @@ router.register('schedule', () => {
         ${week?.submittedAt && status === 'submitted' ? `<span class="muted-2 schedule-status-time">ส่งเมื่อ ${fmt.date(week.submittedAt)}</span>` : ''}
         ${week?.rejectReason ? `<span class="badge badge-danger" title="${escapeHtml(week.rejectReason)}">เหตุผลปฏิเสธ: ${escapeHtml(week.rejectReason).slice(0, 50)}</span>` : ''}
         <div class="schedule-status-actions">
-          ${canEdit && branchId ? `<button class="btn btn-ghost" onclick="openAddCrossBranchEmployee()">+ พนักงานข้ามสาขา</button>` : ''}
+          ${canEdit && branchId ? `<button class="btn btn-ghost" onclick="openAddCrossBranchEmployee()">${icon('plus')} พนักงานข้ามสาขา</button>` : ''}
           ${canSubmit ? `<button class="btn btn-primary" onclick="submitScheduleWeekUI()">ส่งขออนุมัติ</button>` : ''}
           ${canApprove ? `<button class="btn btn-primary" onclick="approveScheduleWeekUI()">${icon('check')} อนุมัติ</button>` : ''}
           ${canApprove ? `<button class="btn btn-danger" onclick="rejectScheduleWeekUI()">ปฏิเสธ</button>` : ''}
@@ -13268,9 +13329,9 @@ router.register('schedule', () => {
 
     <div id="scheduleGridWrap">${
       hideUnapproved
-        ? `<div class="sw-chart-card"><div class="empty-state" style="padding:60px 20px">
-            <div style="font-size:42px;margin-bottom:12px;opacity:0.35">🗓️</div>
-            <div class="title" style="font-size:16px;font-weight:600">ตารางสาขายังไม่ถูกประกาศ</div>
+        ? `<div class="sw-chart-card"><div class="empty-state">
+            ${icon('calendar', { size: 48 })}
+            <div class="title">ตารางสาขายังไม่ถูกประกาศ</div>
             <div class="hint" style="margin-top:6px">${
               status === 'draft' ? 'ผู้จัดการสาขากำลังจัดตาราง — รอประกาศก่อนจึงเห็น'
               : status === 'submitted' ? 'ตารางส่งให้ AM อนุมัติแล้ว — รออนุมัติก่อนประกาศ'
@@ -13307,10 +13368,10 @@ function setScheduleBranch(branchId) {
 
 function renderScheduleGrid(branchId, weekStart, canEdit) {
   if (!branchId) {
-    return `<div class="sw-chart-card"><div class="empty-state" style="padding:60px 20px">
-      <div style="font-size:42px;margin-bottom:12px;opacity:0.35">🏬</div>
-      <div class="title" style="font-size:16px;font-weight:600">ยังไม่มีสาขาที่เข้าถึงได้</div>
-      <div class="hint" style="margin-top:6px">ติดต่อ HR/admin เพื่อกำหนดสิทธิ์สาขา</div>
+    return `<div class="sw-chart-card"><div class="empty-state">
+      ${icon('building', { size: 48 })}
+      <div class="title">ยังไม่มีสาขาที่เข้าถึงได้</div>
+      <div class="hint">ติดต่อ HR/admin เพื่อกำหนดสิทธิ์สาขา</div>
     </div></div>`;
   }
 
@@ -13345,10 +13406,11 @@ function renderScheduleGrid(branchId, weekStart, canEdit) {
   const allEmps = [...sortEmps(empsInBranch), ...sortEmps(helperEmps)];
 
   if (!allEmps.length) {
-    return `<div class="sw-chart-card"><div class="empty-state" style="padding:60px 20px">
-      <div style="font-size:42px;margin-bottom:12px;opacity:0.35">👥</div>
-      <div class="title" style="font-size:16px;font-weight:600">ยังไม่มีพนักงานในสาขานี้</div>
-      <div class="hint" style="margin-top:6px">เพิ่มพนักงานในทะเบียน หรือกด "+ พนักงานข้ามสาขา"</div>
+    return `<div class="sw-chart-card"><div class="empty-state">
+      ${icon('users', { size: 48 })}
+      <div class="title">ยังไม่มีพนักงานในสาขานี้</div>
+      <div class="hint">เพิ่มพนักงานในทะเบียน หรือกด "+ พนักงานข้ามสาขา" ด้านบน</div>
+      ${canEdit ? `<div class="empty-state-cta"><button class="btn btn-primary" onclick="openAddCrossBranchEmployee()">${icon('plus')} เพิ่มพนักงานข้ามสาขา</button></div>` : ''}
     </div></div>`;
   }
 
