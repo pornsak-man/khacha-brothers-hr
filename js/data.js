@@ -3878,7 +3878,7 @@ const DB = {
       nickname: r.nickname || '',
       branch: r.branch || '',
       department: r.department || '',
-      position: r.position || '',
+      position: r.position_id || '',  // RPC คืนเป็น position_id (เพราะ "position" reserved word ใน RETURNS TABLE)
       positionTitle: r.position_title || '',
       employeeType: r.employee_type || '',
       hireDate: r.hire_date || ''

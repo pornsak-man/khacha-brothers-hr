@@ -19,7 +19,7 @@ RETURNS TABLE(
   nickname        TEXT,
   branch          TEXT,
   department      TEXT,
-  position        TEXT,
+  position_id     TEXT,
   position_title  TEXT,
   employee_type   TEXT,
   hire_date       DATE
@@ -36,7 +36,7 @@ AS $$
     e.nickname,
     e.branch,
     e.department,
-    e.position,
+    e.position AS position_id,
     e.position_title,
     e.employee_type,
     e.hire_date
