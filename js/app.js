@@ -182,6 +182,91 @@ const fmt = {
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// ─── REUSABLE BRANCH PICKER (premium multi-select for managed branches) ───
+// ใช้กับ Area / Operation Manager ที่ต้องเลือกสาขาในขอบเขตการดูแล
+// คืน HTML string. Call wireBranchPicker(rootEl) หลัง render เพื่อ attach search/select-all/clear
+let _branchPickerSeq = 0;
+function renderBranchPicker({ name, branches, selected = [], pickerId = null } = {}) {
+  const id = pickerId || ('branch_pk_' + (++_branchPickerSeq));
+  const sel = new Set((selected || []).filter(Boolean));
+  if (!branches || !branches.length) {
+    return `<div class="branch-picker" data-branch-picker><div class="branch-picker-empty">ไม่มีข้อมูลสาขาในระบบ</div></div>`;
+  }
+  const total = branches.length;
+  const checked = branches.filter(b => sel.has(b.id)).length;
+  return `
+    <div class="branch-picker" data-branch-picker id="${id}">
+      <div class="branch-picker-toolbar">
+        <div class="branch-picker-search">
+          <input type="search" placeholder="ค้นหารหัส หรือชื่อสาขา..." data-branch-search aria-label="ค้นหาสาขา"/>
+        </div>
+        <span class="branch-picker-count" data-branch-count>${checked} / ${total}</span>
+        <div class="branch-picker-actions">
+          <button type="button" data-branch-select-all>เลือกทั้งหมด</button>
+          <button type="button" data-branch-clear>ล้าง</button>
+        </div>
+      </div>
+      <div class="branch-picker-grid" data-branch-grid>
+        ${branches.map(b => {
+          const label = (b.name && b.name !== b.id) ? b.name : b.id;
+          const searchKey = (b.id + ' ' + (b.name || '')).toLowerCase();
+          return `
+            <label class="branch-chip" data-branch-chip data-search="${escapeHtml(searchKey)}">
+              <input type="checkbox" name="${escapeHtml(name)}" value="${escapeHtml(b.id)}" ${sel.has(b.id) ? 'checked' : ''}/>
+              <span class="branch-chip-indicator" aria-hidden="true"></span>
+              <span class="branch-chip-code">${escapeHtml(b.id)}</span>
+              <span class="branch-chip-name" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+            </label>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+function wireBranchPicker(root) {
+  if (!root) return;
+  const picker = root.matches?.('[data-branch-picker]') ? root : root.querySelector('[data-branch-picker]');
+  if (!picker) return;
+  const grid = picker.querySelector('[data-branch-grid]');
+  const countEl = picker.querySelector('[data-branch-count]');
+  const search = picker.querySelector('[data-branch-search]');
+  const selectAllBtn = picker.querySelector('[data-branch-select-all]');
+  const clearBtn = picker.querySelector('[data-branch-clear]');
+  if (!grid) return;
+  const chips = Array.from(grid.querySelectorAll('[data-branch-chip]'));
+  const total = chips.length;
+  const updateCount = () => {
+    if (!countEl) return;
+    const checked = chips.filter(c => c.querySelector('input[type="checkbox"]:checked')).length;
+    countEl.textContent = `${checked} / ${total}`;
+  };
+  const applyFilter = () => {
+    const q = (search?.value || '').trim().toLowerCase();
+    chips.forEach(c => {
+      const match = !q || (c.getAttribute('data-search') || '').includes(q);
+      c.classList.toggle('is-hidden', !match);
+    });
+  };
+  grid.addEventListener('change', (e) => {
+    if (e.target.matches('input[type="checkbox"]')) updateCount();
+  });
+  if (search) search.addEventListener('input', applyFilter);
+  if (selectAllBtn) selectAllBtn.addEventListener('click', () => {
+    chips.forEach(c => {
+      if (c.classList.contains('is-hidden')) return;
+      const cb = c.querySelector('input[type="checkbox"]');
+      if (cb && !cb.checked) cb.checked = true;
+    });
+    updateCount();
+  });
+  if (clearBtn) clearBtn.addEventListener('click', () => {
+    chips.forEach(c => {
+      if (c.classList.contains('is-hidden')) return;
+      const cb = c.querySelector('input[type="checkbox"]');
+      if (cb && cb.checked) cb.checked = false;
+    });
+    updateCount();
+  });
+}
+
 // ─── REUSABLE EMPLOYEE PICKER (searchable input + datalist) ───
 // ใช้แทน <select> ที่มีพนักงานเยอะ — พิมพ์ ชื่อ/นามสกุล/ชื่อเล่น/รหัส กรองได้
 // คืน HTML string. Call wireEmployeePickers() หลัง render เพื่อ attach listeners
@@ -2827,16 +2912,11 @@ function openEmployeeForm(id = null, init = null, onSaved = null) {
         </div>
         <div class="form-group span-2" id="userBranchesGroup" style="display:${['area_manager','operation_manager'].includes(roleKey) ? '' : 'none'}">
           <label>สาขาที่ดูแล <span class="muted-2" style="font-weight:normal;font-size:11px">(เฉพาะ Area / Operation Manager · ถ้าไม่เลือก = ใช้สาขาของตัวเอง)</span></label>
-          <div style="max-height:160px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:8px;background:var(--surface-2)">
-            ${allBranches.length ? allBranches.map(b => `
-              <label style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;font-weight:normal;font-size:12.5px">
-                <input type="checkbox" name="userBranches" value="${escapeHtml(b.id)}" ${currentBranches.includes(b.id) ? 'checked' : ''}/>
-                <span>${escapeHtml(b.id)}${b.name && b.name !== b.id ? ' — ' + escapeHtml(b.name) : ''}</span>
-              </label>
-            `).join('') : '<div class="muted-2">ไม่มีข้อมูลสาขาในระบบ</div>'}
-          </div>
+          ${renderBranchPicker({ name: 'userBranches', branches: allBranches, selected: currentBranches, pickerId: 'userBranchPicker' })}
+          <div class="branch-picker-hint">ติ๊กสาขาที่ผู้ใช้รายนี้ได้รับมอบหมายให้กำกับดูแล — ใช้ค้นหา/เลือกทั้งหมด/ล้าง ที่แถบด้านบน</div>
         </div>
       </div>`;
+    wireBranchPicker($('#userBranchesGroup'));
     // Toggle "สาขาที่ดูแล" ตาม role
     $('#userRoleSel').addEventListener('change', (ev) => {
       const v = ev.target.value;
@@ -11442,20 +11522,15 @@ async function openRoleEditor(empId) {
       </div>
       <div class="form-group" id="branchesGroup" style="display:${['area_manager','operation_manager'].includes(currentRole) ? '' : 'none'}">
         <label>สาขาที่ดูแล <span class="muted-2" style="font-weight:normal;font-size:11px">(เฉพาะ Area / Operation Manager · ถ้าไม่เลือก = ใช้สาขาของตัวเอง)</span></label>
-        <div style="max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:8px">
-          ${allBranches.length ? allBranches.map(b => `
-            <label style="display:flex;align-items:center;gap:8px;padding:4px;font-weight:normal">
-              <input type="checkbox" name="branches" value="${escapeHtml(b.id)}" ${currentBranches.includes(b.id) ? 'checked' : ''}/>
-              <span>${escapeHtml(b.id)}${b.name && b.name !== b.id ? ' — ' + escapeHtml(b.name) : ''}</span>
-            </label>
-          `).join('') : '<div class="muted-2">ไม่มีข้อมูลสาขาในระบบ</div>'}
-        </div>
+        ${renderBranchPicker({ name: 'branches', branches: allBranches, selected: currentBranches, pickerId: 'roleEditorBranchPicker' })}
+        <div class="branch-picker-hint">ติ๊กสาขาที่ผู้ใช้รายนี้ได้รับมอบหมายให้กำกับดูแล — ใช้ค้นหา/เลือกทั้งหมด/ล้าง ที่แถบด้านบน</div>
       </div>
     </form>`,
     {
       footer: `<button class="btn btn-secondary" data-close>ยกเลิก</button><button class="btn btn-primary" id="roleSave">บันทึก</button>`
     }
   );
+  wireBranchPicker($('#branchesGroup'));
   // Toggle "สาขาที่ดูแล" ตาม role
   $('#roleSelect').addEventListener('change', (e) => {
     const v = e.target.value;

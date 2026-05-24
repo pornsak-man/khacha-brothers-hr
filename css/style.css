@@ -3608,3 +3608,256 @@ textarea:disabled {
 a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
   filter: brightness(1.06);
 }
+
+/* ═══════════════════════════════════════════════════════════
+   BRANCH PICKER — Premium multi-select for managed branches
+   Used by user permission editor (Area/Operation Manager scope)
+   ═══════════════════════════════════════════════════════════ */
+.branch-picker {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
+  overflow: hidden;
+  box-shadow: var(--shadow-xs);
+}
+[data-theme="dark"] .branch-picker {
+  background: linear-gradient(180deg, var(--surface-2) 0%, var(--surface) 100%);
+}
+
+.branch-picker-toolbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+[data-theme="dark"] .branch-picker-toolbar {
+  background: rgba(255,255,255,0.02);
+}
+
+.branch-picker-search {
+  flex: 1; min-width: 0; position: relative;
+}
+.branch-picker-search input {
+  width: 100%;
+  padding: 8px 12px 8px 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  transition: all var(--transition);
+}
+.branch-picker-search input:hover { border-color: var(--border-strong); }
+.branch-picker-search input:focus {
+  outline: none;
+  border-color: var(--gold);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--gold-soft);
+}
+.branch-picker-search::before {
+  content: "";
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+  width: 14px; height: 14px;
+  background: currentColor;
+  color: var(--text-3);
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>") center/contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>") center/contain no-repeat;
+  pointer-events: none;
+}
+
+.branch-picker-count {
+  font-size: 12px; color: var(--text-2);
+  font-feature-settings: "tnum";
+  white-space: nowrap;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: var(--gold-soft);
+  color: var(--gold-text);
+  border: 1px solid rgba(196, 165, 116, 0.32);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+[data-theme="dark"] .branch-picker-count {
+  background: rgba(196, 165, 116, 0.14);
+  color: #e3d2a8;
+  border-color: rgba(196, 165, 116, 0.32);
+}
+
+.branch-picker-actions {
+  display: flex; gap: 4px;
+}
+.branch-picker-actions button {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: inherit;
+}
+.branch-picker-actions button:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.branch-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+  padding: 12px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.branch-chip {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+  position: relative;
+  font-weight: 400;
+  margin: 0;
+}
+.branch-chip:hover {
+  border-color: var(--gold);
+  background: var(--surface);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.branch-chip input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.branch-chip-indicator {
+  flex-shrink: 0;
+  width: 18px; height: 18px;
+  border-radius: var(--radius-xs);
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface);
+  display: flex; align-items: center; justify-content: center;
+  transition: all var(--transition);
+}
+.branch-chip-indicator::after {
+  content: "";
+  width: 10px; height: 10px;
+  background: var(--surface);
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>") center/contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>") center/contain no-repeat;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: all 0.18s var(--ease-out);
+}
+
+.branch-chip-code {
+  flex-shrink: 0;
+  font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  min-width: 36px;
+  text-align: center;
+  transition: all var(--transition);
+}
+
+.branch-chip-name {
+  flex: 1; min-width: 0;
+  font-size: 12.5px;
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.005em;
+}
+
+/* Selected state — champagne gold luxe accent */
+.branch-chip:has(input:checked) {
+  background: linear-gradient(135deg, var(--gold-soft) 0%, rgba(196, 165, 116, 0.04) 100%);
+  border-color: var(--gold);
+  box-shadow:
+    0 0 0 1px var(--gold) inset,
+    0 2px 8px rgba(196, 165, 116, 0.18);
+}
+.branch-chip:has(input:checked) .branch-chip-indicator {
+  background: var(--gold);
+  border-color: var(--gold);
+}
+.branch-chip:has(input:checked) .branch-chip-indicator::after {
+  opacity: 1;
+  transform: scale(1);
+}
+.branch-chip:has(input:checked) .branch-chip-code {
+  background: var(--surface);
+  color: var(--gold-text);
+  border-color: rgba(196, 165, 116, 0.45);
+}
+.branch-chip:has(input:checked) .branch-chip-name {
+  color: var(--gold-text);
+  font-weight: 600;
+}
+[data-theme="dark"] .branch-chip:has(input:checked) {
+  background: linear-gradient(135deg, rgba(196, 165, 116, 0.16) 0%, rgba(196, 165, 116, 0.04) 100%);
+}
+[data-theme="dark"] .branch-chip:has(input:checked) .branch-chip-code {
+  background: var(--surface);
+  color: #e3d2a8;
+}
+[data-theme="dark"] .branch-chip:has(input:checked) .branch-chip-name {
+  color: #e3d2a8;
+}
+
+/* Focus state for keyboard users */
+.branch-chip:focus-within {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* Hidden state for search filtering */
+.branch-chip.is-hidden { display: none; }
+
+.branch-picker-empty {
+  grid-column: 1 / -1;
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-style: italic;
+}
+
+/* Hint text below picker */
+.branch-picker-hint {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--text-3);
+  margin-top: 6px;
+  font-weight: 400;
+}
+.branch-picker-hint::before {
+  content: "ⓘ";
+  font-style: normal;
+  color: var(--gold);
+  font-weight: 700;
+}
+
+/* Compact density on small screens */
+@media (max-width: 640px) {
+  .branch-picker-grid { grid-template-columns: 1fr; max-height: 240px; }
+  .branch-picker-toolbar { flex-wrap: wrap; }
+  .branch-picker-actions { width: 100%; justify-content: flex-end; }
+}
