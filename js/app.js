@@ -8619,12 +8619,15 @@ const _swapReqUI = {
   search: '',
   branch: '',
   status: '',     // เฉพาะ HR/admin granular filter
+  year: new Date().getFullYear(),
+  month: '',      // '' = ทุกเดือน, '1'-'12' = เดือนนั้น
   page: 0,
   pageSize: 20
 };
 function swapReqSetTab(t) { _swapReqUI.tab = t; _swapReqUI.page = 0; router.go('calendar'); }
 function swapReqSetFilter(k, v) {
-  const newVal = (v ?? '').trim();
+  // year/month เป็น number/string — ไม่ trim เหมือน search/branch/status
+  const newVal = (k === 'year') ? Number(v) || new Date().getFullYear() : (v ?? '').trim();
   if (_swapReqUI[k] === newVal) return;
   _swapReqUI[k] = newVal;
   _swapReqUI.page = 0;
@@ -8634,6 +8637,8 @@ function swapReqClearFilters() {
   _swapReqUI.search = '';
   _swapReqUI.branch = '';
   _swapReqUI.status = '';
+  _swapReqUI.month = '';
+  // year ไม่ล้าง — เก็บไว้เพราะเป็นบริบทหลักของหน้า
   _swapReqUI.page = 0;
   router.go('calendar');
 }
@@ -8771,15 +8776,36 @@ router.register('calendar', () => {
 
   // Render section "คำขอเปลี่ยนวันหยุด" — premium + filterable + paginated (รองรับ 200+ คำขอ)
   const renderSwapRequestsSection = () => {
-    // ─── Filter ตามปีที่เลือกข้างบน — สอดคล้องกับตาราง "ภาพรวมทั้งปี" ───
-    // ใช้ปีของวันหยุดเดิม (calendar_item.date) เป็นเกณฑ์
+    // ─── Filter ตามปี/เดือนของ swap section เอง (ไม่ผูกกับปีบน) ───
+    // ใช้วันหยุดเดิม (calendar_item.date) เป็นเกณฑ์
     const calById = new Map(DB.getCalendar().map(c => [c.id, c]));
+    const swapYear = _swapReqUI.year;
+    const swapMonth = _swapReqUI.month ? Number(_swapReqUI.month) : null;
     const allReqs = DB.getHolidaySwapRequests().filter(r => {
       const holiday = calById.get(r.calendarItemId);
       if (!holiday) return false;
-      return parseYMD(holiday.date)?.[0] === filterYear;
+      const ymd = parseYMD(holiday.date);
+      if (!ymd) return false;
+      if (ymd[0] !== swapYear) return false;
+      if (swapMonth && ymd[1] !== swapMonth) return false;
+      return true;
     });
-    if (!allReqs.length) return '';
+    // ปีที่มีคำขออยู่ในระบบ (สำหรับ dropdown — ไม่ filter จาก year ปัจจุบัน)
+    const yearsInData = new Set();
+    for (const r of DB.getHolidaySwapRequests()) {
+      const h = calById.get(r.calendarItemId);
+      const y = h ? parseYMD(h.date)?.[0] : null;
+      if (y) yearsInData.add(y);
+    }
+    const currentYear = new Date().getFullYear();
+    yearsInData.add(currentYear);
+    yearsInData.add(swapYear);
+    const swapYearOptions = Array.from(yearsInData).sort((a, b) => b - a);
+    if (!allReqs.length && swapMonth === null && !_swapReqUI.search && !_swapReqUI.branch && !_swapReqUI.status) {
+      // ไม่มีคำขอเลยในปีที่เลือก + ไม่มี filter อื่น → ยังต้อง render filter UI เพื่อให้เปลี่ยนปีได้
+      // (ของเดิม return '' ทำให้ user "ติด" ปีว่างเปล่า — ต้องคงไว้เฉพาะกรณีไม่มีคำขอทั้งระบบ)
+      if (yearsInData.size <= 1) return '';
+    }
 
     // ─── User context — role + employee_id ───
     const role = DB.role;
@@ -8844,7 +8870,8 @@ router.register('calendar', () => {
     // ไม่ใช่แค่สาขาที่มีคำขอ → HR/admin filter หาสาขาที่ยังไม่มีคำขอได้
     const branches = [...new Set(DB.getEmployees({ status: 'active' }).map(e => e.branch).filter(Boolean))].sort();
 
-    const hasFilters = !!(s || _swapReqUI.branch || _swapReqUI.status);
+    const hasFilters = !!(s || _swapReqUI.branch || _swapReqUI.status || _swapReqUI.month);
+    const MONTH_NAMES_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 
     // ─── Row: พนักงาน + วันหยุด + วันชดเชย + สถานะ + วันยื่น + actions ───
     const renderRow = (r) => {
@@ -8914,12 +8941,14 @@ router.register('calendar', () => {
       scopeLabel = myBranch ? `เห็นคำขอในสาขา ${myBranch}` : 'เห็นคำขอในสาขาที่ดูแล';
     }
 
+    const swapBuddhistYear = swapYear + 543;
+    const periodLabel = swapMonth ? `${MONTH_NAMES_TH[swapMonth - 1]} ${swapBuddhistYear}` : `ปี ${swapBuddhistYear}`;
     return `
     <div class="sw-chart-card">
       <div class="sw-chart-header">
         <div>
-          <div class="sw-chart-title">คำขอเปลี่ยนวันหยุด · ปี ${buddhistYear}</div>
-          <div class="sw-chart-sub">ใช้ chain อนุมัติเดียวกับการลา · ${escapeHtml(scopeLabel)} · เปลี่ยนปีที่ตัวกรองด้านบน</div>
+          <div class="sw-chart-title">คำขอเปลี่ยนวันหยุด · ${periodLabel}</div>
+          <div class="sw-chart-sub">ใช้ chain อนุมัติเดียวกับการลา · ${escapeHtml(scopeLabel)}</div>
         </div>
         ${(DB.isHR || role === 'branch_manager' || role === 'area_manager') ? '<button class="btn btn-primary btn-sm" onclick="openSwapRequestForm()">+ บันทึกให้พนักงาน</button>' : ''}
       </div>
@@ -8940,23 +8969,31 @@ router.register('calendar', () => {
         </button>
       </div>
 
-      <!-- Filter bar — แสดงเฉพาะ role ที่เห็นข้อมูลของหลายคน -->
-      ${(role !== 'branch_staff' && role !== 'viewer') ? `
+      <!-- Filter bar — แสดง year/month ให้ทุก role (ทุกคนเลือกดูเดือน/ปีได้), search/branch/status เฉพาะ role ที่เห็นหลายคน -->
       <div class="sw-filter-bar">
-        <input id="swapReqSearch" type="text" class="sw-filter-input" placeholder="🔍 ค้นชื่อ/รหัสพนักงาน"
-          value="${escapeHtml(_swapReqUI.search)}"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();swapReqSetFilter('search', this.value);}"
-          onblur="swapReqSetFilter('search', this.value)"/>
-        ${branches.length > 1 ? `<select class="sw-filter-select" onchange="swapReqSetFilter('branch', this.value)">
-          <option value="">— ทุกสาขา —</option>
-          ${branches.map(b => `<option value="${escapeHtml(b)}" ${_swapReqUI.branch === b ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
-        </select>` : ''}
-        <select class="sw-filter-select" onchange="swapReqSetFilter('status', this.value)">
-          <option value="">— ทุกสถานะ —</option>
-          ${Object.entries(SWAP_STATUS_BADGE).map(([k, v]) => `<option value="${k}" ${_swapReqUI.status === k ? 'selected' : ''}>${escapeHtml(v.label)}</option>`).join('')}
+        <select class="sw-filter-select" onchange="swapReqSetFilter('year', this.value)" aria-label="ปี">
+          ${swapYearOptions.map(y => `<option value="${y}" ${swapYear === y ? 'selected' : ''}>ปี ${y + 543}</option>`).join('')}
         </select>
+        <select class="sw-filter-select" onchange="swapReqSetFilter('month', this.value)" aria-label="เดือน">
+          <option value="">— ทุกเดือน —</option>
+          ${MONTH_NAMES_TH.map((m, i) => `<option value="${i + 1}" ${swapMonth === (i + 1) ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
+        ${(role !== 'branch_staff' && role !== 'viewer') ? `
+          <input id="swapReqSearch" type="text" class="sw-filter-input" placeholder="🔍 ค้นชื่อ/รหัสพนักงาน"
+            value="${escapeHtml(_swapReqUI.search)}"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();swapReqSetFilter('search', this.value);}"
+            onblur="swapReqSetFilter('search', this.value)"/>
+          ${branches.length > 1 ? `<select class="sw-filter-select" onchange="swapReqSetFilter('branch', this.value)">
+            <option value="">— ทุกสาขา —</option>
+            ${branches.map(b => `<option value="${escapeHtml(b)}" ${_swapReqUI.branch === b ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
+          </select>` : ''}
+          <select class="sw-filter-select" onchange="swapReqSetFilter('status', this.value)">
+            <option value="">— ทุกสถานะ —</option>
+            ${Object.entries(SWAP_STATUS_BADGE).map(([k, v]) => `<option value="${k}" ${_swapReqUI.status === k ? 'selected' : ''}>${escapeHtml(v.label)}</option>`).join('')}
+          </select>
+        ` : ''}
         ${hasFilters ? `<button class="btn btn-ghost btn-sm sw-filter-clear" onclick="swapReqClearFilters()">✕ ล้างตัวกรอง</button>` : ''}
-      </div>` : ''}
+      </div>
 
       <!-- Table -->
       ${slice.length ? `
