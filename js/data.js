@@ -2989,8 +2989,10 @@ const DB = {
   },
 
   // ─── สถิติพนักงานตามสายงาน (scope) — ใช้ใน dashboard ───
-  // หา scope ผ่าน position FK: employee.position → positionLevels.scope → positionScopes.id
-  // คนที่ไม่มี position หรือ position ไม่มี scope → จัดเป็น "ไม่ระบุ"
+  // Resolution chain (เหมือน _filterByScope):
+  //   1. employee.position → positionLevels.scope (ถ้ามี)
+  //   2. fallback → employee.department → departments.scope (ถ้าฝ่ายมี scope)
+  // คนที่ทั้ง position+dept ไม่มี scope → จัดเป็น "ไม่ระบุสาย"
   getScopeStats() {
     return this._cachedStats('scopeStats', () => this._computeScopeStats());
   },
@@ -2998,8 +3000,14 @@ const DB = {
     const counts = new Map();
     for (const e of this.data.employees) {
       if (this.empStatus(e) === 'resigned') continue;
+      // priority 1: position.scope
       const pos = e.position ? this.getPosition(e.position) : null;
-      const scopeId = pos?.scope || null;
+      let scopeId = pos?.scope || null;
+      // priority 2: dept.scope (fallback)
+      if (!scopeId && e.department) {
+        const dept = this.getDepartment(e.department);
+        if (dept?.scope) scopeId = dept.scope;
+      }
       const key = scopeId || '__none__';
       counts.set(key, (counts.get(key) || 0) + 1);
     }
