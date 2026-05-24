@@ -4711,3 +4711,147 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
   font-size: 16px;
   color: var(--primary-text);
 }
+
+/* ═══════════════════════════════════════════════════════════
+   DARK MODE: Schedule grid readability
+   ═══════════════════════════════════════════════════════════ */
+
+/* Shift badges ใช้สีจาก JS inline style + alpha 12% (1f hex)
+   ใน dark mode พื้นเซลล์เข้มแล้ว alpha 12% เลยมืดมาก
+   → filter brightness ทำให้ทั้ง bg + text สว่างขึ้น */
+[data-theme="dark"] .shift-badge {
+  filter: brightness(1.7) saturate(1.15);
+}
+
+/* ปุ่ม "+" ในเซลล์ว่าง */
+[data-theme="dark"] .schedule-cell-empty {
+  color: var(--text-2);
+  opacity: 0.7;
+}
+
+/* รหัสพนักงาน badge */
+[data-theme="dark"] .schedule-emp-id {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-2);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* วันเริ่มงาน / อายุงาน — italic เทาอ่อน */
+[data-theme="dark"] .schedule-emp-tenure {
+  color: var(--text-2);
+  opacity: 0.85;
+}
+
+/* คอลัมน์รวมขวาสุด — text-2 อ่านดีกว่า */
+[data-theme="dark"] .schedule-summary-cell {
+  background: rgba(255, 255, 255, 0.03);
+}
+[data-theme="dark"] .schedule-summary-cell strong {
+  color: #93c5fd;  /* blue-300 อ่านได้บน dark */
+}
+
+/* Away badge (⇄ ไปช่วย) */
+[data-theme="dark"] .schedule-away-badge {
+  background: rgba(196, 165, 116, 0.18);
+  color: #f0d18a;
+  border-color: rgba(196, 165, 116, 0.5);
+}
+[data-theme="dark"] .schedule-cell-away {
+  background: rgba(196, 165, 116, 0.06);
+}
+[data-theme="dark"] .schedule-cell-away:hover {
+  background: rgba(196, 165, 116, 0.12);
+}
+
+/* Leave badge — สีฟ้าบน text ขาว ก็เห็นใน dark อยู่แล้ว แต่ปรับให้สดขึ้น */
+[data-theme="dark"] .schedule-leave-badge {
+  background: #3b82f6;
+}
+
+/* OFF cell */
+[data-theme="dark"] .schedule-cell-off {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Holiday cell */
+[data-theme="dark"] .schedule-cell-holiday {
+  background: rgba(184, 122, 8, 0.15);
+}
+[data-theme="dark"] .schedule-day-head.has-holiday .schedule-day-holiday {
+  background: rgba(184, 122, 8, 0.3);
+  color: #fbbf24;
+}
+
+/* Today highlight */
+[data-theme="dark"] .schedule-day-head.today {
+  background: rgba(59, 130, 246, 0.2) !important;
+  color: #93c5fd;
+}
+[data-theme="dark"] .schedule-day-head.today .schedule-day-date {
+  color: #93c5fd;
+}
+[data-theme="dark"] .schedule-cell-today {
+  background: rgba(59, 130, 246, 0.06);
+}
+
+/* Footer (รวม/วัน) */
+[data-theme="dark"] .schedule-footer-row,
+[data-theme="dark"] .schedule-footer-label {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+[data-theme="dark"] .schedule-footer-hours strong {
+  color: #93c5fd;
+}
+[data-theme="dark"] .schedule-footer-grand {
+  background: rgba(59, 130, 246, 0.18) !important;
+}
+[data-theme="dark"] .schedule-footer-grand strong {
+  color: #bfdbfe;
+}
+[data-theme="dark"] .schedule-footer-cell.today {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+/* Helper row (พนักงานข้ามสาขา) — gold-soft อ่อนๆ */
+[data-theme="dark"] .schedule-row-helper,
+[data-theme="dark"] .schedule-grid tbody .schedule-row-helper .schedule-emp-cell {
+  background: rgba(196, 165, 116, 0.08) !important;
+}
+[data-theme="dark"] .schedule-row-helper:hover {
+  background: rgba(196, 165, 116, 0.15) !important;
+}
+
+/* Shift picker — modal บน dark */
+[data-theme="dark"] .shift-picker-option {
+  background: var(--surface-2);
+}
+[data-theme="dark"] .shift-picker-option:hover,
+[data-theme="dark"] .shift-picker-option.selected {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: #3b82f6;
+}
+[data-theme="dark"] .shift-picker-custom {
+  background: rgba(107, 114, 128, 0.10) !important;
+}
+[data-theme="dark"] .shift-picker-custom:hover {
+  background: rgba(107, 114, 128, 0.20) !important;
+}
+
+/* Custom shift preview */
+[data-theme="dark"] .custom-shift-preview {
+  background: rgba(59, 130, 246, 0.15);
+  color: #bfdbfe;
+  border-left-color: #3b82f6;
+}
+
+/* Info note (warn) */
+[data-theme="dark"] .schedule-info-warn {
+  background: rgba(184, 122, 8, 0.15);
+  color: #fcd34d;
+  border-left-color: #f59e0b;
+}
+
+/* Past cell — เพิ่ม opacity ให้ดูชัดว่า disabled แต่ยังอ่านได้ */
+[data-theme="dark"] .schedule-cell-past {
+  opacity: 0.45;
+}
