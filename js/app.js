@@ -715,7 +715,10 @@ const router = {
     // ตอน re-render หน้า (filter/realtime) — ลด flicker เห็นชัด
     // Fallback: เบราว์เซอร์เก่าจะ render ทันทีเหมือนเดิม (graceful degradation)
     if (document.startViewTransition && !isNavigation) {
-      return document.startViewTransition(() => this._doRender(name, isNavigation));
+      const t = document.startViewTransition(() => this._doRender(name, isNavigation));
+      // กลืน InvalidStateError ที่เกิดเมื่อมี transition ซ้อน (Edge บ่นเสียงดัง แต่ render ปกติ)
+      t.finished?.catch?.(() => {});
+      return t;
     }
     return this._doRender(name, isNavigation);
   },
