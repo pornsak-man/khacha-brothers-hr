@@ -33,7 +33,11 @@ const DB = {
     leaveRequests: [],
     leaveTypes: [],
     holidaySwapRequests: [],
-    announcements: []
+    announcements: [],
+    // ─── ตารางงานพนักงาน (Work Schedule) ───
+    shifts: [],            // กะตั้งต้น HR CRUD
+    scheduleWeeks: [],     // 1 สาขา × 1 สัปดาห์ = 1 แถว
+    scheduleEntries: []    // เซลล์ใน grid: พนักงาน × วัน × กะ
   },
 
   // ─── INDEX CACHES (O(1) lookup; rebuild lazily after data change) ───
@@ -753,10 +757,16 @@ const DB = {
       timed('uniform_requests',        this._fetchAllPages('uniform_requests', 'requested_date', false).catch(() => [])),
       timed('uniform_issues',          this._fetchAllPages('uniform_issues', 'issued_date', false).catch(() => [])),
       timed('uniform_delivery_sched',  this._fetchAllPages('uniform_delivery_schedule', 'branch_code', true).catch(() => [])),
+      // ─── Work Schedule (ตารางงาน) ───
+      timed('shifts',                  this._fetchAllPages('shifts', 'sort_order', true).catch(() => [])),
+      timed('schedule_weeks',          this._fetchAllPages('schedule_weeks', 'week_start', false).catch(() => [])),
+      timed('schedule_entries',        this._fetchAllPages('schedule_entries', 'work_date', true).catch(() => [])),
       timed('employees_archive',       fetchEmployeesArchive().catch(() => []))
     ]).then(([cal, comp, leaves, lvTypes, swapReqs,
               loans, advs, allow, evals, sal, appls,
-              uniItems, uniReqs, uniIssues, uniSched, oldEmps]) => {
+              uniItems, uniReqs, uniIssues, uniSched,
+              shifts, schedWeeks, schedEntries,
+              oldEmps]) => {
       // ใหม่: ตาราง critical-but-not-dashboard ที่ย้ายมา
       this.data.calendar = ((cal && cal.data) || []).map(this._calFromDB);
       if (comp && comp.data) this.data.company = this._compFromDB(comp.data);
@@ -774,6 +784,9 @@ const DB = {
       this.data.uniformRequests = uniReqs.map(this._uniReqFromDB);
       this.data.uniformIssues = uniIssues.map(this._uniIssueFromDB);
       this.data.uniformSchedule = uniSched.map(this._uniSchedFromDB);
+      this.data.shifts = (shifts || []).map(this._shiftFromDB);
+      this.data.scheduleWeeks = (schedWeeks || []).map(this._schedWeekFromDB);
+      this.data.scheduleEntries = (schedEntries || []).map(this._schedEntryFromDB);
       // Merge employees เก่าเข้ากับ active employees (เรียง id เพื่อให้ stable)
       if (oldEmps.length) {
         const existingIds = new Set(this.data.employees.map(e => e.id));
@@ -784,16 +797,17 @@ const DB = {
       this._secondaryLoaded = true;
       window.__bootTimings.phases.phase2_total = Math.round(performance.now() - _p2T0);
       try { console.log('%c⏱ Boot Phase 2 done in ' + window.__bootTimings.phases.phase2_total + ' ms (background)', 'color:#16a34a'); } catch (e) {}
-      // Refresh sidebar badges ที่อาศัย table ของ Phase 2 (leave / swap)
+      // Refresh sidebar badges ที่อาศัย table ของ Phase 2 (leave / swap / schedule)
       try {
         if (typeof updateLeaveBadge === 'function') updateLeaveBadge();
         if (typeof updateCalendarBadge === 'function') updateCalendarBadge();
+        if (typeof updateScheduleBadge === 'function') updateScheduleBadge();
       } catch (e) { /* badges may not exist yet */ }
       // Re-render หน้าปัจจุบันถ้าผู้ใช้อยู่บนหน้าที่ใช้ secondary data
       // เพิ่ม: dashboard (personal), leave, calendar — ใช้ table ที่เพิ่ง defer
       if (typeof router !== 'undefined' && router.current) {
         const usesSecondary = ['loans', 'advances', 'allowance', 'evaluations', 'recruit', 'uniform', 'salary-adjust', 'employees',
-                               'dashboard', 'leave', 'calendar'];
+                               'dashboard', 'leave', 'calendar', 'schedule'];
         if (usesSecondary.includes(router.current)) router.go(router.current);
       }
     }).catch(err => {
@@ -847,7 +861,10 @@ const DB = {
       leave_requests: { list: 'leaveRequests', from: this._leaveFromDB },
       leave_types: { list: 'leaveTypes', from: this._leaveTypeFromDB },
       holiday_swap_requests: { list: 'holidaySwapRequests', from: this._swapReqFromDB },
-      company_announcements: { list: 'announcements', from: this._annFromDB }
+      company_announcements: { list: 'announcements', from: this._annFromDB },
+      shifts: { list: 'shifts', from: this._shiftFromDB },
+      schedule_weeks: { list: 'scheduleWeeks', from: this._schedWeekFromDB },
+      schedule_entries: { list: 'scheduleEntries', from: this._schedEntryFromDB }
     };
     const m = map[table];
     if (!m) return;
@@ -3637,5 +3654,332 @@ const DB = {
         female: active.filter(e => e.gender === 'หญิง').length
       }
     };
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // WORK SCHEDULE (ตารางงานพนักงาน) — กะ + ตารางรายสัปดาห์ + อนุมัติ
+  // ═══════════════════════════════════════════════════════════
+
+  _shiftFromDB: (r) => ({
+    id: r.id,
+    code: r.code || '',
+    name: r.name || '',
+    startTime: r.start_time || '',     // 'HH:MM:SS' จาก Postgres TIME — UI ตัดเป็น HH:MM เอง
+    endTime: r.end_time || '',
+    breakMinutes: Number(r.break_minutes || 0),
+    color: r.color || '#2563eb',
+    isOffDay: r.is_off_day === true,
+    employeeTypes: Array.isArray(r.employee_types) ? r.employee_types : [],
+    branchId: r.branch_id || '',
+    active: r.active !== false,
+    sortOrder: Number(r.sort_order || 100),
+    note: r.note || ''
+  }),
+  _shiftToDB: (s) => ({
+    code: String(s.code || '').trim().toUpperCase(),
+    name: s.name || '',
+    start_time: s.startTime || null,
+    end_time: s.endTime || null,
+    break_minutes: Number(s.breakMinutes || 0),
+    color: s.color || '#2563eb',
+    is_off_day: s.isOffDay === true,
+    employee_types: Array.isArray(s.employeeTypes) ? s.employeeTypes : [],
+    branch_id: s.branchId || null,
+    active: s.active !== false,
+    sort_order: Number(s.sortOrder || 100),
+    note: s.note || null
+  }),
+
+  _schedWeekFromDB: (r) => ({
+    id: r.id,
+    branchId: r.branch_id,
+    weekStart: r.week_start,
+    status: r.status || 'draft',
+    submittedBy: r.submitted_by,
+    submittedAt: r.submitted_at,
+    approvedBy: r.approved_by,
+    approvedAt: r.approved_at,
+    approverNote: r.approver_note || '',
+    rejectedAt: r.rejected_at,
+    rejectReason: r.reject_reason || '',
+    notes: r.notes || '',
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }),
+  _schedWeekToDB: (w) => ({
+    branch_id: w.branchId,
+    week_start: w.weekStart,
+    status: w.status || 'draft',
+    notes: w.notes || null
+  }),
+
+  _schedEntryFromDB: (r) => ({
+    id: r.id,
+    scheduleWeekId: r.schedule_week_id,
+    employeeId: r.employee_id,
+    workDate: r.work_date,
+    shiftId: r.shift_id || null,
+    branchId: r.branch_id || '',
+    isCrossBranch: r.is_cross_branch === true,
+    note: r.note || '',
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }),
+  _schedEntryToDB: (e) => ({
+    schedule_week_id: e.scheduleWeekId,
+    employee_id: e.employeeId,
+    work_date: e.workDate,
+    shift_id: e.shiftId || null,
+    branch_id: e.branchId || null,
+    is_cross_branch: e.isCrossBranch === true,
+    note: e.note || null
+  }),
+
+  // ─── SHIFT MASTER (HR CRUD) ───
+  getShifts({ branchId = null, activeOnly = false, employeeType = null } = {}) {
+    let list = (this.data.shifts || []).slice();
+    if (activeOnly) list = list.filter(s => s.active);
+    if (branchId) list = list.filter(s => !s.branchId || s.branchId === branchId);
+    if (employeeType) list = list.filter(s =>
+      !s.employeeTypes?.length || s.employeeTypes.includes(employeeType)
+    );
+    return list.sort((a, b) => (a.sortOrder - b.sortOrder) || a.code.localeCompare(b.code));
+  },
+  getShift(id) { return (this.data.shifts || []).find(s => s.id === id); },
+  getShiftByCode(code) {
+    if (!code) return null;
+    const up = String(code).toUpperCase();
+    return (this.data.shifts || []).find(s => s.code === up);
+  },
+
+  async saveShift(shift) {
+    if (!this.isHR) throw new Error('ต้องเป็น HR หรือ admin เท่านั้นที่จัดการกะได้');
+    const row = this._shiftToDB(shift);
+    if (shift.id) row.id = shift.id;
+    if (!row.code) throw new Error('ระบุรหัสกะ (Shift Code)');
+    if (!row.name) throw new Error('ระบุชื่อกะ');
+    if (!row.is_off_day && (!row.start_time || !row.end_time)) {
+      throw new Error('กะที่ไม่ใช่วันหยุดต้องมีเวลาเริ่ม-สิ้นสุด');
+    }
+    const { data, error } = await this.client.from('shifts').upsert(row, { onConflict: 'code' }).select().single();
+    if (error) throw error;
+    const mapped = this._shiftFromDB(data);
+    const idx = this.data.shifts.findIndex(s => s.id === mapped.id);
+    if (idx >= 0) this.data.shifts[idx] = mapped;
+    else this.data.shifts.push(mapped);
+    return mapped;
+  },
+
+  async deleteShift(id) {
+    if (!this.isHR) throw new Error('ต้องเป็น HR หรือ admin');
+    // ตรวจว่ามี entry อ้างถึงไหม — กันลบกะที่ใช้ในตารางอยู่
+    const used = (this.data.scheduleEntries || []).some(e => e.shiftId === id);
+    if (used) {
+      throw new Error('กะนี้ถูกใช้ในตารางงานอยู่ — ตั้ง "ปิดใช้งาน" แทนการลบเพื่อรักษาประวัติ');
+    }
+    const { error } = await this.client.from('shifts').delete().eq('id', id);
+    if (error) throw error;
+    this.data.shifts = this.data.shifts.filter(s => s.id !== id);
+  },
+
+  // ─── SCHEDULE WEEK ───
+  // หา week ของสาขา/สัปดาห์นั้น — สร้าง draft ใหม่ถ้ายังไม่มี (lazy create)
+  getScheduleWeek(branchId, weekStart) {
+    if (!branchId || !weekStart) return null;
+    return (this.data.scheduleWeeks || []).find(w => w.branchId === branchId && w.weekStart === weekStart) || null;
+  },
+
+  getScheduleWeeks({ branchId = null, status = null, _noScope = false } = {}) {
+    let list = (this.data.scheduleWeeks || []).slice();
+    if (branchId) list = list.filter(w => w.branchId === branchId);
+    if (status) list = list.filter(w => w.status === status);
+    if (!_noScope && this.role) {
+      if (this.role === 'branch_manager' || this.role === 'area_manager') {
+        const scoped = this.scopedBranches() || [];
+        list = list.filter(w => scoped.includes(w.branchId));
+      } else if (this.role === 'branch_staff' || this.role === 'viewer') {
+        const myBranch = this._myBranch();
+        list = myBranch ? list.filter(w => w.branchId === myBranch) : [];
+      }
+    }
+    return list.sort((a, b) => (b.weekStart || '').localeCompare(a.weekStart || ''));
+  },
+
+  // สร้าง draft week ถ้ายังไม่มี — เรียกเมื่อ user เปิดสัปดาห์ใหม่ที่ยังไม่เคยมี
+  async ensureScheduleWeek(branchId, weekStart) {
+    if (!branchId || !weekStart) throw new Error('ต้องระบุสาขาและสัปดาห์');
+    const existing = this.getScheduleWeek(branchId, weekStart);
+    if (existing) return existing;
+    // ตรวจสิทธิ์ — HR override ได้, manager เฉพาะสาขาตัวเอง
+    if (!this.isHR && !this._canEditScheduleForBranch(branchId)) {
+      throw new Error('คุณไม่มีสิทธิ์สร้างตารางของสาขานี้');
+    }
+    const row = this._schedWeekToDB({ branchId, weekStart, status: 'draft' });
+    if (this.user?.id) row.created_by = this.user.id;
+    const { data, error } = await this.client.from('schedule_weeks').upsert(row, { onConflict: 'branch_id,week_start' }).select().single();
+    if (error) throw error;
+    const mapped = this._schedWeekFromDB(data);
+    const idx = this.data.scheduleWeeks.findIndex(w => w.id === mapped.id);
+    if (idx >= 0) this.data.scheduleWeeks[idx] = mapped;
+    else this.data.scheduleWeeks.unshift(mapped);
+    return mapped;
+  },
+
+  _canEditScheduleForBranch(branchId) {
+    if (this.isHR) return true;
+    if (this.role === 'operation_manager') return true;
+    if (this.role === 'branch_manager' || this.role === 'area_manager') {
+      const scoped = this.scopedBranches() || [];
+      return scoped.includes(branchId);
+    }
+    return false;
+  },
+
+  // ─── SCHEDULE ENTRIES ───
+  getScheduleEntries({ weekId = null, employeeId = null, dateFrom = null, dateTo = null } = {}) {
+    let list = (this.data.scheduleEntries || []).slice();
+    if (weekId) list = list.filter(e => e.scheduleWeekId === weekId);
+    if (employeeId) list = list.filter(e => e.employeeId === employeeId);
+    if (dateFrom) list = list.filter(e => e.workDate >= dateFrom);
+    if (dateTo) list = list.filter(e => e.workDate <= dateTo);
+    return list;
+  },
+
+  async saveScheduleEntry(entry) {
+    const week = (this.data.scheduleWeeks || []).find(w => w.id === entry.scheduleWeekId);
+    if (!week) throw new Error('ไม่พบสัปดาห์ — กรุณารีโหลด');
+    if (!this._canEditScheduleForBranch(week.branchId)) {
+      throw new Error('คุณไม่มีสิทธิ์แก้ไขตารางของสาขานี้');
+    }
+    if (week.status === 'approved' && !this.isHR) {
+      throw new Error('ตารางอนุมัติแล้ว — ต้องให้ HR/admin เปิดให้แก้ไขก่อน');
+    }
+    const row = this._schedEntryToDB(entry);
+    if (entry.id) row.id = entry.id;
+    const { data, error } = await this.client.from('schedule_entries')
+      .upsert(row, { onConflict: 'schedule_week_id,employee_id,work_date' })
+      .select().single();
+    if (error) throw error;
+    const mapped = this._schedEntryFromDB(data);
+    const idx = this.data.scheduleEntries.findIndex(e => e.id === mapped.id);
+    if (idx >= 0) this.data.scheduleEntries[idx] = mapped;
+    else this.data.scheduleEntries.push(mapped);
+    // ถ้า week เป็น approved/submitted → bump กลับ draft (เพราะมีการแก้ไข) — เฉพาะ HR เท่านั้น
+    if (this.isHR && (week.status === 'approved' || week.status === 'rejected')) {
+      await this._setScheduleWeekStatus(week.id, 'draft', { note: 'HR แก้ไขหลังอนุมัติ' });
+    }
+    return mapped;
+  },
+
+  async deleteScheduleEntry(id) {
+    const entry = (this.data.scheduleEntries || []).find(e => e.id === id);
+    if (!entry) return;
+    const week = (this.data.scheduleWeeks || []).find(w => w.id === entry.scheduleWeekId);
+    if (week && !this._canEditScheduleForBranch(week.branchId)) {
+      throw new Error('คุณไม่มีสิทธิ์แก้ไขตารางของสาขานี้');
+    }
+    if (week && week.status === 'approved' && !this.isHR) {
+      throw new Error('ตารางอนุมัติแล้ว — ต้องให้ HR/admin เปิดให้แก้ไขก่อน');
+    }
+    const { error } = await this.client.from('schedule_entries').delete().eq('id', id);
+    if (error) throw error;
+    this.data.scheduleEntries = this.data.scheduleEntries.filter(e => e.id !== id);
+  },
+
+  // ─── WORKFLOW (submit / approve / reject / reopen) ───
+  async _setScheduleWeekStatus(weekId, status, extra = {}) {
+    const patch = { status, ...extra };
+    const { data, error } = await this.client.from('schedule_weeks').update(patch).eq('id', weekId).select().single();
+    if (error) throw error;
+    const mapped = this._schedWeekFromDB(data);
+    const idx = this.data.scheduleWeeks.findIndex(w => w.id === weekId);
+    if (idx >= 0) this.data.scheduleWeeks[idx] = mapped;
+    return mapped;
+  },
+
+  async submitScheduleWeek(weekId) {
+    const week = (this.data.scheduleWeeks || []).find(w => w.id === weekId);
+    if (!week) throw new Error('ไม่พบสัปดาห์');
+    if (!this._canEditScheduleForBranch(week.branchId)) {
+      throw new Error('คุณไม่มีสิทธิ์ส่งขออนุมัติของสาขานี้');
+    }
+    const entries = (this.data.scheduleEntries || []).filter(e => e.scheduleWeekId === weekId);
+    if (!entries.length) throw new Error('ยังไม่ได้กรอกตารางใดๆ — กรอกกะอย่างน้อย 1 ช่องก่อนส่ง');
+    return this._setScheduleWeekStatus(weekId, 'submitted', {
+      submitted_by: this.user?.id || null,
+      submitted_at: new Date().toISOString(),
+      rejected_at: null,
+      reject_reason: null
+    });
+  },
+
+  async approveScheduleWeek(weekId, note = '') {
+    if (!this.isHR) throw new Error('เฉพาะ HR/admin เท่านั้นที่อนุมัติได้');
+    return this._setScheduleWeekStatus(weekId, 'approved', {
+      approved_by: this.user?.id || null,
+      approved_at: new Date().toISOString(),
+      approver_note: note || null,
+      rejected_at: null,
+      reject_reason: null
+    });
+  },
+
+  async rejectScheduleWeek(weekId, reason = '') {
+    if (!this.isHR) throw new Error('เฉพาะ HR/admin เท่านั้นที่ปฏิเสธได้');
+    return this._setScheduleWeekStatus(weekId, 'rejected', {
+      rejected_at: new Date().toISOString(),
+      reject_reason: reason || null,
+      approved_by: null,
+      approved_at: null
+    });
+  },
+
+  // HR เปิดให้แก้ไขตารางที่อนุมัติแล้ว → bump กลับเป็น draft
+  async reopenScheduleWeek(weekId) {
+    if (!this.isHR) throw new Error('เฉพาะ HR/admin เปิดให้แก้ไขได้');
+    return this._setScheduleWeekStatus(weekId, 'draft', {
+      approved_by: null, approved_at: null, approver_note: null,
+      submitted_by: null, submitted_at: null,
+      rejected_at: null, reject_reason: null
+    });
+  },
+
+  // ─── HELPERS — เอาไว้ render grid ───
+  // คืน leave + วันหยุดประเพณีในช่วงสัปดาห์ → UI overlay บน cell
+  getLeavesInRange(employeeIds, dateFrom, dateTo) {
+    const ids = new Set(employeeIds || []);
+    return (this.data.leaveRequests || []).filter(r =>
+      ids.has(r.employeeId)
+      && r.status === 'approved'
+      && r.startDate <= dateTo
+      && r.endDate >= dateFrom
+    );
+  },
+
+  getHolidaysInRange(dateFrom, dateTo) {
+    return (this.data.calendar || []).filter(c => c.date >= dateFrom && c.date <= dateTo);
+  },
+
+  // คำนวณชั่วโมงทำงานของพนักงานในสัปดาห์ — สำหรับสรุปท้ายตาราง
+  calcScheduleHours(weekId, employeeId) {
+    const entries = (this.data.scheduleEntries || []).filter(e =>
+      e.scheduleWeekId === weekId && e.employeeId === employeeId && e.shiftId
+    );
+    let totalMins = 0;
+    let offDays = 0;
+    for (const e of entries) {
+      const sh = this.getShift(e.shiftId);
+      if (!sh) continue;
+      if (sh.isOffDay) { offDays++; continue; }
+      if (!sh.startTime || !sh.endTime) continue;
+      const [sh1, sm1] = sh.startTime.split(':').map(Number);
+      const [sh2, sm2] = sh.endTime.split(':').map(Number);
+      let mins = (sh2 * 60 + sm2) - (sh1 * 60 + sm1);
+      if (mins < 0) mins += 24 * 60; // ข้ามเที่ยงคืน
+      mins -= Number(sh.breakMinutes || 0);
+      if (mins > 0) totalMins += mins;
+    }
+    return { hours: +(totalMins / 60).toFixed(2), offDays, shiftCount: entries.filter(e => e.shiftId).length };
   }
 };

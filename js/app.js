@@ -604,6 +604,7 @@ const auth = {
     if (typeof updateCalendarBadge === 'function') updateCalendarBadge();
     if (typeof updateSSOBadge === 'function') updateSSOBadge();
     if (typeof updateAnnouncementBadge === 'function') updateAnnouncementBadge();
+    if (typeof updateScheduleBadge === 'function') updateScheduleBadge();
     if (typeof renderNotifBell === 'function') renderNotifBell();
     this.refreshImpersonateUI();
     // ซ่อนเมนูตาม role:
@@ -828,10 +829,13 @@ const _RT_PAGE_DEPS = {
   uniform_issues: ['uniform'],
   branches: ['dashboard', 'employees', 'branches', 'uniform'],
   audit_log: ['audit'],
-  leave_requests: ['dashboard', 'leave'],
+  leave_requests: ['dashboard', 'leave', 'schedule'],
   leave_types: ['leave'],
   holiday_swap_requests: ['dashboard', 'calendar'],
-  company_announcements: ['dashboard', 'announcements']
+  company_announcements: ['dashboard', 'announcements'],
+  shifts: ['schedule'],
+  schedule_weeks: ['dashboard', 'schedule'],
+  schedule_entries: ['dashboard', 'schedule']
 };
 
 // อัปเดต badge แจ้งเตือนของ "จัดชุดพนักงาน" (รอจัด)
@@ -1019,6 +1023,9 @@ window.onRealtimeChange = (payload) => {
 
   // อัปเดต badge ปฏิทิน — เสมอ (ไม่ขึ้นกับหน้าปัจจุบัน)
   if (table === 'holiday_swap_requests' && typeof updateCalendarBadge === 'function') updateCalendarBadge();
+
+  // อัปเดต badge ตารางงาน — เมื่อมีสัปดาห์ขอ/อนุมัติเปลี่ยนสถานะ
+  if (table === 'schedule_weeks' && typeof updateScheduleBadge === 'function') updateScheduleBadge();
 
   // อัปเดต badge ประกันสังคม เมื่อ employees เปลี่ยน — เสมอ (ไม่ขึ้นกับหน้าปัจจุบัน)
   if (table === 'employees' && typeof updateSSOBadge === 'function') updateSSOBadge();
@@ -11444,6 +11451,22 @@ function updateLeaveBadge() {
   else { badge.style.display = 'none'; }
 }
 
+// Badge ตารางงาน — นับสัปดาห์ที่ status='submitted' ที่ user มีสิทธิ์อนุมัติ
+// HR/admin → นับทุกสาขา; manager ไม่เห็น badge (ตัวเองเป็นคนส่ง ไม่ใช่อนุมัติ)
+function updateScheduleBadge() {
+  const badge = document.getElementById('navBadgeSchedule');
+  if (!badge) return;
+  if (!DB.isHR) { badge.style.display = 'none'; return; }
+  const pending = (DB.data.scheduleWeeks || []).filter(w => w.status === 'submitted').length;
+  if (pending > 0) {
+    badge.textContent = String(pending);
+    badge.style.display = 'inline-block';
+    badge.title = `${pending} ตารางสัปดาห์รออนุมัติ`;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
 // Badge ประกาศ — นับประกาศ/คำสั่งที่พนักงานยังไม่ได้เปิดอ่าน
 // admin/HR ไม่นับ (เพราะเป็นผู้สร้างประกาศ)
 function updateAnnouncementBadge() {
@@ -12379,6 +12402,668 @@ document.addEventListener('submit', async (e) => {
     } catch (ex) { toast('เปลี่ยนไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
   }
 });
+
+// ═══════════════════════════════════════════════════════════
+// WORK SCHEDULE (ตารางงานพนักงาน) — กะรายสัปดาห์ + อนุมัติ
+// ═══════════════════════════════════════════════════════════
+
+const _scheduleState = {
+  weekStart: null,   // YYYY-MM-DD ของวันจันทร์
+  branchId: null     // สาขาที่กำลังดู
+};
+
+const SCHEDULE_STATUS_BADGE = {
+  draft:     { label: 'แบบร่าง',    cls: 'badge' },
+  submitted: { label: 'รออนุมัติ',  cls: 'badge-warning' },
+  approved:  { label: 'อนุมัติแล้ว', cls: 'badge-success' },
+  rejected:  { label: 'ปฏิเสธ',     cls: 'badge-danger' }
+};
+
+const DOW_LABELS_TH    = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
+const DOW_LABELS_SHORT = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
+
+// คืนวันจันทร์ของสัปดาห์ที่ ymd อยู่ (ISO — จันทร์เป็นวันแรก)
+function getMondayOf(ymd) {
+  const p = parseYMD(ymd);
+  if (!p) return null;
+  const d = new Date(p[0], p[1] - 1, p[2]);
+  const dow = d.getDay() || 7;
+  d.setDate(d.getDate() - (dow - 1));
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function addDaysYMD(ymd, n) {
+  const p = parseYMD(ymd);
+  if (!p) return ymd;
+  const d = new Date(p[0], p[1] - 1, p[2]);
+  d.setDate(d.getDate() + n);
+  const pad = (k) => String(k).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function formatWeekRange(monday) {
+  const sunday = addDaysYMD(monday, 6);
+  return `${fmt.date(monday)} – ${fmt.date(sunday)}`;
+}
+
+function initScheduleStateIfNeeded() {
+  if (!_scheduleState.weekStart) {
+    _scheduleState.weekStart = getMondayOf(tz.today());
+  }
+  if (!_scheduleState.branchId) {
+    if (DB.role === 'branch_manager' || DB.role === 'area_manager' || DB.role === 'branch_staff' || DB.role === 'viewer') {
+      _scheduleState.branchId = DB._myBranch();
+    }
+    if (!_scheduleState.branchId) {
+      const branches = (DB.data.branches || []).filter(b => b.active);
+      _scheduleState.branchId = branches[0]?.id || null;
+    }
+  }
+}
+
+router.register('schedule', () => {
+  initScheduleStateIfNeeded();
+  const weekStart = _scheduleState.weekStart;
+  const branchId  = _scheduleState.branchId;
+  const week = branchId ? DB.getScheduleWeek(branchId, weekStart) : null;
+  const status = week ? week.status : 'draft';
+  const statusBadge = SCHEDULE_STATUS_BADGE[status] || SCHEDULE_STATUS_BADGE.draft;
+  const canEdit    = branchId && DB._canEditScheduleForBranch(branchId) && (status !== 'approved' || DB.isHR);
+  const canSubmit  = branchId && DB._canEditScheduleForBranch(branchId) && (status === 'draft' || status === 'rejected');
+  const canApprove = DB.isHR && status === 'submitted';
+  const canReopen  = DB.isHR && (status === 'approved' || status === 'rejected');
+
+  // เลือกสาขา — scope ตาม role
+  let branchOptions;
+  if (DB.isHR || DB.role === 'operation_manager') {
+    branchOptions = (DB.data.branches || []).filter(b => b.active);
+  } else {
+    const scoped = DB.scopedBranches() || [];
+    branchOptions = (DB.data.branches || []).filter(b => scoped.includes(b.id) && b.active);
+  }
+
+  return `
+    <div class="sw-page-header">
+      <div>
+        <div class="sw-page-title">ตารางงานพนักงาน</div>
+        <div class="sw-page-subtitle">จัดกะรายสัปดาห์ · หลายสาขา · มีขออนุมัติ</div>
+      </div>
+      <div class="sw-page-actions">
+        ${DB.isHR ? `<button class="btn btn-secondary" onclick="openShiftsManager()">⚙ จัดการกะ</button>` : ''}
+      </div>
+    </div>
+
+    <div class="sw-chart-card schedule-controls">
+      <div class="schedule-controls-row">
+        <div class="schedule-week-nav">
+          <button class="btn btn-ghost btn-icon-only" onclick="navScheduleWeek(-1)" title="สัปดาห์ก่อน">◀</button>
+          <button class="btn btn-secondary" onclick="navScheduleWeekToday()">สัปดาห์นี้</button>
+          <button class="btn btn-ghost btn-icon-only" onclick="navScheduleWeek(1)" title="สัปดาห์ถัดไป">▶</button>
+          <input type="date" class="sw-filter-input schedule-date-jump" value="${weekStart}" onchange="setScheduleWeekFromDate(this.value)" title="กระโดดไปสัปดาห์ของวันที่นี้" />
+          <div class="schedule-week-range">${formatWeekRange(weekStart)}</div>
+        </div>
+        <div class="schedule-controls-spacer"></div>
+        <select class="sw-filter-select schedule-branch-select" onchange="setScheduleBranch(this.value)" ${(branchOptions.length === 1 && !DB.isHR) ? 'disabled' : ''}>
+          ${branchOptions.length === 0 ? '<option value="">— ไม่มีสาขาในสิทธิ์ —</option>' : ''}
+          ${branchOptions.map(b => `<option value="${escapeHtml(b.id)}" ${branchId === b.id ? 'selected' : ''}>${escapeHtml(b.name || b.id)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="schedule-status-row">
+        <span class="badge ${statusBadge.cls}">${escapeHtml(statusBadge.label)}</span>
+        ${week?.approvedAt ? `<span class="muted-2 schedule-status-time">อนุมัติเมื่อ ${fmt.date(week.approvedAt)}</span>` : ''}
+        ${week?.submittedAt && status === 'submitted' ? `<span class="muted-2 schedule-status-time">ส่งเมื่อ ${fmt.date(week.submittedAt)}</span>` : ''}
+        ${week?.rejectReason ? `<span class="badge badge-danger" title="${escapeHtml(week.rejectReason)}">เหตุผลปฏิเสธ: ${escapeHtml(week.rejectReason).slice(0, 50)}</span>` : ''}
+        <div class="schedule-status-actions">
+          ${canEdit && branchId ? `<button class="btn btn-ghost" onclick="openAddCrossBranchEmployee()">+ พนักงานข้ามสาขา</button>` : ''}
+          ${canSubmit ? `<button class="btn btn-primary" onclick="submitScheduleWeekUI()">ส่งขออนุมัติ</button>` : ''}
+          ${canApprove ? `<button class="btn btn-primary" onclick="approveScheduleWeekUI()">✓ อนุมัติ</button>` : ''}
+          ${canApprove ? `<button class="btn btn-danger" onclick="rejectScheduleWeekUI()">ปฏิเสธ</button>` : ''}
+          ${canReopen ? `<button class="btn btn-secondary" onclick="reopenScheduleWeekUI()">เปิดให้แก้ไข</button>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <div id="scheduleGridWrap">${renderScheduleGrid(branchId, weekStart, canEdit)}</div>
+  `;
+});
+
+// === NAV CONTROLS ===
+function navScheduleWeek(delta) {
+  _scheduleState.weekStart = addDaysYMD(_scheduleState.weekStart, delta * 7);
+  router.go('schedule');
+}
+function navScheduleWeekToday() {
+  _scheduleState.weekStart = getMondayOf(tz.today());
+  router.go('schedule');
+}
+function setScheduleWeekFromDate(ymd) {
+  if (!ymd) return;
+  _scheduleState.weekStart = getMondayOf(ymd);
+  router.go('schedule');
+}
+function setScheduleBranch(branchId) {
+  _scheduleState.branchId = branchId || null;
+  router.go('schedule');
+}
+
+// === GRID RENDERING ===
+
+function renderScheduleGrid(branchId, weekStart, canEdit) {
+  if (!branchId) {
+    return `<div class="sw-chart-card"><div class="empty-state" style="padding:60px 20px">
+      <div style="font-size:42px;margin-bottom:12px;opacity:0.35">🏬</div>
+      <div class="title" style="font-size:16px;font-weight:600">ยังไม่มีสาขาที่เข้าถึงได้</div>
+      <div class="hint" style="margin-top:6px">ติดต่อ HR/admin เพื่อกำหนดสิทธิ์สาขา</div>
+    </div></div>`;
+  }
+
+  const week = DB.getScheduleWeek(branchId, weekStart);
+  const dates = Array.from({ length: 7 }, (_, i) => addDaysYMD(weekStart, i));
+  const today = tz.today();
+
+  // พนักงานที่ควรแสดง: (1) ทุกคนของสาขานี้ที่ยัง active
+  //                  + (2) พนักงานข้ามสาขาที่มี entry ในสัปดาห์นี้
+  const empsInBranch = (DB.data.employees || []).filter(e =>
+    e.branch === branchId && DB.empStatus(e) !== 'resigned'
+  );
+  const entryEmpIds = new Set();
+  if (week) {
+    DB.getScheduleEntries({ weekId: week.id }).forEach(e => entryEmpIds.add(e.employeeId));
+  }
+  // เพิ่มพนักงานข้ามสาขาที่มี entry แต่ไม่ได้อยู่ในสาขานี้
+  const helperEmps = [...entryEmpIds]
+    .filter(id => !empsInBranch.find(e => e.id === id))
+    .map(id => DB.getEmployee(id))
+    .filter(Boolean);
+  // เรียง: ตำแหน่งสูง → ต่ำ, ภายในตำแหน่งเรียงตามชื่อ
+  const sortEmps = (list) => list.slice().sort((a, b) => {
+    const pa = DB.getPosition(a.position);
+    const pb = DB.getPosition(b.position);
+    const la = pa ? Number(pa.level || 0) : 0;
+    const lb = pb ? Number(pb.level || 0) : 0;
+    if (la !== lb) return lb - la;
+    return (a.firstName || '').localeCompare(b.firstName || '', 'th');
+  });
+
+  const allEmps = [...sortEmps(empsInBranch), ...sortEmps(helperEmps)];
+
+  if (!allEmps.length) {
+    return `<div class="sw-chart-card"><div class="empty-state" style="padding:60px 20px">
+      <div style="font-size:42px;margin-bottom:12px;opacity:0.35">👥</div>
+      <div class="title" style="font-size:16px;font-weight:600">ยังไม่มีพนักงานในสาขานี้</div>
+      <div class="hint" style="margin-top:6px">เพิ่มพนักงานในทะเบียน หรือกด "+ พนักงานข้ามสาขา"</div>
+    </div></div>`;
+  }
+
+  // index entries แบบ { empId-date: entry } เพื่อ lookup ใน loop
+  const entriesByKey = new Map();
+  if (week) {
+    DB.getScheduleEntries({ weekId: week.id }).forEach(e => {
+      entriesByKey.set(`${e.employeeId}|${e.workDate}`, e);
+    });
+  }
+
+  // วันลา + วันหยุดประเพณีในสัปดาห์ (overlay)
+  const empIds = allEmps.map(e => e.id);
+  const leavesInWeek = DB.getLeavesInRange(empIds, weekStart, addDaysYMD(weekStart, 6));
+  const leavesByKey = new Map();
+  for (const lv of leavesInWeek) {
+    let d = lv.startDate;
+    while (d <= lv.endDate) {
+      leavesByKey.set(`${lv.employeeId}|${d}`, lv);
+      d = addDaysYMD(d, 1);
+    }
+  }
+  const holidaysInWeek = DB.getHolidaysInRange(weekStart, addDaysYMD(weekStart, 6));
+  const holidayByDate = new Map(holidaysInWeek.map(h => [h.date, h]));
+
+  // build rows
+  const rowsHtml = allEmps.map(emp => {
+    const pos = DB.getPosition(emp.position);
+    const isHelper = emp.branch !== branchId;
+    const cells = dates.map((d, dowIdx) => {
+      const entry = entriesByKey.get(`${emp.id}|${d}`);
+      const leave = leavesByKey.get(`${emp.id}|${d}`);
+      const holiday = holidayByDate.get(d);
+      const cellId = `cell-${emp.id}-${d}`;
+      let cellContent = '';
+      let cellExtraCls = '';
+      if (leave) {
+        const lt = DB.LEAVE_TYPES?.[leave.leaveType];
+        cellContent = `<span class="schedule-leave-badge" title="${escapeHtml(lt?.label || leave.leaveType)}">ลา · ${escapeHtml(lt?.label || leave.leaveType)}</span>`;
+        cellExtraCls = ' schedule-cell-leave';
+      } else if (entry && entry.shiftId) {
+        const shift = DB.getShift(entry.shiftId);
+        if (shift) {
+          const timeText = shift.isOffDay
+            ? 'OFF'
+            : `${(shift.startTime || '').slice(0, 5)}–${(shift.endTime || '').slice(0, 5)}`;
+          cellContent = `<span class="shift-badge" style="background:${escapeHtml(shift.color)}1f;color:${escapeHtml(shift.color)};border-color:${escapeHtml(shift.color)}33">
+            <strong>${escapeHtml(shift.code)}</strong>
+            <span class="shift-badge-time">${escapeHtml(timeText)}</span>
+          </span>`;
+          if (entry.isCrossBranch) cellContent += `<span class="cross-branch-mark" title="ข้ามสาขา">⇄</span>`;
+          if (shift.isOffDay) cellExtraCls = ' schedule-cell-off';
+        }
+      }
+      if (holiday) {
+        cellExtraCls += ' schedule-cell-holiday';
+      }
+      const isToday = d === today;
+      if (isToday) cellExtraCls += ' schedule-cell-today';
+      const clickAttr = canEdit && !leave
+        ? `onclick="openShiftPicker('${escapeHtml(emp.id)}', '${d}', ${entry ? `'${entry.id}'` : 'null'})"`
+        : '';
+      return `<td class="schedule-cell${cellExtraCls}" id="${cellId}" ${clickAttr}>
+        ${cellContent || (canEdit ? '<span class="schedule-cell-empty">+</span>' : '<span class="muted-2">—</span>')}
+      </td>`;
+    }).join('');
+
+    const summary = week ? DB.calcScheduleHours(week.id, emp.id) : { hours: 0, offDays: 0, shiftCount: 0 };
+    return `<tr class="${isHelper ? 'schedule-row-helper' : ''}">
+      <th class="schedule-emp-cell">
+        <div class="schedule-emp-name">
+          ${escapeHtml(emp.firstName)} ${escapeHtml(emp.lastName || '')}
+          ${emp.nickname ? `<span class="muted-2">(${escapeHtml(emp.nickname)})</span>` : ''}
+          ${isHelper ? `<span class="badge badge-info" title="ข้ามสาขาจาก ${escapeHtml(emp.branch || '')}">⇄ ${escapeHtml(emp.branch || '')}</span>` : ''}
+        </div>
+        <div class="schedule-emp-meta">
+          ${escapeHtml(pos?.name || emp.position || '')}
+          ${emp.employeeType ? ` · ${escapeHtml(emp.employeeType)}` : ''}
+        </div>
+      </th>
+      ${cells}
+      <td class="schedule-summary-cell">
+        <div><strong>${fmt.num(summary.hours)}</strong> ชม.</div>
+        <div class="muted-2 schedule-summary-meta">${summary.shiftCount} กะ · ${summary.offDays} OFF</div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // header
+  const headHtml = dates.map((d, i) => {
+    const isToday = d === today;
+    const holiday = holidayByDate.get(d);
+    const [y, m, day] = parseYMD(d);
+    return `<th class="schedule-day-head ${isToday ? 'today' : ''} ${holiday ? 'has-holiday' : ''}">
+      <div class="schedule-day-name">${DOW_LABELS_TH[i]}</div>
+      <div class="schedule-day-date">${day}/${m}</div>
+      ${holiday ? `<div class="schedule-day-holiday" title="${escapeHtml(holiday.name || '')}">🎉 ${escapeHtml((holiday.name || '').slice(0, 12))}</div>` : ''}
+    </th>`;
+  }).join('');
+
+  return `<div class="sw-chart-card schedule-grid-card">
+    <div class="schedule-grid-scroll">
+      <table class="schedule-grid">
+        <thead>
+          <tr>
+            <th class="schedule-emp-head">พนักงาน</th>
+            ${headHtml}
+            <th class="schedule-summary-head">รวม</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+// === CELL EDITOR — เลือกกะ ===
+
+function openShiftPicker(empId, workDate, entryId) {
+  const branchId = _scheduleState.branchId;
+  const weekStart = _scheduleState.weekStart;
+  const emp = DB.getEmployee(empId);
+  if (!emp) { toast('ไม่พบพนักงาน', 'error'); return; }
+  const week = DB.getScheduleWeek(branchId, weekStart);
+  if (week && week.status === 'approved' && !DB.isHR) {
+    toast('ตารางอนุมัติแล้ว — ติดต่อ HR เพื่อเปิดให้แก้ไข', 'warning');
+    return;
+  }
+
+  const existingEntry = entryId ? (DB.data.scheduleEntries || []).find(e => e.id === entryId) : null;
+  const currentShiftId = existingEntry?.shiftId || '';
+  const shifts = DB.getShifts({
+    activeOnly: true,
+    employeeType: emp.employeeType || null,
+    branchId  // กรองให้ตรงสาขา (กะที่ branch_id = null = ใช้ได้ทุกสาขา)
+  });
+
+  const dayLabel = (() => {
+    const [y, m, d] = parseYMD(workDate);
+    const dt = new Date(y, m - 1, d);
+    return dt.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  })();
+
+  const body = `
+    <div class="shift-picker">
+      <div class="shift-picker-header">
+        <div><strong>${escapeHtml(emp.firstName)} ${escapeHtml(emp.lastName || '')}</strong></div>
+        <div class="muted-2">${escapeHtml(dayLabel)}</div>
+      </div>
+      <div class="shift-picker-grid">
+        ${shifts.map(sh => `
+          <button class="shift-picker-option ${currentShiftId === sh.id ? 'selected' : ''}"
+            data-shift-id="${escapeHtml(sh.id)}"
+            style="border-left:6px solid ${escapeHtml(sh.color)}">
+            <div class="shift-picker-code">${escapeHtml(sh.code)}</div>
+            <div class="shift-picker-name">${escapeHtml(sh.name)}</div>
+            <div class="shift-picker-time muted-2">
+              ${sh.isOffDay ? 'OFF' : `${(sh.startTime || '').slice(0,5)}–${(sh.endTime || '').slice(0,5)}`}
+            </div>
+          </button>
+        `).join('')}
+      </div>
+      ${shifts.length === 0 ? '<div class="empty-state" style="padding:24px;font-size:13px">ไม่มีกะที่เหมาะกับประเภทพนักงานนี้ — HR ต้องเพิ่มกะที่หน้า "จัดการกะ" ก่อน</div>' : ''}
+    </div>
+  `;
+  const footer = `
+    ${existingEntry ? '<button class="btn btn-danger" data-clear>ล้างกะ</button>' : ''}
+    <button class="btn btn-secondary" data-close>ปิด</button>
+  `;
+  modal.open('เลือกกะ', body, { footer });
+  const root = $('#modalRoot');
+  root.querySelectorAll('.shift-picker-option').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const shiftId = btn.dataset.shiftId;
+      try {
+        const w = await DB.ensureScheduleWeek(branchId, weekStart);
+        const isCrossBranch = emp.branch !== branchId;
+        await DB.saveScheduleEntry({
+          id: existingEntry?.id,
+          scheduleWeekId: w.id,
+          employeeId: empId,
+          workDate,
+          shiftId,
+          branchId,
+          isCrossBranch,
+          note: existingEntry?.note || ''
+        });
+        modal.close();
+        router.go('schedule');
+        toast('บันทึกกะแล้ว', 'success');
+      } catch (ex) {
+        toast(ex.message || String(ex), 'error');
+      }
+    });
+  });
+  const clearBtn = root.querySelector('[data-clear]');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', async () => {
+      try {
+        await DB.deleteScheduleEntry(existingEntry.id);
+        modal.close();
+        router.go('schedule');
+        toast('ล้างกะแล้ว', 'success');
+      } catch (ex) {
+        toast(ex.message || String(ex), 'error');
+      }
+    });
+  }
+}
+
+// === ADD CROSS-BRANCH EMPLOYEE ===
+
+function openAddCrossBranchEmployee() {
+  const branchId = _scheduleState.branchId;
+  if (!branchId) return;
+  // พนักงาน active ที่อยู่สาขาอื่น
+  const candidates = (DB.data.employees || [])
+    .filter(e => e.branch && e.branch !== branchId && DB.empStatus(e) !== 'resigned')
+    .sort((a, b) => (a.branch || '').localeCompare(b.branch || '') || (a.firstName || '').localeCompare(b.firstName || '', 'th'));
+
+  const body = `
+    <div class="form-group">
+      <label>เลือกพนักงานจากสาขาอื่นมาช่วยงาน</label>
+      <input type="text" id="xbSearch" class="sw-filter-input" placeholder="🔍 ค้นชื่อ/รหัส/สาขา" style="margin-bottom:8px;width:100%" />
+      <select id="xbEmployee" class="sw-filter-select" style="width:100%" size="10">
+        ${candidates.map(e => `<option value="${escapeHtml(e.id)}" data-search="${escapeHtml((e.firstName + ' ' + (e.lastName || '') + ' ' + (e.nickname || '') + ' ' + (e.branch || '') + ' ' + e.id).toLowerCase())}">
+          ${escapeHtml(e.id)} · ${escapeHtml(e.firstName)} ${escapeHtml(e.lastName || '')} ${e.nickname ? '(' + escapeHtml(e.nickname) + ')' : ''} — ${escapeHtml(e.branch || '')}
+        </option>`).join('')}
+      </select>
+    </div>
+    <p class="muted-2" style="font-size:12px;margin-top:8px">เมื่อกด "เพิ่ม" ระบบจะสร้าง placeholder row ในตาราง คลิกที่ cell เพื่อจัดกะวันที่ต้องการ</p>
+  `;
+  modal.open('เพิ่มพนักงานข้ามสาขา', body, {
+    footer: `<button class="btn btn-secondary" data-close>ยกเลิก</button><button class="btn btn-primary" id="xbAddBtn">เพิ่ม</button>`
+  });
+  const root = $('#modalRoot');
+  const searchInput = root.querySelector('#xbSearch');
+  const select = root.querySelector('#xbEmployee');
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.toLowerCase().trim();
+    [...select.options].forEach(o => {
+      o.hidden = q && !o.dataset.search.includes(q);
+    });
+  });
+  root.querySelector('#xbAddBtn').addEventListener('click', async () => {
+    const empId = select.value;
+    if (!empId) { toast('เลือกพนักงานก่อน', 'warning'); return; }
+    try {
+      const week = await DB.ensureScheduleWeek(_scheduleState.branchId, _scheduleState.weekStart);
+      // สร้าง placeholder entry (shift_id = null) วันแรกของสัปดาห์ — เพื่อให้ขึ้นในตาราง
+      const exists = (DB.data.scheduleEntries || []).some(e =>
+        e.scheduleWeekId === week.id && e.employeeId === empId
+      );
+      if (!exists) {
+        await DB.saveScheduleEntry({
+          scheduleWeekId: week.id,
+          employeeId: empId,
+          workDate: _scheduleState.weekStart,
+          shiftId: null,
+          branchId: _scheduleState.branchId,
+          isCrossBranch: true,
+          note: 'พนักงานข้ามสาขา'
+        });
+      }
+      modal.close();
+      router.go('schedule');
+      toast('เพิ่มพนักงานข้ามสาขาแล้ว — คลิกที่ cell เพื่อจัดกะ', 'success');
+    } catch (ex) {
+      toast(ex.message || String(ex), 'error');
+    }
+  });
+}
+
+// === WORKFLOW ACTIONS ===
+
+async function submitScheduleWeekUI() {
+  const week = DB.getScheduleWeek(_scheduleState.branchId, _scheduleState.weekStart);
+  if (!week) { toast('ยังไม่มีตาราง — กรอกกะอย่างน้อย 1 ช่องก่อน', 'warning'); return; }
+  const ok = await modal.confirm('ส่งขออนุมัติ', 'ยืนยันส่งตารางสัปดาห์นี้ให้ HR อนุมัติ?');
+  if (!ok) return;
+  try {
+    await DB.submitScheduleWeek(week.id);
+    router.go('schedule');
+    toast('ส่งขออนุมัติแล้ว', 'success');
+  } catch (ex) { toast(ex.message || String(ex), 'error'); }
+}
+
+async function approveScheduleWeekUI() {
+  const week = DB.getScheduleWeek(_scheduleState.branchId, _scheduleState.weekStart);
+  if (!week) return;
+  const note = await modal.prompt('อนุมัติตาราง', 'หมายเหตุ (ไม่บังคับ)');
+  if (note === null) return;
+  try {
+    await DB.approveScheduleWeek(week.id, note);
+    router.go('schedule');
+    toast('อนุมัติแล้ว', 'success');
+  } catch (ex) { toast(ex.message || String(ex), 'error'); }
+}
+
+async function rejectScheduleWeekUI() {
+  const week = DB.getScheduleWeek(_scheduleState.branchId, _scheduleState.weekStart);
+  if (!week) return;
+  const reason = await modal.prompt('ปฏิเสธตาราง', 'เหตุผลที่ปฏิเสธ (จำเป็น)');
+  if (reason === null) return;
+  if (!reason.trim()) { toast('ต้องระบุเหตุผล', 'warning'); return; }
+  try {
+    await DB.rejectScheduleWeek(week.id, reason.trim());
+    router.go('schedule');
+    toast('ปฏิเสธแล้ว', 'success');
+  } catch (ex) { toast(ex.message || String(ex), 'error'); }
+}
+
+async function reopenScheduleWeekUI() {
+  const week = DB.getScheduleWeek(_scheduleState.branchId, _scheduleState.weekStart);
+  if (!week) return;
+  const ok = await modal.confirm('เปิดให้แก้ไข', 'ยืนยันเปิดตารางที่อนุมัติแล้วให้แก้ไขอีกครั้ง? (จะกลับไปเป็นแบบร่าง)');
+  if (!ok) return;
+  try {
+    await DB.reopenScheduleWeek(week.id);
+    router.go('schedule');
+    toast('เปิดให้แก้ไขแล้ว', 'success');
+  } catch (ex) { toast(ex.message || String(ex), 'error'); }
+}
+
+// === SHIFT MANAGER (HR CRUD กะตั้งต้น) ===
+
+function openShiftsManager() {
+  if (!DB.isHR) { toast('เฉพาะ HR/admin', 'warning'); return; }
+  const shifts = DB.getShifts();
+  const body = `
+    <div class="shifts-manager">
+      <div class="shifts-manager-toolbar">
+        <button class="btn btn-primary" onclick="openShiftEditor()">+ เพิ่มกะใหม่</button>
+        <span class="muted-2" style="font-size:12px">รวม ${shifts.length} กะ</span>
+      </div>
+      <div class="table-wrap">
+        <table class="table table-compact">
+          <thead><tr>
+            <th>รหัส</th><th>ชื่อกะ</th><th>เวลา</th><th class="num">พัก (นาที)</th>
+            <th>ประเภทพนักงาน</th><th>สาขา</th><th>สถานะ</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${shifts.map(s => `<tr>
+              <td><span class="shift-code-pill" style="background:${escapeHtml(s.color)}22;color:${escapeHtml(s.color)};border-color:${escapeHtml(s.color)}55"><strong>${escapeHtml(s.code)}</strong></span></td>
+              <td>${escapeHtml(s.name)}${s.isOffDay ? ' <span class="badge">OFF</span>' : ''}</td>
+              <td>${s.isOffDay ? '—' : `${(s.startTime || '').slice(0,5)}–${(s.endTime || '').slice(0,5)}`}</td>
+              <td class="num">${s.isOffDay ? '—' : fmt.num(s.breakMinutes)}</td>
+              <td>${s.employeeTypes?.length ? s.employeeTypes.map(t => `<span class="badge">${escapeHtml(t)}</span>`).join(' ') : '<span class="muted-2">ทุกประเภท</span>'}</td>
+              <td>${s.branchId ? escapeHtml(s.branchId) : '<span class="muted-2">ทุกสาขา</span>'}</td>
+              <td>${s.active ? '<span class="badge badge-success">ใช้งาน</span>' : '<span class="badge">ปิด</span>'}</td>
+              <td>
+                <button class="btn btn-ghost btn-sm" onclick="openShiftEditor('${escapeHtml(s.id)}')">แก้ไข</button>
+                <button class="btn btn-ghost btn-sm" onclick="deleteShiftUI('${escapeHtml(s.id)}')">ลบ</button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  modal.open('จัดการกะการทำงาน', body, { size: 'lg', footer: '<button class="btn btn-secondary" data-close>ปิด</button>' });
+}
+
+function openShiftEditor(shiftId) {
+  if (!DB.isHR) { toast('เฉพาะ HR/admin', 'warning'); return; }
+  const s = shiftId ? DB.getShift(shiftId) : null;
+  const isNew = !s;
+  const branches = (DB.data.branches || []).filter(b => b.active);
+  const employeeTypes = ['fulltime', 'parttime', 'office'];
+  const empTypeLabels = { fulltime: 'พนักงานประจำ (FT)', parttime: 'พาร์ทไทม์ (PT)', office: 'สำนักงาน' };
+  const cur = s || { code: '', name: '', startTime: '', endTime: '', breakMinutes: 60, color: '#2563eb', isOffDay: false, employeeTypes: [], branchId: '', active: true, sortOrder: 100, note: '' };
+
+  const body = `
+    <form id="shiftForm" class="form-grid">
+      <div class="form-group">
+        <label>รหัสกะ <span class="muted-2">(สั้น — จะแสดงในเซลล์)</span></label>
+        <input name="code" required maxlength="10" value="${escapeHtml(cur.code)}" placeholder="เช่น M / A / N / OFF" style="text-transform:uppercase" ${s ? 'readonly' : ''} />
+      </div>
+      <div class="form-group">
+        <label>ชื่อกะ</label>
+        <input name="name" required value="${escapeHtml(cur.name)}" placeholder="เช่น กะเช้า, กะดึก" />
+      </div>
+      <div class="form-group">
+        <label><input type="checkbox" name="isOffDay" ${cur.isOffDay ? 'checked' : ''} onchange="document.querySelectorAll('.shift-time-row input,.shift-break-row input').forEach(i=>i.disabled=this.checked)" /> วันหยุด (OFF — ไม่นับชั่วโมงงาน)</label>
+      </div>
+      <div class="form-group shift-time-row">
+        <label>เวลาเริ่ม</label>
+        <input type="time" name="startTime" value="${escapeHtml((cur.startTime || '').slice(0,5))}" ${cur.isOffDay ? 'disabled' : ''} />
+      </div>
+      <div class="form-group shift-time-row">
+        <label>เวลาสิ้นสุด</label>
+        <input type="time" name="endTime" value="${escapeHtml((cur.endTime || '').slice(0,5))}" ${cur.isOffDay ? 'disabled' : ''} />
+      </div>
+      <div class="form-group shift-break-row">
+        <label>พักกี่นาที</label>
+        <input type="number" name="breakMinutes" min="0" max="240" value="${cur.breakMinutes}" ${cur.isOffDay ? 'disabled' : ''} />
+      </div>
+      <div class="form-group">
+        <label>สี (badge ในตาราง)</label>
+        <input type="color" name="color" value="${escapeHtml(cur.color)}" />
+      </div>
+      <div class="form-group">
+        <label>ประเภทพนักงานที่ใช้ได้ <span class="muted-2">(ไม่ติ๊ก = ทุกประเภท)</span></label>
+        <div>
+          ${employeeTypes.map(t => `<label style="margin-right:12px"><input type="checkbox" name="empType" value="${t}" ${cur.employeeTypes.includes(t) ? 'checked' : ''} /> ${escapeHtml(empTypeLabels[t])}</label>`).join('')}
+        </div>
+      </div>
+      <div class="form-group">
+        <label>เฉพาะสาขา <span class="muted-2">(ว่าง = ทุกสาขา)</span></label>
+        <select name="branchId">
+          <option value="">— ทุกสาขา —</option>
+          ${branches.map(b => `<option value="${escapeHtml(b.id)}" ${cur.branchId === b.id ? 'selected' : ''}>${escapeHtml(b.name || b.id)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>ลำดับการแสดง</label>
+        <input type="number" name="sortOrder" min="0" max="999" value="${cur.sortOrder}" />
+      </div>
+      <div class="form-group">
+        <label><input type="checkbox" name="active" ${cur.active ? 'checked' : ''} /> เปิดใช้งาน</label>
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label>หมายเหตุ</label>
+        <textarea name="note" rows="2" placeholder="คำอธิบายเพิ่มเติม">${escapeHtml(cur.note)}</textarea>
+      </div>
+    </form>
+  `;
+  modal.open(isNew ? 'เพิ่มกะใหม่' : 'แก้ไขกะ ' + cur.code, body, {
+    footer: `<button class="btn btn-secondary" data-close>ยกเลิก</button><button class="btn btn-primary" id="shiftSaveBtn">บันทึก</button>`
+  });
+  $('#shiftSaveBtn').addEventListener('click', async () => {
+    const form = $('#shiftForm');
+    const fd = new FormData(form);
+    const data = {
+      id: s?.id,
+      code: (fd.get('code') || '').toString().trim().toUpperCase(),
+      name: (fd.get('name') || '').toString().trim(),
+      isOffDay: fd.get('isOffDay') === 'on',
+      startTime: fd.get('startTime') || '',
+      endTime: fd.get('endTime') || '',
+      breakMinutes: Number(fd.get('breakMinutes') || 0),
+      color: fd.get('color') || '#2563eb',
+      employeeTypes: fd.getAll('empType'),
+      branchId: fd.get('branchId') || '',
+      sortOrder: Number(fd.get('sortOrder') || 100),
+      active: fd.get('active') === 'on',
+      note: (fd.get('note') || '').toString()
+    };
+    try {
+      await DB.saveShift(data);
+      modal.close();
+      openShiftsManager();
+      router.go('schedule');
+      toast('บันทึกกะแล้ว', 'success');
+    } catch (ex) { toast(ex.message || String(ex), 'error'); }
+  });
+}
+
+async function deleteShiftUI(shiftId) {
+  if (!DB.isHR) return;
+  const sh = DB.getShift(shiftId);
+  if (!sh) return;
+  const ok = await modal.confirm('ลบกะ', `ลบกะ "${sh.code} · ${sh.name}"?`);
+  if (!ok) return;
+  try {
+    await DB.deleteShift(shiftId);
+    modal.close();
+    openShiftsManager();
+    toast('ลบกะแล้ว', 'success');
+  } catch (ex) { toast(ex.message || String(ex), 'error'); }
+}
 
 // ═══════════════════════════════════════════════════════
 //  STARTUP

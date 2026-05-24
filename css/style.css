@@ -4313,3 +4313,197 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
   .pm-perm-cell, .pm-th-perm { min-width: 220px; max-width: 240px; }
   .pm-th-role { min-width: 72px; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   WORK SCHEDULE (ตารางงานพนักงาน)
+   ═══════════════════════════════════════════════════════════ */
+
+.schedule-controls { padding: 14px 16px; margin-bottom: 18px; }
+.schedule-controls-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.schedule-controls-spacer { flex: 1; }
+.schedule-week-nav {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.btn.btn-icon-only { padding: 6px 10px; min-width: 36px; }
+.schedule-date-jump { width: 150px; }
+.schedule-branch-select { min-width: 200px; }
+.schedule-week-range {
+  font-size: 14px; font-weight: 600; color: var(--text);
+  padding: 6px 12px; background: var(--surface-2); border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.schedule-status-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding-top: 12px; border-top: 1px solid var(--border);
+}
+.schedule-status-time { font-size: 12px; }
+.schedule-status-actions {
+  display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap;
+}
+
+/* === GRID === */
+.schedule-grid-card { padding: 0; overflow: hidden; }
+.schedule-grid-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.schedule-grid {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+  min-width: 900px;
+}
+.schedule-grid thead th {
+  background: var(--surface-2);
+  border-bottom: 2px solid var(--border-strong);
+  padding: 10px 8px; text-align: center; font-weight: 600;
+  position: sticky; top: 0; z-index: 2;
+}
+.schedule-emp-head {
+  text-align: left !important;
+  min-width: 200px; max-width: 240px;
+  position: sticky; left: 0; z-index: 3 !important;
+  background: var(--surface-2) !important;
+  border-right: 2px solid var(--border-strong);
+}
+.schedule-day-head {
+  min-width: 110px;
+}
+.schedule-day-name { font-size: 12px; color: var(--text-2); font-weight: 500; }
+.schedule-day-date { font-size: 14px; font-weight: 700; margin-top: 2px; }
+.schedule-day-head.today {
+  background: var(--primary-soft) !important;
+  color: var(--primary-text);
+}
+.schedule-day-head.today .schedule-day-date { color: var(--primary-text); }
+.schedule-day-holiday {
+  font-size: 10px; color: var(--warning-text);
+  background: var(--warning-soft);
+  margin-top: 4px; padding: 2px 4px;
+  border-radius: 4px; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
+}
+.schedule-summary-head {
+  min-width: 90px;
+  background: var(--surface-hover) !important;
+}
+
+.schedule-grid tbody tr { border-bottom: 1px solid var(--border); }
+.schedule-grid tbody tr:hover { background: var(--surface-hover); }
+.schedule-row-helper { background: var(--gold-soft, #fff8e6); }
+.schedule-row-helper:hover { background: var(--gold-soft, #fdf2cc); }
+
+.schedule-emp-cell {
+  position: sticky; left: 0; z-index: 1;
+  background: var(--surface); padding: 8px 10px;
+  border-right: 2px solid var(--border-strong);
+  text-align: left; font-weight: 500;
+}
+.schedule-grid tbody tr:hover .schedule-emp-cell { background: var(--surface-hover); }
+.schedule-grid tbody .schedule-row-helper .schedule-emp-cell { background: var(--gold-soft, #fff8e6); }
+.schedule-emp-name {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.schedule-emp-meta { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+
+.schedule-cell {
+  text-align: center; padding: 6px 4px; vertical-align: middle;
+  height: 58px; cursor: pointer; border-left: 1px solid var(--border);
+  transition: background .12s;
+  position: relative;
+}
+.schedule-cell:hover { background: var(--primary-soft); }
+.schedule-cell-today { background: rgba(30, 42, 82, 0.04); }
+.schedule-cell-holiday { background: var(--warning-soft); }
+.schedule-cell-off { background: var(--surface-2); }
+.schedule-cell-leave {
+  background: rgba(30, 136, 229, 0.08);
+  cursor: not-allowed;
+}
+.schedule-cell-empty {
+  color: var(--text-3); font-size: 22px; font-weight: 300;
+  opacity: 0.4;
+}
+
+.shift-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border-radius: 6px;
+  border: 1px solid; font-size: 12px; font-weight: 600;
+  white-space: nowrap;
+}
+.shift-badge strong { font-weight: 700; letter-spacing: 0.02em; }
+.shift-badge-time { font-size: 10px; opacity: 0.85; font-weight: 500; }
+
+.cross-branch-mark {
+  margin-left: 4px; font-size: 11px; color: var(--gold-text, #8a6a30);
+}
+
+.schedule-leave-badge {
+  display: inline-block; padding: 3px 8px;
+  background: #1e88e5; color: #fff;
+  border-radius: 4px; font-size: 11px; font-weight: 600;
+}
+
+.schedule-summary-cell {
+  text-align: center; padding: 8px;
+  background: var(--surface-2);
+  border-left: 2px solid var(--border-strong);
+  font-size: 12px;
+}
+.schedule-summary-cell strong { font-size: 15px; color: var(--primary-text); }
+.schedule-summary-meta { font-size: 10px; margin-top: 2px; }
+
+/* === SHIFT PICKER MODAL === */
+.shift-picker-header { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.shift-picker-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+.shift-picker-option {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px; text-align: left;
+  cursor: pointer; transition: all .12s;
+  font-family: inherit;
+}
+.shift-picker-option:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+}
+.shift-picker-option.selected {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+.shift-picker-code {
+  font-size: 18px; font-weight: 700; color: var(--text);
+  letter-spacing: 0.02em;
+}
+.shift-picker-name { font-size: 13px; color: var(--text); margin-top: 4px; }
+.shift-picker-time { font-size: 11px; margin-top: 4px; }
+
+/* === SHIFTS MANAGER === */
+.shifts-manager-toolbar {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 14px;
+}
+.shift-code-pill {
+  display: inline-block; padding: 2px 8px;
+  border: 1px solid; border-radius: 4px;
+  font-size: 12px; font-weight: 700;
+}
+
+@media (max-width: 768px) {
+  .schedule-grid { min-width: 700px; font-size: 12px; }
+  .schedule-day-head { min-width: 80px; }
+  .schedule-emp-head, .schedule-emp-cell { min-width: 130px; max-width: 150px; }
+  .schedule-cell { height: 52px; }
+  .shift-badge-time { display: none; }
+  .schedule-controls-row { gap: 6px; }
+  .schedule-status-actions { width: 100%; margin-left: 0; }
+  .schedule-branch-select { width: 100%; }
+  .schedule-date-jump { width: 130px; }
+}
