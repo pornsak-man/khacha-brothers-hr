@@ -451,7 +451,7 @@ const auth = {
     // ─── Reset client-side state (กัน state leak ระหว่างผู้ใช้บนเครื่องเดียวกัน) ───
     // ทุก global filter/UI state กลับสู่ค่าเริ่มต้น
     try {
-      if (typeof empState === 'object') Object.assign(empState, { search: '', branch: '', department: '', position: '', status: 'active', sortBy: '', sortDir: 'asc', page: 1 });
+      if (typeof empState === 'object') Object.assign(empState, { search: '', scope: '', branch: '', department: '', position: '', status: 'active', sortBy: '', sortDir: 'asc', page: 1 });
       if (typeof recruitState === 'object') Object.assign(recruitState, { search: '', status: '', year: '', page: 1 });
       if (typeof _swapReqUI === 'object') Object.assign(_swapReqUI, { tab: 'pending', search: '', branch: '', status: '', page: 0 });
       if (typeof _calendarState === 'object') _calendarState.filterYear = new Date().getFullYear();
@@ -1632,7 +1632,7 @@ function renderDashboardCharts(s, monthly, trailing12) {
 // ═══════════════════════════════════════════════════════
 //  PAGE: EMPLOYEES
 // ═══════════════════════════════════════════════════════
-const empState = { search: '', branch: '', department: '', position: '', status: 'active', sortBy: '', sortDir: 'asc', page: 1, pageSize: 50 };
+const empState = { search: '', scope: '', branch: '', department: '', position: '', status: 'active', sortBy: '', sortDir: 'asc', page: 1, pageSize: 50 };
 let _empSearchTimer = null;
 
 router.register('employees', () => {
@@ -1711,18 +1711,29 @@ router.register('employees', () => {
       </div>
       <div class="sw-filter-bar">
         <input id="empSearch" type="text" class="sw-filter-input" placeholder="🔍 ค้นชื่อ / รหัส / ชื่อเล่น / ตำแหน่ง / เลขประชาชน" value="${escapeHtml(empState.search)}" />
-        <select class="sw-filter-select" id="empBranch">
-          <option value="">— ทุกสาขา —</option>
-          ${DB.getBranches().map(b => `<option value="${escapeHtml(b)}" ${empState.branch === b ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
-        </select>
-        <select class="sw-filter-select" id="empDepartment">
-          <option value="">— ทุกฝ่าย —</option>
-          ${DB.getDepartments().map(d => `<option value="${escapeHtml(d.id)}" ${empState.department === d.id ? 'selected' : ''}>${escapeHtml(d.name)}</option>`).join('')}
-        </select>
         ${(() => {
-          const ps = DB.getPositions();
+          // Cascade scope: scope → จำกัด options ของ branch/dept/position ให้แสดงเฉพาะที่อยู่ใน scope
+          const allEmps = DB.data.employees || [];
+          const scopedEmps = empState.scope ? DB._filterByScope(allEmps, empState.scope) : allEmps;
+          // dept options: ฝ่ายที่ scope ตรง หรือ ฝ่ายที่มีพนักงานใน scope (fallback dept.scope)
+          const scopedDepts = empState.scope
+            ? DB.getDepartments().filter(d => {
+                if (d.scope === empState.scope) return true;
+                // หรือเป็นฝ่ายที่มีพนักงานสังกัด + พนักงานนั้นอยู่ใน scope ผ่าน position
+                return scopedEmps.some(e => e.department === d.id);
+              })
+            : DB.getDepartments();
+          // branch options: สาขาที่มีพนักงานใน scope
+          const scopedBranches = empState.scope
+            ? [...new Set(scopedEmps.map(e => e.branch).filter(Boolean))].sort()
+            : DB.getBranches();
+          // position options: ตำแหน่งที่ scope ตรง หรือไม่มี scope (general)
+          const scopedPositions = empState.scope
+            ? DB.getPositions().filter(p => !p.scope || p.scope === empState.scope)
+            : DB.getPositions();
+          // จัด group ตำแหน่ง (ตามเดิม)
           const kitchen = [], ops = [], common = [];
-          for (const p of ps) {
+          for (const p of scopedPositions) {
             const n = (p.name || '').toLowerCase();
             if (n.includes('chef') || n.includes('barista')) kitchen.push(p);
             else if (n.includes('part')) common.push(p);
@@ -1730,13 +1741,27 @@ router.register('employees', () => {
           }
           const byLv = (a, b) => (b.level || 0) - (a.level || 0) || (a.name || '').localeCompare(b.name || '');
           ops.sort(byLv); kitchen.sort(byLv); common.sort(byLv);
-          const opt = (arr) => arr.map(p => `<option value="${p.id}" ${empState.position === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
-          return `<select class="sw-filter-select" id="empPosition">
-            <option value="">— ทุกตำแหน่ง —</option>
-            ${ops.length ? `<optgroup label="ฝ่ายปฏิบัติการ">${opt(ops)}</optgroup>` : ''}
-            ${kitchen.length ? `<optgroup label="ฝ่ายครัว">${opt(kitchen)}</optgroup>` : ''}
-            ${common.length ? `<optgroup label="อื่นๆ">${opt(common)}</optgroup>` : ''}
-          </select>`;
+          const posOpt = (arr) => arr.map(p => `<option value="${p.id}" ${empState.position === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
+          return `
+            <select class="sw-filter-select" id="empScope" title="กรองตามสายงาน — จะจำกัดตัวเลือก สาขา/ฝ่าย/ตำแหน่ง ให้อยู่ในสายนี้">
+              <option value="">— ทุกสายงาน —</option>
+              ${DB.getScopes().map(s => `<option value="${escapeHtml(s.id)}" ${empState.scope === s.id ? 'selected' : ''}>${escapeHtml(s.label)}</option>`).join('')}
+            </select>
+            <select class="sw-filter-select" id="empBranch">
+              <option value="">${empState.scope ? '— สาขาในสายนี้ —' : '— ทุกสาขา —'}</option>
+              ${scopedBranches.map(b => `<option value="${escapeHtml(b)}" ${empState.branch === b ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
+            </select>
+            <select class="sw-filter-select" id="empDepartment">
+              <option value="">${empState.scope ? '— ฝ่ายในสายนี้ —' : '— ทุกฝ่าย —'}</option>
+              ${scopedDepts.map(d => `<option value="${escapeHtml(d.id)}" ${empState.department === d.id ? 'selected' : ''}>${escapeHtml(d.name)}</option>`).join('')}
+            </select>
+            <select class="sw-filter-select" id="empPosition">
+              <option value="">${empState.scope ? '— ตำแหน่งในสายนี้ —' : '— ทุกตำแหน่ง —'}</option>
+              ${ops.length ? `<optgroup label="ฝ่ายปฏิบัติการ">${posOpt(ops)}</optgroup>` : ''}
+              ${kitchen.length ? `<optgroup label="ฝ่ายครัว">${posOpt(kitchen)}</optgroup>` : ''}
+              ${common.length ? `<optgroup label="อื่นๆ">${posOpt(common)}</optgroup>` : ''}
+            </select>
+          `;
         })()}
         <select class="sw-filter-select" id="empStatus">
           <option value="">— ทุกสถานะ —</option>
@@ -1744,7 +1769,7 @@ router.register('employees', () => {
           <option value="pending"  ${empState.status === 'pending'  ? 'selected' : ''}>นัดพ้นสภาพ</option>
           <option value="resigned" ${empState.status === 'resigned' ? 'selected' : ''}>พ้นสภาพแล้ว</option>
         </select>
-        <button id="empClearFilter" class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearEmpFilters()" style="${(empState.search || empState.branch || empState.department || empState.position || empState.status !== 'active') ? '' : 'display:none'}">✕ ล้างตัวกรอง</button>
+        <button id="empClearFilter" class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearEmpFilters()" style="${(empState.search || empState.scope || empState.branch || empState.department || empState.position || empState.status !== 'active') ? '' : 'display:none'}">✕ ล้างตัวกรอง</button>
       </div>
       <div id="empList"></div>
     </div>
@@ -1755,31 +1780,22 @@ router.register('employees', () => {
 function updateEmpClearButton() {
   const btn = document.getElementById('empClearFilter');
   if (!btn) return;
-  const hasFilters = empState.search || empState.branch || empState.department || empState.position || (empState.status !== 'active');
+  const hasFilters = empState.search || empState.scope || empState.branch || empState.department || empState.position || (empState.status !== 'active');
   btn.style.display = hasFilters ? '' : 'none';
 }
 
 // ล้างตัวกรองทั้งหมดในหน้าทะเบียนพนักงาน (กลับไปค่าเริ่มต้น = ปฏิบัติงาน)
+// scope ที่เปลี่ยน → ต้อง re-render ทั้ง filter bar (dropdowns ต้อง refresh options ที่ cascade)
 function clearEmpFilters() {
   empState.search = '';
+  empState.scope = '';
   empState.branch = '';
   empState.department = '';
   empState.position = '';
   empState.status = 'active';
   empState.page = 1;
-  // Reset DOM controls โดยตรง (ไม่ต้อง re-render ทั้งหน้า)
-  const searchEl = document.getElementById('empSearch');
-  const branchEl = document.getElementById('empBranch');
-  const deptEl = document.getElementById('empDepartment');
-  const positionEl = document.getElementById('empPosition');
-  const statusEl = document.getElementById('empStatus');
-  if (searchEl) searchEl.value = '';
-  if (branchEl) branchEl.value = '';
-  if (deptEl) deptEl.value = '';
-  if (positionEl) positionEl.value = '';
-  if (statusEl) statusEl.value = 'active';
-  renderEmployeeList();
-  updateEmpClearButton();
+  // Re-render whole route → filter bar HTML ใหม่จะมี option ที่ถูกต้อง
+  if (typeof router !== 'undefined') router.go('employees');
 }
 
 function wireEmployeePage() {
@@ -1793,6 +1809,16 @@ function wireEmployeePage() {
       renderEmployeeList();
       updateEmpClearButton();
     }, 200);
+  });
+  // scope change → reset child filters + re-render whole route (ให้ dropdowns refresh cascade)
+  $('#empScope')?.addEventListener('change', (e) => {
+    empState.scope = e.target.value;
+    // reset child filters เพราะ option ที่เคยเลือกอาจไม่อยู่ใน scope ใหม่
+    empState.branch = '';
+    empState.department = '';
+    empState.position = '';
+    empState.page = 1;
+    if (typeof router !== 'undefined') router.go('employees');
   });
   $('#empBranch')?.addEventListener('change', (e) => { empState.branch = e.target.value; empState.page = 1; renderEmployeeList(); updateEmpClearButton(); });
   $('#empDepartment')?.addEventListener('change', (e) => { empState.department = e.target.value; empState.page = 1; renderEmployeeList(); updateEmpClearButton(); });

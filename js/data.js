@@ -1049,6 +1049,8 @@ const DB = {
         (sDigits && (e.nationalId || '').includes(sDigits))
       );
     }
+    // Scope filter — ใช้ resolution chain เดียวกับ _filterByScope (position.scope → dept.scope)
+    if (filter.scope) list = this._filterByScope(list, filter.scope);
     if (filter.branch) list = list.filter(e => e.branch === filter.branch);
     if (filter.position) {
       // dropdown ส่ง position.id มา — แต่บางแถว (legacy import) มี e.position เป็น "" / ชื่อตำแหน่ง / id เก่า
