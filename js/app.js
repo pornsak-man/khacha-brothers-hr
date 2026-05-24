@@ -208,14 +208,16 @@ function renderBranchPicker({ name, branches, selected = [], pickerId = null } =
       </div>
       <div class="branch-picker-grid" data-branch-grid>
         ${branches.map(b => {
-          const label = (b.name && b.name !== b.id) ? b.name : b.id;
+          const hasName = b.name && b.name.trim() && b.name.trim() !== b.id;
           const searchKey = (b.id + ' ' + (b.name || '')).toLowerCase();
           return `
-            <label class="branch-chip" data-branch-chip data-search="${escapeHtml(searchKey)}">
+            <label class="branch-chip${hasName ? '' : ' is-codeonly'}" data-branch-chip data-search="${escapeHtml(searchKey)}">
               <input type="checkbox" name="${escapeHtml(name)}" value="${escapeHtml(b.id)}" ${sel.has(b.id) ? 'checked' : ''}/>
               <span class="branch-chip-indicator" aria-hidden="true"></span>
-              <span class="branch-chip-code">${escapeHtml(b.id)}</span>
-              <span class="branch-chip-name" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+              <span class="branch-chip-content">
+                <span class="branch-chip-code">${escapeHtml(b.id)}</span>
+                ${hasName ? `<span class="branch-chip-name" title="${escapeHtml(b.name)}">${escapeHtml(b.name)}</span>` : ''}
+              </span>
             </label>`;
         }).join('')}
       </div>
