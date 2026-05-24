@@ -203,6 +203,7 @@ const DB = {
     this._asEmployee = false;
     this._permCache = null;            // Phase 2: เคลียร์ permission cache กัน leak ข้าม user
     this._permLoadPromise = null;
+    this._notifications = [];          // Phase A: clear in-memory (localStorage คง key ไว้ ถ้า user เดิม login ใหม่จะโหลดกลับ)
     try { sessionStorage.removeItem('kb_as_employee'); } catch (e) {}
     this.ready = false;
   },
@@ -222,6 +223,8 @@ const DB = {
     } catch (e) { this._asEmployee = false; }
     // Phase 2: โหลด permission matrix แบบ parallel — fail silently → fallback ไป _legacyPermission
     this._loadPermissions();
+    // Phase A: โหลด notifications ของ user นี้จาก localStorage
+    this.loadNotifications();
   },
 
   // ─── EMPLOYEE-VIEW MODE (impersonation) ───
@@ -397,6 +400,69 @@ const DB = {
       return null;
     }
   },
+  // ─── IN-APP NOTIFICATIONS (Phase A) ───
+  // เก็บแจ้งเตือนของ user ปัจจุบันใน memory + persist ใน localStorage
+  // trigger จาก realtime events (leave/swap status change ของตัวเอง) ใน app.js
+  _notifications: [],
+  _NOTIF_MAX: 50,
+  _notifStorageKey() {
+    return this.user ? `kb_notifs_${this.user.id}` : null;
+  },
+  loadNotifications() {
+    const key = this._notifStorageKey();
+    if (!key) { this._notifications = []; return; }
+    try {
+      const raw = localStorage.getItem(key);
+      this._notifications = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(this._notifications)) this._notifications = [];
+    } catch (e) { this._notifications = []; }
+  },
+  _persistNotifications() {
+    const key = this._notifStorageKey();
+    if (!key) return;
+    try { localStorage.setItem(key, JSON.stringify(this._notifications.slice(0, this._NOTIF_MAX))); }
+    catch (e) { /* quota exceeded ignored */ }
+  },
+  pushNotification(n) {
+    if (!n || !n.id) return;
+    // กัน duplicate (เช่น realtime ยิงซ้ำ)
+    if (this._notifications.some(x => x.id === n.id)) return;
+    const entry = {
+      id: n.id,
+      type: n.type || 'info',          // 'success' | 'danger' | 'warning' | 'info'
+      title: n.title || '',
+      body: n.body || '',
+      link: n.link || null,             // router page name to open on click
+      ts: n.ts || Date.now(),
+      read: false
+    };
+    this._notifications.unshift(entry);
+    if (this._notifications.length > this._NOTIF_MAX) this._notifications.length = this._NOTIF_MAX;
+    this._persistNotifications();
+    return entry;
+  },
+  markNotificationRead(id) {
+    const n = this._notifications.find(x => x.id === id);
+    if (!n || n.read) return false;
+    n.read = true;
+    this._persistNotifications();
+    return true;
+  },
+  markAllNotificationsRead() {
+    let changed = false;
+    for (const n of this._notifications) {
+      if (!n.read) { n.read = true; changed = true; }
+    }
+    if (changed) this._persistNotifications();
+    return changed;
+  },
+  clearAllNotifications() {
+    this._notifications = [];
+    this._persistNotifications();
+  },
+  getNotifications() { return this._notifications.slice(); },
+  getUnreadNotifCount() { return this._notifications.filter(n => !n.read).length; },
+
   async setRolePermissions(roleId, permKeys) {
     if (!roleId || !Array.isArray(permKeys)) throw new Error('roleId + permKeys[] required');
     const { data, error } = await this.client.rpc('set_role_permissions', {

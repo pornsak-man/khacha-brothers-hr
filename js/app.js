@@ -594,6 +594,7 @@ const auth = {
     if (typeof updateCalendarBadge === 'function') updateCalendarBadge();
     if (typeof updateSSOBadge === 'function') updateSSOBadge();
     if (typeof updateAnnouncementBadge === 'function') updateAnnouncementBadge();
+    if (typeof renderNotifBell === 'function') renderNotifBell();
     this.refreshImpersonateUI();
     // ซ่อนเมนูตาม role:
     //   .nav-admin-only  → เฉพาะ admin (ตั้งค่าระบบ)
@@ -838,9 +839,170 @@ function updateUniformBadge() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════
+// Phase A — In-app Notifications (bell + toast + dropdown)
+// ═══════════════════════════════════════════════════════════
+const NOTIF_STATUS_LABEL = {
+  approved:  { label: 'อนุมัติแล้ว',     type: 'success', icon: '✓' },
+  rejected:  { label: 'ไม่อนุมัติ',       type: 'danger',  icon: '✕' },
+  cancelled: { label: 'ยกเลิก',           type: 'warning', icon: '⊘' }
+};
+
+// Trigger จาก realtime เมื่อสถานะคำขอลา/swap ของ "ฉัน" เปลี่ยน
+function handleSelfRequestChange(payload) {
+  if (!payload || payload.eventType !== 'UPDATE') return;
+  const myEmpId = DB.profile?.employee_id;
+  if (!myEmpId) return;
+  const newRow = payload.new, oldRow = payload.old;
+  if (!newRow || !oldRow) return;
+  if (newRow.employee_id !== myEmpId) return;
+  // เช็คว่า status เปลี่ยน
+  if (newRow.status === oldRow.status) return;
+  const meta = NOTIF_STATUS_LABEL[newRow.status];
+  if (!meta) return;  // pending → pending หรือ status อื่นไม่ต้องแจ้ง
+
+  let title, body, link;
+  if (payload.table === 'leave_requests') {
+    const typeLabel = DB.getLeaveType?.(newRow.leave_type)?.label || newRow.leave_type || 'การลา';
+    const dateRange = newRow.start_date === newRow.end_date
+      ? fmt.date(newRow.start_date)
+      : `${fmt.date(newRow.start_date)} – ${fmt.date(newRow.end_date)}`;
+    title = `${meta.icon} คำขอลา${meta.label}`;
+    body = `${escapeHtml(typeLabel)} · ${dateRange}` + (newRow.approver_note ? ` · ${escapeHtml(newRow.approver_note)}` : '');
+    link = 'leave';
+  } else if (payload.table === 'holiday_swap_requests') {
+    const holiday = DB.data.calendar?.find(c => c.id === newRow.calendar_item_id);
+    title = `${meta.icon} คำขอเปลี่ยนวันหยุด${meta.label}`;
+    body = `${escapeHtml(holiday?.title || 'วันหยุด')} → ${fmt.date(newRow.swap_to_date)}` + (newRow.approver_note ? ` · ${escapeHtml(newRow.approver_note)}` : '');
+    link = 'calendar';
+  } else {
+    return;
+  }
+
+  DB.pushNotification({
+    id: payload.table + ':' + newRow.id + ':' + newRow.status,
+    type: meta.type,
+    title, body, link,
+    ts: Date.now()
+  });
+  // เด้ง toast ทันที (สั้นๆ) + อัปเดต bell badge
+  if (typeof toast === 'function') toast(`${title} — ${body.replace(/<[^>]+>/g,'')}`.slice(0, 140), meta.type);
+  renderNotifBell();
+}
+
+function renderNotifBell() {
+  const badge = document.getElementById('notifBellBadge');
+  if (!badge) return;
+  const unread = DB.getUnreadNotifCount?.() || 0;
+  if (unread > 0) {
+    badge.textContent = unread > 99 ? '99+' : String(unread);
+    badge.style.display = '';
+    document.getElementById('notifBell')?.classList.add('has-unread');
+  } else {
+    badge.style.display = 'none';
+    document.getElementById('notifBell')?.classList.remove('has-unread');
+  }
+}
+
+function renderNotifPanel() {
+  const panel = document.getElementById('notifPanel');
+  if (!panel) return;
+  const notifs = DB.getNotifications?.() || [];
+  const unread = notifs.filter(n => !n.read).length;
+  if (!notifs.length) {
+    panel.innerHTML = `
+      <div class="notif-panel-header">
+        <div class="notif-panel-title">การแจ้งเตือน</div>
+      </div>
+      <div class="notif-empty">
+        <div class="notif-empty-icon">🔔</div>
+        <div class="notif-empty-text">ยังไม่มีแจ้งเตือน</div>
+        <div class="notif-empty-hint">แจ้งเตือนจะมาเมื่อคำขอลา/วันหยุดของคุณถูกอนุมัติหรือปฏิเสธ</div>
+      </div>`;
+    return;
+  }
+  panel.innerHTML = `
+    <div class="notif-panel-header">
+      <div class="notif-panel-title">การแจ้งเตือน${unread ? ` <span class="notif-panel-count">${unread}</span>` : ''}</div>
+      <div class="notif-panel-actions">
+        ${unread ? '<button type="button" class="notif-action-btn" id="notifMarkAllRead">อ่านทั้งหมด</button>' : ''}
+        <button type="button" class="notif-action-btn" id="notifClearAll">ล้าง</button>
+      </div>
+    </div>
+    <div class="notif-list">
+      ${notifs.map(n => {
+        const diff = Date.now() - n.ts;
+        const rel = diff < 60_000 ? 'เมื่อสักครู่'
+                  : diff < 3_600_000 ? `${Math.floor(diff / 60_000)} นาทีที่แล้ว`
+                  : diff < 86_400_000 ? `${Math.floor(diff / 3_600_000)} ชม.ที่แล้ว`
+                  : `${Math.floor(diff / 86_400_000)} วันที่แล้ว`;
+        return `
+        <button type="button" class="notif-item ${n.read ? 'is-read' : 'is-unread'} notif-type-${n.type}" data-notif-id="${escapeHtml(n.id)}" ${n.link ? `data-notif-link="${escapeHtml(n.link)}"` : ''}>
+          <div class="notif-item-dot"></div>
+          <div class="notif-item-body">
+            <div class="notif-item-title">${n.title /* already escaped */}</div>
+            <div class="notif-item-text">${n.body /* already escaped */}</div>
+            <div class="notif-item-time">${rel}</div>
+          </div>
+        </button>`;
+      }).join('')}
+    </div>`;
+  // wire actions
+  panel.querySelector('#notifMarkAllRead')?.addEventListener('click', () => {
+    DB.markAllNotificationsRead();
+    renderNotifBell();
+    renderNotifPanel();
+  });
+  panel.querySelector('#notifClearAll')?.addEventListener('click', () => {
+    if (!confirm('ล้างแจ้งเตือนทั้งหมด?')) return;
+    DB.clearAllNotifications();
+    renderNotifBell();
+    renderNotifPanel();
+  });
+  panel.querySelectorAll('[data-notif-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.notifId;
+      const link = btn.dataset.notifLink;
+      DB.markNotificationRead(id);
+      renderNotifBell();
+      if (link && typeof router !== 'undefined') router.go(link);
+      toggleNotifPanel(false);
+    });
+  });
+}
+
+function toggleNotifPanel(forceState) {
+  const panel = document.getElementById('notifPanel');
+  if (!panel) return;
+  const willOpen = (forceState === undefined) ? panel.hidden : forceState;
+  if (willOpen) {
+    renderNotifPanel();
+    panel.hidden = false;
+  } else {
+    panel.hidden = true;
+  }
+}
+
+// Bell click → toggle panel; click outside → close
+document.addEventListener('click', (e) => {
+  const bell = e.target.closest('#notifBell');
+  if (bell) {
+    e.stopPropagation();
+    toggleNotifPanel();
+    return;
+  }
+  const panel = document.getElementById('notifPanel');
+  if (panel && !panel.hidden && !e.target.closest('#notifPanel')) {
+    toggleNotifPanel(false);
+  }
+});
+
 window.onRealtimeChange = (payload) => {
   if ($('#modalRoot').children.length > 0) return; // ไม่รบกวน modal ที่กำลังเปิด
   const table = payload?.table;
+
+  // Phase A: แจ้งเตือนพนักงานเมื่อคำขอลา/swap ของตัวเองถูก approve/reject/cancel
+  if (typeof handleSelfRequestChange === 'function') handleSelfRequestChange(payload);
 
   // อัปเดต badge การลา — เสมอ (ไม่ขึ้นกับหน้าปัจจุบัน)
   if (table === 'leave_requests' && typeof updateLeaveBadge === 'function') updateLeaveBadge();
