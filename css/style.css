@@ -5080,3 +5080,340 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
   .lcal-day-name { font-size: 10px; }
   .lcal-count { font-size: 9px; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   PHASE 1: FOUNDATION POLISH (v3 luxe refinement)
+   — Typography scale up · button min-height · form polish ·
+     table row breathing room · helper text system · spacing tokens
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  /* Spacing scale (multiples of 4) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Typography scale */
+  --fs-xs:   11px;
+  --fs-sm:   12px;
+  --fs-base: 13.5px;
+  --fs-md:   14px;
+  --fs-lg:   15px;
+  --fs-xl:   17px;
+  --fs-2xl:  20px;
+  --fs-3xl:  24px;
+  --fs-4xl:  32px;
+
+  /* Control heights (touch-friendly) */
+  --control-h-sm: 32px;
+  --control-h:    40px;
+  --control-h-lg: 48px;
+
+  /* Focus ring */
+  --focus-ring: 0 0 0 3px var(--primary-soft);
+}
+
+/* === Buttons: tactile heights === */
+.btn {
+  min-height: var(--control-h);
+  padding: 10px 18px;
+}
+.btn-sm {
+  min-height: var(--control-h-sm);
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+.btn-lg {
+  min-height: var(--control-h-lg);
+  padding: 12px 24px;
+  font-size: var(--fs-lg);
+}
+.btn-block {
+  min-height: var(--control-h-lg);
+  padding: 12px 18px;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  letter-spacing: 0.015em;
+}
+.btn-icon-only,
+.btn.btn-icon-only {
+  min-height: var(--control-h);
+  min-width: var(--control-h);
+  padding: 0;
+}
+
+/* === Form inputs: roomier, premium feel === */
+.form-group {
+  margin-bottom: var(--space-5);
+}
+.form-group > label,
+label.form-label {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: var(--space-2);
+  letter-spacing: 0.015em;
+}
+.form-group input[type="text"],
+.form-group input[type="email"],
+.form-group input[type="password"],
+.form-group input[type="tel"],
+.form-group input[type="number"],
+.form-group input[type="date"],
+.form-group input[type="time"],
+.form-group select,
+.form-group textarea,
+.sw-filter-input,
+.sw-filter-select {
+  min-height: var(--control-h);
+  padding: 10px 12px;
+  font-size: var(--fs-base);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  transition: border-color 0.18s var(--ease-out), box-shadow 0.18s var(--ease-out);
+}
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus,
+.sw-filter-input:focus,
+.sw-filter-select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: var(--focus-ring);
+}
+.form-group input:disabled,
+.form-group select:disabled,
+.form-group textarea:disabled {
+  background: var(--surface-2);
+  color: var(--text-3);
+  cursor: not-allowed;
+  border-style: dashed;
+}
+
+/* Required asterisk — visible & accessible */
+.form-group label .req,
+.form-group label[data-required]::after,
+.req-mark {
+  color: var(--danger);
+  font-weight: 700;
+  margin-left: 3px;
+}
+.form-group label[data-required]::after {
+  content: " *";
+}
+
+/* === Helper text system === */
+.form-help,
+.form-hint {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  margin-top: var(--space-2);
+  line-height: 1.5;
+}
+.form-help-error {
+  color: var(--danger);
+  font-weight: 500;
+}
+.form-help-success {
+  color: var(--success);
+}
+.form-help-warn {
+  color: var(--warning);
+}
+
+/* === Tables: more breathing room === */
+.table td,
+.sw-leave-table td,
+.sw-emp-table td {
+  padding: 14px 12px;
+  vertical-align: middle;
+}
+.table-compact td {
+  padding: 10px 12px;
+}
+.table thead th {
+  font-size: var(--fs-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: var(--text-2);
+  padding: 12px;
+  background: var(--surface-2);
+  border-bottom: 2px solid var(--border-strong);
+}
+.table tbody tr {
+  transition: background 0.12s var(--ease-out);
+}
+.table tbody tr:hover {
+  background: var(--surface-hover);
+}
+
+/* === Card padding consistency === */
+.sw-chart-card,
+.sw-stat-card {
+  padding: var(--space-6);
+}
+@media (min-width: 1200px) {
+  .sw-chart-card { padding: var(--space-8); }
+}
+
+/* === Modal polish === */
+.modal {
+  border-radius: var(--radius-lg);
+}
+.modal-header {
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--border);
+}
+.modal-body {
+  padding: var(--space-6);
+}
+.modal-footer {
+  padding: var(--space-5) var(--space-6);
+  gap: var(--space-3);
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* === Badge consistency === */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  letter-spacing: 0.015em;
+  line-height: 1.4;
+}
+
+/* === Page headers: stronger hierarchy === */
+.sw-page-title {
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.sw-page-subtitle {
+  font-size: var(--fs-md);
+  color: var(--text-2);
+  margin-top: 6px;
+  line-height: 1.55;
+}
+
+/* === Stat card refinements === */
+.sw-stat-label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.sw-stat-value {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 6px;
+}
+
+/* === Dark mode polish === */
+[data-theme="dark"] .table thead th {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-2);
+}
+[data-theme="dark"] .form-group input:disabled,
+[data-theme="dark"] .form-group select:disabled,
+[data-theme="dark"] .form-group textarea:disabled {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-3);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PHASE 2: ICON SYSTEM (line icons, premium)
+   ═══════════════════════════════════════════════════════════ */
+
+.ico {
+  display: inline-block;
+  vertical-align: -3px;
+  flex-shrink: 0;
+}
+.btn .ico {
+  width: 16px;
+  height: 16px;
+  vertical-align: -2px;
+}
+.btn-lg .ico { width: 18px; height: 18px; }
+.btn-sm .ico { width: 14px; height: 14px; vertical-align: -2px; }
+
+.sw-stat-icon .ico,
+.sw-stat-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* Leave-cal empty-state today section */
+.lcal-empty-today {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--success-soft);
+  color: var(--success-text);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--success);
+  font-size: var(--fs-md);
+  font-weight: 500;
+}
+[data-theme="dark"] .lcal-empty-today {
+  background: rgba(22, 101, 52, 0.15);
+  color: #86efac;
+}
+
+/* === PHASE 3+4 polish — placeholders + required marker === */
+.required-marker {
+  color: var(--danger);
+  font-weight: 700;
+  margin-left: 2px;
+}
+
+/* Empty state container premium */
+.empty-state {
+  text-align: center;
+  padding: var(--space-10) var(--space-6);
+}
+.empty-state .ico,
+.empty-state svg {
+  width: 48px;
+  height: 48px;
+  color: var(--text-3);
+  margin-bottom: var(--space-3);
+}
+.empty-state .title {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: var(--space-2);
+}
+.empty-state .hint {
+  font-size: var(--fs-md);
+  color: var(--text-2);
+  line-height: 1.6;
+  max-width: 380px;
+  margin: 0 auto;
+}
+.empty-state-cta {
+  margin-top: var(--space-5);
+}

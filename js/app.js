@@ -189,6 +189,55 @@ const fmt = {
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// ═══════════════════════════════════════════════════════════
+// ICON LIBRARY — line icons (luxe / premium replacement for emoji)
+// Usage: icon('check') → SVG string · icon('check', { size: 18 })
+// ═══════════════════════════════════════════════════════════
+const ICON_PATHS = {
+  check:        '<polyline points="20 6 9 17 4 12"/>',
+  x:            '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+  clock:        '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  calendar:     '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  users:        '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  user:         '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  settings:     '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+  chart:        '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="3" y1="20" x2="21" y2="20"/>',
+  pie:          '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
+  trending:     '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>',
+  alert:        '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  info:         '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+  briefcase:    '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
+  building:     '<path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9v.01"/><path d="M9 12v.01"/><path d="M9 15v.01"/><path d="M9 18v.01"/>',
+  star:         '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+  shield:       '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  bell:         '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  plus:         '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  search:       '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  edit:         '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>',
+  trash:        '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  arrowLeft:    '<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>',
+  arrowRight:   '<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>',
+  download:     '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  upload:       '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
+  refresh:      '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+  sparkles:     '<path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2L12 3z"/>',
+  swap:         '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
+  send:         '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
+  hourglass:    '<path d="M6 2h12v6l-4 4 4 4v6H6v-6l4-4-4-4z"/>',
+  party:        '<path d="M5.8 11.3 2 22l10.7-3.79"/><path d="M4 3h.01"/><path d="M22 8h.01"/><path d="M15 2h.01"/><path d="M22 20h.01"/><path d="M22 2 17 7l3 3 5-5z"/><path d="m14 14-3-3"/><path d="m20 14-5 6"/>',
+  empty:        '<circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/>'
+};
+
+function icon(name, opts = {}) {
+  const path = ICON_PATHS[name];
+  if (!path) return '';
+  const size = opts.size || 18;
+  const stroke = opts.stroke || 'currentColor';
+  const fill = opts.fill || 'none';
+  const cls = opts.class ? ` class="${opts.class}"` : ' class="ico"';
+  return `<svg${cls} width="${size}" height="${size}" viewBox="0 0 24 24" fill="${fill}" stroke="${stroke}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+}
+
 // ─── REUSABLE BRANCH PICKER (premium multi-select for managed branches) ───
 // ใช้กับ Area / Operation Manager ที่ต้องเลือกสาขาในขอบเขตการดูแล
 // คืน HTML string. Call wireBranchPicker(rootEl) หลัง render เพื่อ attach search/select-all/clear
@@ -12866,7 +12915,7 @@ router.register('leave-calendar', () => {
 
   // ─── Today summary list ───
   const todayHtml = todayList.length === 0
-    ? '<div class="muted-2" style="font-size:13px">ไม่มีพนักงานลาวันนี้ — ครบทุกคน 🎉</div>'
+    ? `<div class="lcal-empty-today">${icon('party', { size: 24 })} <span>ไม่มีพนักงานลาวันนี้ — ครบทุกคน</span></div>`
     : todayList.map(it => {
         const color = it.kind === 'swap' ? '#0891b2' : leaveTypeColor(it.leaveType);
         const typeLabel = it.kind === 'swap' ? 'ชดเชยวันหยุดประเพณี' : (DB.LEAVE_TYPES?.[it.leaveType]?.label || it.leaveType);
@@ -12893,25 +12942,25 @@ router.register('leave-calendar', () => {
 
     <div class="sw-stats-grid" style="margin-bottom:18px">
       <div class="sw-stat-card">
-        <div class="sw-stat-icon" style="background:rgba(59,130,246,0.12);color:#3b82f6">📅</div>
+        <div class="sw-stat-icon" style="background:rgba(59,130,246,0.12);color:#3b82f6">${icon('calendar', { size: 22 })}</div>
         <div class="sw-stat-label">วันนี้</div>
         <div class="sw-stat-value" style="color:${todayList.length > 0 ? '#dc2626' : 'var(--success)'}">${fmt.num(todayList.length)}</div>
         <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">${todayList.length > 0 ? 'พนักงานลาวันนี้' : 'ครบทุกคน'}</div>
       </div>
       <div class="sw-stat-card">
-        <div class="sw-stat-icon" style="background:rgba(234,179,8,0.12);color:#eab308">⏰</div>
+        <div class="sw-stat-icon" style="background:rgba(234,179,8,0.12);color:#eab308">${icon('clock', { size: 22 })}</div>
         <div class="sw-stat-label">7 วันข้างหน้า</div>
         <div class="sw-stat-value">${fmt.num(upcomingCount)}</div>
         <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">รายการลา/swap ที่กำลังมา</div>
       </div>
       <div class="sw-stat-card">
-        <div class="sw-stat-icon" style="background:rgba(124,58,237,0.12);color:#7c3aed">∑</div>
+        <div class="sw-stat-icon" style="background:rgba(124,58,237,0.12);color:#7c3aed">${icon('chart', { size: 22 })}</div>
         <div class="sw-stat-label">รวมเดือน ${_formatMonthTH(month)}</div>
         <div class="sw-stat-value">${fmt.num(monthTotalLeaveDays)}</div>
         <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">วัน-คน ที่ลาใน${isAllBranches ? `${allowedBranchIds.length} สาขา` : 'สาขานี้'}</div>
       </div>
       <div class="sw-stat-card">
-        <div class="sw-stat-icon" style="background:rgba(22,163,74,0.12);color:var(--success)">👥</div>
+        <div class="sw-stat-icon" style="background:rgba(22,163,74,0.12);color:var(--success)">${icon('users', { size: 22 })}</div>
         <div class="sw-stat-label">${isAllBranches ? 'พนักงานทุกสาขา' : 'พนักงานสาขา'}</div>
         <div class="sw-stat-value">${fmt.num(empsInBranch.length)}</div>
         <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">active${isAllBranches ? ` · ${allowedBranchIds.length} สาขา` : ' ในสาขานี้'}</div>
@@ -13012,7 +13061,7 @@ function openLeaveDayDetail(dateStr) {
   ];
 
   const body = items.length === 0
-    ? `<div class="empty-state" style="padding:30px"><div style="font-size:36px">🎉</div><div class="title">ไม่มีพนักงานลาวันนี้</div></div>`
+    ? `<div class="empty-state" style="padding:30px"><div style="color:var(--success);margin-bottom:8px">${icon('party', { size: 40 })}</div><div class="title">ไม่มีพนักงานลาวันนี้</div></div>`
     : `<div class="lcal-modal-list">
         ${items.map(it => {
           const e = it.emp || {};
@@ -13146,8 +13195,8 @@ router.register('schedule', () => {
         <div class="sw-page-subtitle">จัดกะรายสัปดาห์ · หลายสาขา · มีขออนุมัติ</div>
       </div>
       <div class="sw-page-actions">
-        ${(DB.isHR || DB.role === 'operation_manager' || DB.role === 'area_manager') ? `<button class="btn btn-secondary" onclick="openAllBranchesOverview()">📊 ภาพรวมทุกสาขา</button>` : ''}
-        ${DB.isHR ? `<button class="btn btn-secondary" onclick="openShiftsManager()">⚙ จัดการกะ</button>` : ''}
+        ${(DB.isHR || DB.role === 'operation_manager' || DB.role === 'area_manager') ? `<button class="btn btn-secondary" onclick="openAllBranchesOverview()">${icon('chart')} ภาพรวมทุกสาขา</button>` : ''}
+        ${DB.isHR ? `<button class="btn btn-secondary" onclick="openShiftsManager()">${icon('settings')} จัดการกะ</button>` : ''}
       </div>
     </div>
 
@@ -13174,7 +13223,7 @@ router.register('schedule', () => {
         <div class="schedule-status-actions">
           ${canEdit && branchId ? `<button class="btn btn-ghost" onclick="openAddCrossBranchEmployee()">+ พนักงานข้ามสาขา</button>` : ''}
           ${canSubmit ? `<button class="btn btn-primary" onclick="submitScheduleWeekUI()">ส่งขออนุมัติ</button>` : ''}
-          ${canApprove ? `<button class="btn btn-primary" onclick="approveScheduleWeekUI()">✓ อนุมัติ</button>` : ''}
+          ${canApprove ? `<button class="btn btn-primary" onclick="approveScheduleWeekUI()">${icon('check')} อนุมัติ</button>` : ''}
           ${canApprove ? `<button class="btn btn-danger" onclick="rejectScheduleWeekUI()">ปฏิเสธ</button>` : ''}
           ${canReopen ? `<button class="btn btn-secondary" onclick="reopenScheduleWeekUI()">เปิดให้แก้ไข</button>` : ''}
         </div>
