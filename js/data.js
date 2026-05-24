@@ -421,8 +421,9 @@ const DB = {
     const _p2T0 = performance.now();
     this._secondaryLoadPromise = Promise.all([
       // ─── จาก Phase 1 (เดิม block login) ย้ายมา Phase 2 — ไม่จำเป็นต่อ dashboard ───
-      timed('calendar_items',          this.client.from('calendar_items').select('*').order('date').catch(() => ({ data: [] }))),
-      timed('company_settings',        this.client.from('company_settings').select('*').eq('id', 1).maybeSingle().catch(() => ({ data: null }))),
+      // หมายเหตุ: Supabase query builder เป็น "thenable" ไม่ใช่ Promise จริง — ใช้ .then(ok, err) แทน .catch
+      timed('calendar_items',          this.client.from('calendar_items').select('*').order('date').then(r => r, () => ({ data: [] }))),
+      timed('company_settings',        this.client.from('company_settings').select('*').eq('id', 1).maybeSingle().then(r => r, () => ({ data: null }))),
       timed('leave_requests',          this._fetchAllPages('leave_requests', 'start_date', false).catch(() => [])),
       timed('leave_types',             this._fetchAllPages('leave_types', 'sort_order', true).catch(() => [])),
       timed('holiday_swap_requests',   this._fetchAllPages('holiday_swap_requests', 'requested_at', false).catch(() => [])),
