@@ -2501,9 +2501,9 @@ function renderEmployeeList() {
               <td class="num"><strong>${maskMoney(e.salary, e.id)}</strong></td>
               <td>${statusCell}</td>
               <td class="actions">
-                <button class="btn btn-ghost btn-sm" onclick="viewEmployee('${e.id}')">ดู</button>
-                ${DB.canEdit() ? `<button class="btn btn-ghost btn-sm" onclick="openEmployeeForm('${e.id}')">แก้</button>` : ''}
-                ${DB.canDelete() ? `<button class="btn btn-ghost btn-sm" onclick="deleteEmployee('${e.id}')">ลบ</button>` : ''}
+                <button class="btn btn-ghost btn-sm" onclick="viewEmployee('${escapeHtml(e.id)}')">ดู</button>
+                ${DB.canEdit() ? `<button class="btn btn-ghost btn-sm" onclick="openEmployeeForm('${escapeHtml(e.id)}')">แก้</button>` : ''}
+                ${DB.canDelete() ? `<button class="btn btn-ghost btn-sm" onclick="deleteEmployee('${escapeHtml(e.id)}')">ลบ</button>` : ''}
               </td>
             </tr>`;
           }).join('')}
@@ -3352,7 +3352,7 @@ function openEmployeeForm(id = null, init = null, onSaved = null) {
           <select name="userRole" id="userRoleSel">
             ${Object.entries(ROLE_LABELS).map(([k, v]) => `<option value="${k}" ${roleKey === k ? 'selected' : ''}>${v.th}</option>`).join('')}
           </select>
-          ${autoRole ? `<small class="muted-2" style="display:block;margin-top:4px">💡 Auto-detect: <strong>${ROLE_LABELS[autoRole]?.th || autoRole}</strong> <button type="button" class="btn btn-ghost btn-sm" style="padding:1px 8px;margin-left:6px" onclick="document.getElementById('userRoleSel').value='${autoRole}';document.getElementById('userRoleSel').dispatchEvent(new Event('change'))">ใช้ค่านี้</button></small>` : ''}
+          ${autoRole ? `<small class="muted-2" style="display:block;margin-top:4px">💡 Auto-detect: <strong>${escapeHtml(ROLE_LABELS[autoRole]?.th || autoRole)}</strong> <button type="button" class="btn btn-ghost btn-sm" style="padding:1px 8px;margin-left:6px" onclick="document.getElementById('userRoleSel').value='${escapeHtml(autoRole)}';document.getElementById('userRoleSel').dispatchEvent(new Event('change'))">ใช้ค่านี้</button></small>` : ''}
         </div>
         <div class="form-group span-2" id="userBranchesGroup" style="display:${['area_manager','operation_manager'].includes(roleKey) ? '' : 'none'}">
           <label>สาขาที่ดูแล <span class="muted-2" style="font-weight:normal;font-size:11px">(เฉพาะ Area / Operation Manager · ถ้าไม่เลือก = ใช้สาขาของตัวเอง)</span></label>
@@ -4938,7 +4938,7 @@ router.register('departments', () => {
               <td class="sw-cell-meta">${mgr ? escapeHtml(mgr.firstName + ' ' + mgr.lastName) : '<span class="muted-2">—</span>'}</td>
               <td class="num"><strong>${fmt.num(count)}</strong><span class="muted-2" style="font-size:11px"> คน</span></td>
               <td class="sw-reason-cell">${escapeHtml(d.note || '—')}</td>
-              <td class="actions">${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openDeptForm('${d.id}')">แก้</button><button class="btn btn-ghost btn-sm" onclick="deleteDept('${d.id}')">ลบ</button>` : ''}</td>
+              <td class="actions">${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openDeptForm('${escapeHtml(d.id)}')">แก้</button><button class="btn btn-ghost btn-sm" onclick="deleteDept('${escapeHtml(d.id)}')">ลบ</button>` : ''}</td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -5129,7 +5129,7 @@ router.register('positions', () => {
               <td class="num">${p.minSalary ? fmt.money(p.minSalary) : '<span class="muted-2">—</span>'}</td>
               <td class="num">${p.maxSalary ? fmt.money(p.maxSalary) : '<span class="muted-2">—</span>'}</td>
               <td class="num"><strong>${fmt.num(count)}</strong><span class="muted-2" style="font-size:11px"> คน</span></td>
-              <td class="actions">${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openPositionForm('${p.id}')">แก้</button><button class="btn btn-ghost btn-sm" onclick="deletePosition('${p.id}')">ลบ</button>` : ''}</td>
+              <td class="actions">${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openPositionForm('${escapeHtml(p.id)}')">แก้</button><button class="btn btn-ghost btn-sm" onclick="deletePosition('${escapeHtml(p.id)}')">ลบ</button>` : ''}</td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -5218,7 +5218,7 @@ function openScopeForm(id = null) {
     { name: 'เทา',               bg: 'rgba(148,163,184,0.15)', color: '#475569' }
   ];
   const presetHtml = presets.map(p =>
-    `<button type="button" class="btn btn-ghost btn-sm" style="padding:4px 10px" onclick="document.getElementById('scopeBadgeBg').value='${p.bg}';document.getElementById('scopeBadgeColor').value='${p.color}';document.getElementById('scopePreview').style.background='${p.bg}';document.getElementById('scopePreview').style.color='${p.color}'">${escapeHtml(p.name)}</button>`
+    `<button type="button" class="btn btn-ghost btn-sm" style="padding:4px 10px" onclick="document.getElementById('scopeBadgeBg').value='${escapeHtml(p.bg)}';document.getElementById('scopeBadgeColor').value='${escapeHtml(p.color)}';document.getElementById('scopePreview').style.background='${escapeHtml(p.bg)}';document.getElementById('scopePreview').style.color='${escapeHtml(p.color)}'">${escapeHtml(p.name)}</button>`
   ).join(' ');
 
   modal.open(id ? 'แก้ไขสายงาน' : 'เพิ่มสายงาน', `
@@ -5499,7 +5499,7 @@ function renderApplicantList() {
             const uniReq = DB.getUniformRequestByApplicant(a.id);
             const uniStatus = uniReq ? (UNIFORM_STATUS[uniReq.status] || UNIFORM_STATUS.pending) : null;
             const uniCell = uniReq
-              ? `<button class="btn btn-ghost btn-sm" style="padding:2px 8px" onclick="openUniformRequestForm('${uniReq.id}')" title="คลิกเพื่อดู/แก้ไขคำขอจัดชุด"><span class="badge ${uniStatus.cls}">${uniStatus.label}</span></button>`
+              ? `<button class="btn btn-ghost btn-sm" style="padding:2px 8px" onclick="openUniformRequestForm('${escapeHtml(uniReq.id)}')" title="คลิกเพื่อดู/แก้ไขคำขอจัดชุด"><span class="badge ${uniStatus.cls}">${uniStatus.label}</span></button>`
               : `<span class="muted-2" style="font-size:12px">—</span>`;
             return `
               <tr>
@@ -5521,10 +5521,10 @@ function renderApplicantList() {
                 <td><span class="badge ${s.badge}">${s.label}</span></td>
                 <td>${uniCell}</td>
                 <td class="actions">
-                  ${DB.isHR && a.status !== 'hired' ? `<button class="btn btn-primary btn-sm" onclick="hireApplicant('${a.id}')" title="สร้างเป็นพนักงาน">รับเข้า</button>` : ''}
-                  ${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openApplicantForm('${a.id}')">แก้ไข</button>
-                  <button class="btn btn-ghost btn-sm" onclick="deleteApplicant('${a.id}')">ลบ</button>` : ''}
-                  ${a.hiredEmployeeId ? `<button class="btn btn-ghost btn-sm" onclick="viewEmployee('${a.hiredEmployeeId}')" title="ดูประวัติพนักงาน">ดูพนักงาน</button>` : ''}
+                  ${DB.isHR && a.status !== 'hired' ? `<button class="btn btn-primary btn-sm" onclick="hireApplicant('${escapeHtml(a.id)}')" title="สร้างเป็นพนักงาน">รับเข้า</button>` : ''}
+                  ${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openApplicantForm('${escapeHtml(a.id)}')">แก้ไข</button>
+                  <button class="btn btn-ghost btn-sm" onclick="deleteApplicant('${escapeHtml(a.id)}')">ลบ</button>` : ''}
+                  ${a.hiredEmployeeId ? `<button class="btn btn-ghost btn-sm" onclick="viewEmployee('${escapeHtml(a.hiredEmployeeId)}')" title="ดูประวัติพนักงาน">ดูพนักงาน</button>` : ''}
                 </td>
               </tr>`;
           }).join('')}
@@ -6571,8 +6571,8 @@ router.register('sso', () => {
                     <td>${fmt.date(dl)}</td>
                     <td>${overdue ? '<span class="badge badge-danger">เกินกำหนด</span>' : '<span class="badge badge-warning">รอแจ้ง</span>'}</td>
                     <td class="actions">
-                      ${DB.isHR ? `<button class="btn btn-primary btn-sm" onclick="markSSO('${e.id}', '${tab}')">บันทึก${tab === 'enroll' ? 'แจ้งเข้า' : 'แจ้งออก'}แล้ว</button>` : ''}
-                      <button class="btn btn-ghost btn-sm" onclick="viewEmployee('${e.id}')">ดู</button>
+                      ${DB.isHR ? `<button class="btn btn-primary btn-sm" onclick="markSSO('${escapeHtml(e.id)}', '${escapeHtml(tab)}')">บันทึก${tab === 'enroll' ? 'แจ้งเข้า' : 'แจ้งออก'}แล้ว</button>` : ''}
+                      <button class="btn btn-ghost btn-sm" onclick="viewEmployee('${escapeHtml(e.id)}')">ดู</button>
                     </td>
                   </tr>`;
               }).join('')}
@@ -6765,8 +6765,8 @@ function renderUniformScheduleTable() {
               <td>${s.active ? '<span class="badge badge-success">ใช้งาน</span>' : '<span class="badge">ปิด</span>'}</td>
               <td>${escapeHtml(s.note || '-')}</td>
               <td class="actions">
-                ${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openUniformScheduleForm('${s.id}')">แก้</button>
-                <button class="btn btn-ghost btn-sm" onclick="deleteUniformSchedule('${s.id}')">ลบ</button>` : ''}
+                ${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openUniformScheduleForm('${escapeHtml(s.id)}')">แก้</button>
+                <button class="btn btn-ghost btn-sm" onclick="deleteUniformSchedule('${escapeHtml(s.id)}')">ลบ</button>` : ''}
               </td>
             </tr>
           `).join('');
@@ -6870,9 +6870,9 @@ function renderUniformRequestsTable() {
                 : (r.note ? `<div class="note-clamp" title="${escapeHtml(r.note)}">${escapeHtml(r.note)}</div>` : '<div class="note-empty">⚠️ ยังไม่ระบุ</div>')
             }</td>
             <td class="actions">
-              ${DB.isHR ? `<button class="btn btn-primary btn-sm" onclick="openIssueItemsForm('${r.id}')">จัดชุด</button>
-              <button class="btn btn-ghost btn-sm" onclick="openUniformRequestForm('${r.id}')">แก้</button>
-              <button class="btn btn-ghost btn-sm" onclick="deleteUniformRequest('${r.id}')">ลบ</button>` : ''}
+              ${DB.isHR ? `<button class="btn btn-primary btn-sm" onclick="openIssueItemsForm('${escapeHtml(r.id)}')">จัดชุด</button>
+              <button class="btn btn-ghost btn-sm" onclick="openUniformRequestForm('${escapeHtml(r.id)}')">แก้</button>
+              <button class="btn btn-ghost btn-sm" onclick="deleteUniformRequest('${escapeHtml(r.id)}')">ลบ</button>` : ''}
             </td>
           </tr>`;
         }).join('')}
@@ -6945,8 +6945,8 @@ function renderUniformItemsTable() {
             <td>${i.active ? '<span class="badge badge-success">ใช้งาน</span>' : '<span class="badge">ปิด</span>'}</td>
             <td>${escapeHtml(i.note || '-')}</td>
             <td class="actions">
-              ${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openUniformItemForm('${i.id}')">แก้ไข</button>
-              <button class="btn btn-ghost btn-sm" onclick="deleteUniformItem('${i.id}')">ลบ</button>` : ''}
+              ${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openUniformItemForm('${escapeHtml(i.id)}')">แก้ไข</button>
+              <button class="btn btn-ghost btn-sm" onclick="deleteUniformItem('${escapeHtml(i.id)}')">ลบ</button>` : ''}
             </td>
           </tr>`;
         }).join('')}
@@ -6995,7 +6995,7 @@ function renderUniformIssuesTable() {
             <td class="num"><strong>${fmt.money(i.totalCost)}</strong></td>
             <td>${escapeHtml(i.issuedBy || '-')}</td>
             <td>${escapeHtml(i.note || '-')}</td>
-            <td class="actions">${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="deleteUniformIssue('${i.id}')">ลบ</button>` : ''}</td>
+            <td class="actions">${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="deleteUniformIssue('${escapeHtml(i.id)}')">ลบ</button>` : ''}</td>
           </tr>`;
         }).join('')}
       </tbody>
@@ -7056,7 +7056,7 @@ function openUniformRequestForm(id = null) {
     hint.innerHTML = `🚚 สาขา <strong>${escapeHtml(emp.branch)}</strong> ส่งวัน <strong>${days}</strong>` +
       (next ? ` · รอบถัดไป <strong>${fmt.date(next.date)} (${next.dayName})</strong>` : '');
     if (neededHint && next) {
-      neededHint.innerHTML = `<button type="button" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="document.getElementById('uniNeededByInput').value='${next.date}'">ใส่ ${fmt.date(next.date)}</button>`;
+      neededHint.innerHTML = `<button type="button" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="document.getElementById('uniNeededByInput').value='${escapeHtml(next.date)}'">ใส่ ${fmt.date(next.date)}</button>`;
     }
   });
   $('#uniReqForm').addEventListener('submit', async (e) => {
@@ -7214,8 +7214,8 @@ function openIssueItemsForm(requestId) {
 
   const isFromApplicant = refLabel === 'ผู้สมัคร';
   const editLink = isFromApplicant && req.applicantId
-    ? `<button type="button" class="btn btn-ghost btn-sm" onclick="modal.close(); openApplicantForm('${req.applicantId}')" style="margin-left:8px;font-size:11px">✏️ แก้ไขที่ recruit</button>`
-    : (req.employeeId ? `<button type="button" class="btn btn-ghost btn-sm" onclick="modal.close(); openUniformRequestForm('${req.id}')" style="margin-left:8px;font-size:11px">✏️ แก้ไขคำขอ</button>` : '');
+    ? `<button type="button" class="btn btn-ghost btn-sm" onclick="modal.close(); openApplicantForm('${escapeHtml(req.applicantId)}')" style="margin-left:8px;font-size:11px">✏️ แก้ไขที่ recruit</button>`
+    : (req.employeeId ? `<button type="button" class="btn btn-ghost btn-sm" onclick="modal.close(); openUniformRequestForm('${escapeHtml(req.id)}')" style="margin-left:8px;font-size:11px">✏️ แก้ไขคำขอ</button>` : '');
 
   modal.open(`บันทึกการจัดชุด — ${escapeHtml(owner.firstName + ' ' + (owner.lastName || ''))}`, `
     <div class="form-section">
@@ -7228,8 +7228,8 @@ function openIssueItemsForm(requestId) {
           <div style="padding:14px 16px;background:var(--warning-soft);color:var(--warning-text);border-radius:8px;font-size:13px;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
             <div>⚠️ <strong>ยังไม่ระบุรายละเอียดชุด</strong> — recruit ยังไม่ได้กรอก size/ประเภท/จำนวน${isFromApplicant ? ' ที่ตอนเพิ่มผู้สมัคร' : ''}</div>
             ${isFromApplicant && req.applicantId
-              ? `<button type="button" class="btn btn-primary btn-sm" onclick="modal.close(); openApplicantForm('${req.applicantId}')">ไปแก้ไขที่ recruit</button>`
-              : (req.employeeId ? `<button type="button" class="btn btn-primary btn-sm" onclick="modal.close(); openUniformRequestForm('${req.id}')">ไปกรอกรายละเอียด</button>` : '')}
+              ? `<button type="button" class="btn btn-primary btn-sm" onclick="modal.close(); openApplicantForm('${escapeHtml(req.applicantId)}')">ไปแก้ไขที่ recruit</button>`
+              : (req.employeeId ? `<button type="button" class="btn btn-primary btn-sm" onclick="modal.close(); openUniformRequestForm('${escapeHtml(req.id)}')">ไปกรอกรายละเอียด</button>` : '')}
           </div>
         </div>` : ''}
       </div>
@@ -7273,7 +7273,7 @@ function openIssueItemsForm(requestId) {
               ? `<label style="font-size:12.5px;color:var(--text-2);display:flex;align-items:center;gap:6px;margin:0">วันที่จัดส่ง:
                   <input type="date" id="recruitIssueDate" value="${tz.today()}" style="padding:6px 10px;font-size:13px;width:auto"/>
                  </label>
-                 <button type="button" class="btn btn-primary" onclick="issueAllFromRecruit('${requestId}')">🚀 ส่งทั้งหมดตาม recruit (${matchedCount} รายการ)</button>`
+                 <button type="button" class="btn btn-primary" onclick="issueAllFromRecruit('${escapeHtml(requestId)}')">🚀 ส่งทั้งหมดตาม recruit (${matchedCount} รายการ)</button>`
               : `<span class="muted-2" style="font-size:12px;color:var(--warning)">⚠️ ไม่มีรายการที่ match กับ stock — เพิ่ม master ก่อน หรือลงรายการ manual ด้านล่าง</span>`}
           </div>
           ${matched.some(m => !m.item) ? `<div class="muted-2" style="font-size:11.5px;color:var(--warning);margin-top:8px;line-height:1.6">💡 รายการที่ match ไม่ได้จะถูกข้าม — ให้ลงรายการเพิ่มแบบ manual ในส่วน "เพิ่มรายการ" ด้านล่าง</div>` : ''}
@@ -7293,7 +7293,7 @@ function openIssueItemsForm(requestId) {
             <td class="num">${i.qty}</td>
             <td class="num">${fmt.money(i.unitCost)}</td>
             <td class="num">${fmt.money(i.totalCost)}</td>
-            <td><button class="btn btn-ghost btn-sm" onclick="(async () => { if (await modal.confirm('ลบรายการ','คืน stock + ลบรายการ?')) { await DB.deleteUniformIssue('${i.id}'); toast('ลบแล้ว','success'); openIssueItemsForm('${requestId}'); } })()">ลบ</button></td>
+            <td><button class="btn btn-ghost btn-sm" onclick="(async () => { if (await modal.confirm('ลบรายการ','คืน stock + ลบรายการ?')) { await DB.deleteUniformIssue('${escapeHtml(i.id)}'); toast('ลบแล้ว','success'); openIssueItemsForm('${escapeHtml(requestId)}'); } })()">ลบ</button></td>
           </tr>`).join('')}
         </tbody>
       </table></div>` : '<div class="muted-2" style="padding:12px 0">— ยังไม่มี —</div>'}
@@ -7320,10 +7320,10 @@ function openIssueItemsForm(requestId) {
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button type="button" class="btn btn-secondary" data-close>ปิด</button>
             ${req.status !== 'issued' && req.status !== 'cancelled' ? `
-              <button type="button" class="btn btn-success" onclick="markUniformRequestIssued('${requestId}')" title="ทำเครื่องหมายว่าจัดส่งครบแล้ว (เปลี่ยนสถานะเป็น 'จัดส่งแล้ว')">
+              <button type="button" class="btn btn-success" onclick="markUniformRequestIssued('${escapeHtml(requestId)}')" title="ทำเครื่องหมายว่าจัดส่งครบแล้ว (เปลี่ยนสถานะเป็น 'จัดส่งแล้ว')">
                 ✓ จัดส่งครบแล้ว
               </button>
-            ` : `<button type="button" class="btn btn-success" onclick="confirmIssueAndClose('${requestId}')" title="ยืนยันการจัดส่งเรียบร้อย + ปิดหน้านี้">
+            ` : `<button type="button" class="btn btn-success" onclick="confirmIssueAndClose('${escapeHtml(requestId)}')" title="ยืนยันการจัดส่งเรียบร้อย + ปิดหน้านี้">
                 ✓ ยืนยันการจัดส่ง · ปิด
               </button>`}
           </div>
@@ -8207,7 +8207,7 @@ router.register('loans', () => {
               <td class="num" style="color:${Number(l.remaining) > 0 ? 'var(--danger)' : 'var(--text-2)'}">${fmt.money(l.remaining)}</td>
               <td>${l.status === 'completed' ? '<span class="badge badge-success">✓ ปิดยอด</span>' : '<span class="badge badge-warning">⏳ ผ่อนอยู่</span>'}</td>
               <td class="sw-reason-cell">${escapeHtml(l.reason || '—')}</td>
-              <td class="actions">${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openLoanForm('${l.id}')">แก้</button><button class="btn btn-ghost btn-sm" onclick="deleteLoanRec('${l.id}')">ลบ</button>` : ''}</td>
+              <td class="actions">${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openLoanForm('${escapeHtml(l.id)}')">แก้</button><button class="btn btn-ghost btn-sm" onclick="deleteLoanRec('${escapeHtml(l.id)}')">ลบ</button>` : ''}</td>
             </tr>`; }).join('')}
         </tbody>
       </table></div>` : `<div class="empty-state" style="padding:60px 20px">
@@ -8324,7 +8324,7 @@ router.register('advances', () => {
               <td class="num"><strong>${fmt.money(a.amount)}</strong></td>
               <td class="sw-reason-cell">${escapeHtml(a.reason || '—')}</td>
               <td>${a.status === 'paid' ? '<span class="badge badge-success">✓ จ่ายแล้ว</span>' : '<span class="badge badge-warning">⏳ รอจ่าย</span>'}</td>
-              <td class="actions">${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openAdvanceForm('${a.id}')">แก้</button><button class="btn btn-ghost btn-sm" onclick="deleteAdvRec('${a.id}')">ลบ</button>` : ''}</td>
+              <td class="actions">${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openAdvanceForm('${escapeHtml(a.id)}')">แก้</button><button class="btn btn-ghost btn-sm" onclick="deleteAdvRec('${escapeHtml(a.id)}')">ลบ</button>` : ''}</td>
             </tr>`; }).join('')}
         </tbody>
       </table></div>` : `<div class="empty-state" style="padding:60px 20px">
@@ -8441,7 +8441,7 @@ router.register('allowance', () => {
               <td><span class="badge badge-info" style="font-size:11px">${escapeHtml(a.type || '—')}</span></td>
               <td class="num"><strong>${fmt.money(a.amount)}</strong></td>
               <td class="sw-reason-cell">${escapeHtml(a.note || '—')}</td>
-              <td class="actions">${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openAllowanceForm('${a.id}')">แก้</button><button class="btn btn-ghost btn-sm" onclick="deleteAllowRec('${a.id}')">ลบ</button>` : ''}</td>
+              <td class="actions">${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openAllowanceForm('${escapeHtml(a.id)}')">แก้</button><button class="btn btn-ghost btn-sm" onclick="deleteAllowRec('${escapeHtml(a.id)}')">ลบ</button>` : ''}</td>
             </tr>`; }).join('')}
         </tbody>
       </table></div>` : `<div class="empty-state" style="padding:60px 20px">
@@ -8555,7 +8555,7 @@ router.register('evaluations', () => {
               <td class="num"><strong style="color:${gradeColor(sc)};font-size:14px">${v.score}</strong><span class="muted-2" style="font-size:11px">/100</span></td>
               <td><span class="badge ${sc >= 80 ? 'badge-success' : sc >= 50 ? 'badge-info' : 'badge-danger'}">${escapeHtml(v.grade || '—')}</span></td>
               <td class="sw-reason-cell">${escapeHtml(v.note || '—')}</td>
-              <td class="actions">${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openEvalForm('${v.id}')">แก้</button><button class="btn btn-ghost btn-sm" onclick="deleteEvalRec('${v.id}')">ลบ</button>` : ''}</td>
+              <td class="actions">${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openEvalForm('${escapeHtml(v.id)}')">แก้</button><button class="btn btn-ghost btn-sm" onclick="deleteEvalRec('${escapeHtml(v.id)}')">ลบ</button>` : ''}</td>
             </tr>`; }).join('')}
         </tbody>
       </table></div>` : `<div class="empty-state" style="padding:60px 20px">
@@ -9182,9 +9182,9 @@ router.register('calendar', () => {
     if (isTarget) {
       statusCell = `<span class="badge badge-success" style="font-size:10.5px">หยุดชดเชย</span><div class="muted-2" style="font-size:11px;margin-top:2px">แทน ${fmt.date(c._originalDate)}</div>`;
     } else if (isMineSwapped) {
-      statusCell = `<span class="badge badge-warning" style="font-size:10.5px;cursor:pointer" onclick="openSwapRequestDetail('${mySwapApproved.id}')">มาทำงาน → ชดเชย ${fmt.date(mySwapApproved.swapToDate)}</span>`;
+      statusCell = `<span class="badge badge-warning" style="font-size:10.5px;cursor:pointer" onclick="openSwapRequestDetail('${escapeHtml(mySwapApproved.id)}')">มาทำงาน → ชดเชย ${fmt.date(mySwapApproved.swapToDate)}</span>`;
     } else if (myPendingReq) {
-      statusCell = `<span class="badge badge-info" style="font-size:10.5px;cursor:pointer" onclick="openSwapRequestDetail('${myPendingReq.id}')">🕒 รออนุมัติ → ${fmt.date(myPendingReq.swapToDate)}</span>`;
+      statusCell = `<span class="badge badge-info" style="font-size:10.5px;cursor:pointer" onclick="openSwapRequestDetail('${escapeHtml(myPendingReq.id)}')">🕒 รออนุมัติ → ${fmt.date(myPendingReq.swapToDate)}</span>`;
     } else if (isNext) {
       statusCell = `<span style="font-size:10.5px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:0.08em">วันถัดไป</span>`;
     } else if (isPast) {
@@ -9193,10 +9193,10 @@ router.register('calendar', () => {
 
     // ปุ่ม actions
     const actions = [];
-    if (canRequestSwap) actions.push(`<button class="btn btn-ghost btn-sm" style="font-size:11.5px" onclick="openSwapRequestForm('${c.id}')">⇄ เสนอเปลี่ยน</button>`);
+    if (canRequestSwap) actions.push(`<button class="btn btn-ghost btn-sm" style="font-size:11.5px" onclick="openSwapRequestForm('${escapeHtml(c.id)}')">⇄ เสนอเปลี่ยน</button>`);
     if (DB.isHR && !isTarget) {
-      actions.push(`<button class="btn btn-ghost btn-sm" style="font-size:11.5px" onclick="openCalForm('${c.id}')">แก้</button>`);
-      actions.push(`<button class="btn btn-ghost btn-sm" style="font-size:11.5px;color:var(--danger)" onclick="deleteCalRec('${c.id}')">ลบ</button>`);
+      actions.push(`<button class="btn btn-ghost btn-sm" style="font-size:11.5px" onclick="openCalForm('${escapeHtml(c.id)}')">แก้</button>`);
+      actions.push(`<button class="btn btn-ghost btn-sm" style="font-size:11.5px;color:var(--danger)" onclick="deleteCalRec('${escapeHtml(c.id)}')">ลบ</button>`);
     }
 
     return `<tr style="${rowStyle}">
@@ -9344,7 +9344,7 @@ router.register('calendar', () => {
         <td style="font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums;white-space:nowrap">${r.requestedAt ? new Date(r.requestedAt).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short' }) : '-'}</td>
         <td style="text-align:right;white-space:nowrap">
           ${renderSwapChainActions(r)}
-          <button class="btn btn-ghost btn-sm" style="font-size:11.5px" onclick="openSwapRequestDetail('${r.id}')">รายละเอียด</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11.5px" onclick="openSwapRequestDetail('${escapeHtml(r.id)}')">รายละเอียด</button>
         </td>
       </tr>`;
     };
@@ -9570,7 +9570,7 @@ function openCalForm(id = null) {
             'ฉันยังไม่ได้ขอเปลี่ยนวันหยุดนี้'
           }${otherReqsCount ? ` · มีคำขอ pending ของพนักงานอื่น ${otherReqsCount} รายการ` : ''}</div>
         </div>
-        ${myEmpId ? `<button type="button" class="btn btn-secondary btn-sm" onclick="modal.close(); ${myPendingReq || myApprovedReq ? `openSwapRequestDetail('${(myPendingReq || myApprovedReq).id}')` : `openSwapRequestForm('${id}')`}">
+        ${myEmpId ? `<button type="button" class="btn btn-secondary btn-sm" onclick="modal.close(); ${myPendingReq || myApprovedReq ? `openSwapRequestDetail('${escapeHtml((myPendingReq || myApprovedReq).id)}')` : `openSwapRequestForm('${escapeHtml(id)}')`}">
           ${myPendingReq || myApprovedReq ? 'ดูคำขอของฉัน' : '+ เสนอเปลี่ยน'}
         </button>` : ''}
       </div>
@@ -9854,10 +9854,10 @@ function openSwapRequestDetail(requestId) {
     </div>
     <div class="form-actions" style="margin-top:18px">
       <button type="button" class="btn btn-secondary" data-close>ปิด</button>
-      ${canCancel ? `<button type="button" class="btn btn-ghost" onclick="cancelSwapReq('${req.id}')">ยกเลิกคำขอ</button>` : ''}
+      ${canCancel ? `<button type="button" class="btn btn-ghost" onclick="cancelSwapReq('${escapeHtml(req.id)}')">ยกเลิกคำขอ</button>` : ''}
       ${canApprove ? `
-        <button type="button" class="btn btn-danger" onclick="rejectSwapReq('${req.id}')">ปฏิเสธ</button>
-        <button type="button" class="btn btn-primary" onclick="approveSwapReq('${req.id}')">อนุมัติ</button>
+        <button type="button" class="btn btn-danger" onclick="rejectSwapReq('${escapeHtml(req.id)}')">ปฏิเสธ</button>
+        <button type="button" class="btn btn-primary" onclick="approveSwapReq('${escapeHtml(req.id)}')">อนุมัติ</button>
       ` : ''}
     </div>`);
 }
@@ -9995,7 +9995,7 @@ router.register('announcements', () => {
     const isUnread = showUnread && !DB.isAnnouncementRead(a.id);
     const docLabel = a.docNumber ? `${a.type === 'order' ? 'คำสั่งที่' : 'ประกาศที่'} ${a.docNumber}` : '';
     const cardClasses = ['sw-ann-card', a.pinned ? 'is-pinned' : '', isUnread ? 'is-unread' : ''].filter(Boolean).join(' ');
-    return `<div class="${cardClasses}" data-type="${a.type}" onclick="openAnnouncementDetail('${a.id}')">
+    return `<div class="${cardClasses}" data-type="${escapeHtml(a.type)}" onclick="openAnnouncementDetail('${escapeHtml(a.id)}')">
       ${a.imageUrl ? `<div class="sw-ann-thumb" style="background-image:url('${escapeHtml(a.imageUrl)}')"></div>` : ''}
       <div class="sw-ann-body">
         <div class="sw-ann-meta">
@@ -10110,8 +10110,8 @@ function openAnnouncementDetail(id) {
     </div>` : ''}
     <div class="form-actions">
       <button type="button" class="btn btn-secondary" data-close>ปิด</button>
-      ${DB.isHR ? `<button type="button" class="btn btn-ghost" onclick="deleteAnnouncement('${a.id}')">ลบ</button>
-      <button type="button" class="btn btn-primary" onclick="modal.close();openAnnouncementForm('${a.id}')">แก้ไข</button>` : ''}
+      ${DB.isHR ? `<button type="button" class="btn btn-ghost" onclick="deleteAnnouncement('${escapeHtml(a.id)}')">ลบ</button>
+      <button type="button" class="btn btn-primary" onclick="modal.close();openAnnouncementForm('${escapeHtml(a.id)}')">แก้ไข</button>` : ''}
     </div>
   `);
   // พนักงาน: บันทึกว่าอ่านแล้ว (fire-and-forget) · admin/HR: โหลดรายชื่อผู้อ่าน
@@ -10814,24 +10814,24 @@ function renderLeaveChainActions(req) {
 
   const btns = [];
   if (canBM) {
-    btns.push(`<button class="btn btn-success btn-sm" onclick="endorseLeaveBMUI('${req.id}','endorsed')">เห็นชอบ (ผจก.)</button>`);
-    btns.push(`<button class="btn btn-danger btn-sm" onclick="endorseLeaveBMUI('${req.id}','declined')">ไม่เห็นชอบ</button>`);
+    btns.push(`<button class="btn btn-success btn-sm" onclick="endorseLeaveBMUI('${escapeHtml(req.id)}','endorsed')">เห็นชอบ (ผจก.)</button>`);
+    btns.push(`<button class="btn btn-danger btn-sm" onclick="endorseLeaveBMUI('${escapeHtml(req.id)}','declined')">ไม่เห็นชอบ</button>`);
   } else if (canAM) {
-    btns.push(`<button class="btn btn-success btn-sm" onclick="endorseLeaveAMUI('${req.id}','endorsed')">เห็นชอบ (AM)</button>`);
-    btns.push(`<button class="btn btn-danger btn-sm" onclick="endorseLeaveAMUI('${req.id}','declined')">ไม่เห็นชอบ</button>`);
+    btns.push(`<button class="btn btn-success btn-sm" onclick="endorseLeaveAMUI('${escapeHtml(req.id)}','endorsed')">เห็นชอบ (AM)</button>`);
+    btns.push(`<button class="btn btn-danger btn-sm" onclick="endorseLeaveAMUI('${escapeHtml(req.id)}','declined')">ไม่เห็นชอบ</button>`);
   } else if (canOM) {
-    btns.push(`<button class="btn btn-primary btn-sm" onclick="finalApproveLeaveOMUI('${req.id}','approved')">อนุมัติ (OM)</button>`);
-    btns.push(`<button class="btn btn-danger btn-sm" onclick="finalApproveLeaveOMUI('${req.id}','rejected')">ปฏิเสธ</button>`);
+    btns.push(`<button class="btn btn-primary btn-sm" onclick="finalApproveLeaveOMUI('${escapeHtml(req.id)}','approved')">อนุมัติ (OM)</button>`);
+    btns.push(`<button class="btn btn-danger btn-sm" onclick="finalApproveLeaveOMUI('${escapeHtml(req.id)}','rejected')">ปฏิเสธ</button>`);
   } else if (isHR) {
     // HR override — แสดงปุ่มที่ตรงกับขั้นปัจจุบัน
     if (req.bmStatus === 'pending') {
-      btns.push(`<button class="btn btn-success btn-sm" onclick="endorseLeaveBMUI('${req.id}','endorsed')">เห็นชอบ (HR override)</button>`);
+      btns.push(`<button class="btn btn-success btn-sm" onclick="endorseLeaveBMUI('${escapeHtml(req.id)}','endorsed')">เห็นชอบ (HR override)</button>`);
     } else if (req.amStatus === 'pending') {
-      btns.push(`<button class="btn btn-success btn-sm" onclick="endorseLeaveAMUI('${req.id}','endorsed')">เห็นชอบ (HR override)</button>`);
+      btns.push(`<button class="btn btn-success btn-sm" onclick="endorseLeaveAMUI('${escapeHtml(req.id)}','endorsed')">เห็นชอบ (HR override)</button>`);
     } else {
-      btns.push(`<button class="btn btn-primary btn-sm" onclick="finalApproveLeaveOMUI('${req.id}','approved')">อนุมัติ (HR override)</button>`);
+      btns.push(`<button class="btn btn-primary btn-sm" onclick="finalApproveLeaveOMUI('${escapeHtml(req.id)}','approved')">อนุมัติ (HR override)</button>`);
     }
-    btns.push(`<button class="btn btn-danger btn-sm" onclick="rejectLeaveHR('${req.id}')">ปฏิเสธ (HR)</button>`);
+    btns.push(`<button class="btn btn-danger btn-sm" onclick="rejectLeaveHR('${escapeHtml(req.id)}')">ปฏิเสธ (HR)</button>`);
   } else {
     // ไม่มีสิทธิ์ — แสดงว่ารอใคร
     if (req.bmStatus === 'pending') btns.push('<span class="muted-2 sw-wait-note">รอผู้จัดการสาขา</span>');
@@ -10913,21 +10913,21 @@ function renderSwapChainActions(req) {
                 && (DB.role === 'operation_manager' || isHR);
   const btns = [];
   if (canBM) {
-    btns.push(`<button class="btn btn-success btn-sm" style="font-size:11px" onclick="endorseSwapBMUI('${req.id}','endorsed')">เห็นชอบ</button>`);
-    btns.push(`<button class="btn btn-danger btn-sm" style="font-size:11px" onclick="endorseSwapBMUI('${req.id}','declined')">ไม่เห็นชอบ</button>`);
+    btns.push(`<button class="btn btn-success btn-sm" style="font-size:11px" onclick="endorseSwapBMUI('${escapeHtml(req.id)}','endorsed')">เห็นชอบ</button>`);
+    btns.push(`<button class="btn btn-danger btn-sm" style="font-size:11px" onclick="endorseSwapBMUI('${escapeHtml(req.id)}','declined')">ไม่เห็นชอบ</button>`);
   } else if (canAM) {
-    btns.push(`<button class="btn btn-success btn-sm" style="font-size:11px" onclick="endorseSwapAMUI('${req.id}','endorsed')">เห็นชอบ (AM)</button>`);
-    btns.push(`<button class="btn btn-danger btn-sm" style="font-size:11px" onclick="endorseSwapAMUI('${req.id}','declined')">ไม่เห็นชอบ</button>`);
+    btns.push(`<button class="btn btn-success btn-sm" style="font-size:11px" onclick="endorseSwapAMUI('${escapeHtml(req.id)}','endorsed')">เห็นชอบ (AM)</button>`);
+    btns.push(`<button class="btn btn-danger btn-sm" style="font-size:11px" onclick="endorseSwapAMUI('${escapeHtml(req.id)}','declined')">ไม่เห็นชอบ</button>`);
   } else if (canOM) {
-    btns.push(`<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="finalApproveSwapOMUI('${req.id}','approved')">อนุมัติ (OM)</button>`);
-    btns.push(`<button class="btn btn-danger btn-sm" style="font-size:11px" onclick="finalApproveSwapOMUI('${req.id}','rejected')">ปฏิเสธ</button>`);
+    btns.push(`<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="finalApproveSwapOMUI('${escapeHtml(req.id)}','approved')">อนุมัติ (OM)</button>`);
+    btns.push(`<button class="btn btn-danger btn-sm" style="font-size:11px" onclick="finalApproveSwapOMUI('${escapeHtml(req.id)}','rejected')">ปฏิเสธ</button>`);
   } else if (isHR) {
     if (req.bmStatus === 'pending') {
-      btns.push(`<button class="btn btn-success btn-sm" style="font-size:11px" onclick="endorseSwapBMUI('${req.id}','endorsed')">เห็นชอบ (HR)</button>`);
+      btns.push(`<button class="btn btn-success btn-sm" style="font-size:11px" onclick="endorseSwapBMUI('${escapeHtml(req.id)}','endorsed')">เห็นชอบ (HR)</button>`);
     } else if (req.amStatus === 'pending') {
-      btns.push(`<button class="btn btn-success btn-sm" style="font-size:11px" onclick="endorseSwapAMUI('${req.id}','endorsed')">เห็นชอบ (HR)</button>`);
+      btns.push(`<button class="btn btn-success btn-sm" style="font-size:11px" onclick="endorseSwapAMUI('${escapeHtml(req.id)}','endorsed')">เห็นชอบ (HR)</button>`);
     } else {
-      btns.push(`<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="finalApproveSwapOMUI('${req.id}','approved')">อนุมัติ (HR)</button>`);
+      btns.push(`<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="finalApproveSwapOMUI('${escapeHtml(req.id)}','approved')">อนุมัติ (HR)</button>`);
     }
   }
   return btns.join(' ');
@@ -11100,7 +11100,7 @@ router.register('leave', () => {
     ${renderMyLeaveBalance()}
 
     <div class="sw-tabs" role="tablist">
-      ${tabs.map(t => `<button class="sw-tab ${_leaveState.tab === t.id ? 'active' : ''}" onclick="switchLeaveTab('${t.id}')" role="tab">
+      ${tabs.map(t => `<button class="sw-tab ${_leaveState.tab === t.id ? 'active' : ''}" onclick="switchLeaveTab('${escapeHtml(t.id)}')" role="tab">
         <span>${escapeHtml(t.label)}</span>${t.count != null ? `<span class="sw-tab-pill">${fmt.num(t.count)}</span>` : ''}
       </button>`).join('')}
     </div>
@@ -11258,9 +11258,9 @@ function renderLeaveTab() {
             <td class="actions">
               ${isExpired && r.status === 'pending' ? `<span class="badge badge-danger" title="วันลาสิ้นสุด ${fmt.date(r.endDate)} ผ่านไปแล้ว — ประเภท ${escapeHtml(typeCfg.label)} ไม่อนุญาตให้อนุมัติย้อนหลัง" style="font-size:10.5px">⛔ เลยกำหนด</span>` : ''}
               ${(!isExpired || DB.isHR) ? renderLeaveChainActions(r) : ''}
-              ${r.status === 'pending' ? `<button class="btn btn-ghost btn-sm" onclick="openLeaveRequestForm('${r.id}')">แก้</button>
-                <button class="btn btn-ghost btn-sm" onclick="cancelLeave('${r.id}')">ยกเลิก</button>` : ''}
-              ${r.status !== 'pending' && DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="deleteLeave('${r.id}')">ลบ</button>` : ''}
+              ${r.status === 'pending' ? `<button class="btn btn-ghost btn-sm" onclick="openLeaveRequestForm('${escapeHtml(r.id)}')">แก้</button>
+                <button class="btn btn-ghost btn-sm" onclick="cancelLeave('${escapeHtml(r.id)}')">ยกเลิก</button>` : ''}
+              ${r.status !== 'pending' && DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="deleteLeave('${escapeHtml(r.id)}')">ลบ</button>` : ''}
             </td>
           </tr>`;
         }).join('')}
@@ -12680,7 +12680,7 @@ async function openRoleEditor(empId) {
             .filter(([k]) => DB.isAdmin || k !== 'admin')
             .map(([k, v]) => `<option value="${k}" ${currentRole === k ? 'selected' : ''}>${v.th}</option>`).join('')}
         </select>
-        ${autoRole ? `<small class="muted-2" style="display:block;margin-top:4px">💡 Auto-detect จากตำแหน่งงาน: <strong>${ROLE_LABELS[autoRole]?.th || autoRole}</strong> <button type="button" class="btn btn-ghost btn-sm" style="padding:2px 8px;margin-left:6px" onclick="document.getElementById('roleSelect').value='${autoRole}';document.getElementById('roleSelect').dispatchEvent(new Event('change'))">ใช้ค่านี้</button></small>` : ''}
+        ${autoRole ? `<small class="muted-2" style="display:block;margin-top:4px">💡 Auto-detect จากตำแหน่งงาน: <strong>${escapeHtml(ROLE_LABELS[autoRole]?.th || autoRole)}</strong> <button type="button" class="btn btn-ghost btn-sm" style="padding:2px 8px;margin-left:6px" onclick="document.getElementById('roleSelect').value='${escapeHtml(autoRole)}';document.getElementById('roleSelect').dispatchEvent(new Event('change'))">ใช้ค่านี้</button></small>` : ''}
         ${!DB.isAdmin ? `<small class="muted-2" style="display:block;margin-top:4px;color:var(--warning)">⚠️ HR ตั้ง role admin ไม่ได้ (เฉพาะ admin เท่านั้น)</small>` : ''}
       </div>
       <div class="form-group" id="branchesGroup" style="display:${['area_manager','operation_manager'].includes(currentRole) ? '' : 'none'}">
@@ -12963,7 +12963,7 @@ router.register('leave-calendar', () => {
     if (holiday) cls += ' lcal-holiday';
     if (items.length > 0) cls += ' lcal-has-leave';
 
-    return `<div class="${cls}" onclick="openLeaveDayDetail('${d}')">
+    return `<div class="${cls}" onclick="openLeaveDayDetail('${escapeHtml(d)}')">
       <div class="lcal-date">${dd}</div>
       ${holiday ? `<div class="lcal-holiday-label" title="${escapeHtml(holiday.name || '')}">${escapeHtml((holiday.name || '').slice(0, 8))}</div>` : ''}
       <div class="lcal-dots">${dots}${extra}</div>
@@ -13514,7 +13514,7 @@ function renderScheduleGrid(branchId, weekStart, canEdit) {
       if (isPast) cellExtraCls += ' schedule-cell-past';
       const allowClick = canEdit && !leave && !awayEntry && (!isPast || DB.isHR);
       const clickAttr = allowClick
-        ? `onclick="openShiftPicker('${escapeHtml(emp.id)}', '${d}', ${entry ? `'${entry.id}'` : 'null'})"`
+        ? `onclick="openShiftPicker('${escapeHtml(emp.id)}', '${escapeHtml(d)}', ${entry ? `'${escapeHtml(entry.id)}'` : 'null'})"`
         : '';
       return `<td class="schedule-cell${cellExtraCls}" id="${cellId}" ${clickAttr}>
         ${cellContent || (allowClick ? '<span class="schedule-cell-empty">+</span>' : '<span class="muted-2">—</span>')}
