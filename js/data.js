@@ -136,13 +136,22 @@ const DB = {
   },
 
   async signIn(email, password) {
+    // ─── PERF: timestamp ก่อน captcha → ก่อน auth → ก่อน data ───
+    const _tSignIn0 = performance.now();
     const captchaToken = await this._getCaptchaToken('signIn');
+    const _tAfterCaptcha = performance.now();
     const { data, error } = await this.client.auth.signInWithPassword({
       email, password,
       options: captchaToken ? { captchaToken } : undefined
     });
     if (error) throw error;
+    const _tAfterAuth = performance.now();
     this.user = data.user;
+    // เก็บไว้ให้ loadAll log รวมในตาราง phases
+    window.__signInTimings = {
+      captcha: Math.round(_tAfterCaptcha - _tSignIn0),
+      auth_api: Math.round(_tAfterAuth - _tAfterCaptcha)
+    };
     // PERF: parallel เหมือนใน init() — โหลด data ทันทีไม่รอ profile เสร็จ
     const profilePromise = this.loadProfile();
     await Promise.all([profilePromise, this.loadAll(profilePromise)]);
@@ -388,10 +397,15 @@ const DB = {
     // เปิด DevTools Console เห็นว่า query ไหนช้า / ส่ง screenshot/log มาบอกได้
     try {
       const t = window.__bootTimings;
+      const s = window.__signInTimings;  // มีเฉพาะตอน signIn (login click), ไม่มีตอน boot ผ่าน session restore
       const slowest = Object.entries(t.queries).sort((a, b) => (parseInt(b[1]) || 0) - (parseInt(a[1]) || 0))[0];
       console.log('%c⏱ Boot Phase 1 done in ' + t.phases.phase1_total + ' ms', 'color:#2e74ff;font-weight:bold');
+      if (s) {
+        const total = (s.captcha || 0) + (s.auth_api || 0) + t.phases.phase1_total;
+        console.log(`%c   ↳ captcha: ${s.captcha} ms · auth API: ${s.auth_api} ms · data: ${t.phases.phase1_total} ms · subtotal: ${total} ms (ก่อน render)`, 'color:#56544c');
+      }
       console.table(t.queries);
-      if (slowest) console.log(`%c  slowest query: ${slowest[0]} (${slowest[1]} ms)`, 'color:#dc2626');
+      if (slowest) console.log(`%c   slowest query: ${slowest[0]} (${slowest[1]} ms)`, 'color:#dc2626');
     } catch (e) {}
 
     // ─── Phase 2 (deferred) — โหลดเบื้องหลังไม่ block login ───

@@ -471,6 +471,8 @@ const auth = {
     $('#app').style.display = 'none';
   },
   showApp() {
+    // ─── PERF: วัดเวลา showApp (DOM swap + nav setup + dashboard render + first paint) ───
+    const _tShowApp0 = performance.now();
     $('#loginScreen').style.display = 'none';
     $('#app').style.display = 'grid';
     const displayName = DB.profile?.name || DB.user?.email?.split('@')[0] || 'User';
@@ -502,6 +504,29 @@ const auth = {
     // (ก่อนหน้านี้ใช้ if-only — ทำให้ inline display:none ค้างเมื่อ login จาก staff → admin)
     $$('.nav-staff-hide').forEach(el => { el.style.display = isStaffOnly ? 'none' : ''; });
     router.go('dashboard');
+    // ─── PERF log: showApp render + first paint + grand total ───
+    const _tAfterRender = performance.now();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const _tFirstPaint = performance.now();
+      try {
+        const s = window.__signInTimings || {};
+        const t = window.__bootTimings || { phases: {}, queries: {} };
+        const renderMs = Math.round(_tAfterRender - _tShowApp0);
+        const paintMs  = Math.round(_tFirstPaint - _tShowApp0);
+        const grandTotal = (s.captcha || 0) + (s.auth_api || 0) + (t.phases.phase1_total || 0) + paintMs;
+        console.log('%c⏱ showApp: render+nav ' + renderMs + ' ms · paint ready at ' + paintMs + ' ms', 'color:#b87a08;font-weight:bold');
+        if (s.captcha != null) {
+          console.log('%c⏱ TOTAL หลังกดเข้าระบบ ≈ ' + grandTotal + ' ms', 'color:#166534;font-weight:bold;font-size:13px');
+          console.table({
+            '1. captcha': s.captcha + ' ms',
+            '2. auth API': s.auth_api + ' ms',
+            '3. Phase 1 data': t.phases.phase1_total + ' ms',
+            '4. render + first paint': paintMs + ' ms',
+            'รวม': grandTotal + ' ms'
+          });
+        }
+      } catch (e) {}
+    }));
   }
 };
 
