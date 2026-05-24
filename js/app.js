@@ -12469,6 +12469,9 @@ router.register('schedule', () => {
   const branchId  = _scheduleState.branchId;
   const week = branchId ? DB.getScheduleWeek(branchId, weekStart) : null;
   const status = week ? week.status : 'draft';
+  // พนักงานทั่วไป (branch_staff/viewer) เห็นเฉพาะที่อนุมัติแล้ว
+  const isStaffView = (DB.role === 'branch_staff' || DB.role === 'viewer');
+  const hideUnapproved = isStaffView && status !== 'approved';
   const statusBadge = SCHEDULE_STATUS_BADGE[status] || SCHEDULE_STATUS_BADGE.draft;
   const canCreate  = branchId && DB.canCreateScheduleForBranch(branchId);
   const canApproveBranch = branchId && DB.canApproveScheduleForBranch(branchId);
@@ -12543,6 +12546,8 @@ router.register('schedule', () => {
         </div>
       </div>
       ${(() => {
+        // พนักงานทั่วไปไม่ต้องเห็น status note เพราะ placeholder จะอธิบายชัดแล้ว
+        if (isStaffView) return '';
         if (status === 'approved') return `<div class="schedule-info-note" style="margin:12px 0 0 0">
           <strong>ตารางอนุมัติแล้ว</strong> — ถ้าต้องแก้ ให้ผู้อนุมัติกด <strong>"เปิดให้แก้ไข"</strong> ก่อน
           · ถ้าพนักงานลา ระบบจะแสดงป้าย "ลา" ทับเซลล์ให้อัตโนมัติ (ไม่ต้องแก้ตารางถ้าไม่ต้องหาคนแทน)
@@ -12563,7 +12568,21 @@ router.register('schedule', () => {
       })()}
     </div>
 
-    <div id="scheduleGridWrap">${renderScheduleGrid(branchId, weekStart, canEdit)}</div>
+    <div id="scheduleGridWrap">${
+      hideUnapproved
+        ? `<div class="sw-chart-card"><div class="empty-state" style="padding:60px 20px">
+            <div style="font-size:42px;margin-bottom:12px;opacity:0.35">🗓️</div>
+            <div class="title" style="font-size:16px;font-weight:600">ตารางสาขายังไม่ถูกประกาศ</div>
+            <div class="hint" style="margin-top:6px">${
+              status === 'draft' ? 'ผู้จัดการสาขากำลังจัดตาราง — รอประกาศก่อนจึงเห็น'
+              : status === 'submitted' ? 'ตารางส่งให้ AM อนุมัติแล้ว — รออนุมัติก่อนประกาศ'
+              : status === 'rejected' ? 'ตารางถูกตีกลับให้ผู้จัดการแก้ — รออัปเดต'
+              : 'ยังไม่มีตารางในสัปดาห์นี้'
+            }</div>
+            <div class="hint muted-2" style="margin-top:12px;font-size:11px">หมายเหตุ: พนักงานเห็นเฉพาะตารางที่อนุมัติแล้วเท่านั้น เพื่อกันสับสนระหว่างยังร่าง</div>
+          </div></div>`
+        : renderScheduleGrid(branchId, weekStart, canEdit)
+    }</div>
   `;
 });
 
