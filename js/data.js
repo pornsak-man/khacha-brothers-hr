@@ -110,6 +110,39 @@ const DB = {
   // ขอ token ก่อนเรียก auth endpoint ที่ต้องการ captcha (signIn, signUp ใน Supabase)
   // SITE_KEY ว่าง = ปิด captcha (สำหรับ dev/local) → คืน undefined → Supabase ไม่ require
   _hcaptchaWidgetId: null,
+  // ─── [PERF] Pre-warm captcha cache ───
+  // hCaptcha invisible execute() ใช้เวลา ~2-2.5 วินาที — ก่อนหน้านี้เกิดบน critical path
+  // ของ signIn() ทำให้กดเข้าระบบช้า แก้โดยเริ่ม execute ตอน user focus input
+  // ครั้งแรก → token พร้อมเมื่อ user กด "เข้าสู่ระบบ" → ไม่ต้องรออีก
+  // Token TTL ของ hCaptcha = ~2 นาที, cache ที่นี่ตั้ง expiry 90s กันใช้หมดอายุ
+  _captchaPrewarm: null,
+  prewarmCaptcha() {
+    if (!window.KB_CONFIG?.HCAPTCHA_SITE_KEY) return;
+    // ถ้ามี promise อยู่แล้วและ token ยังไม่หมดอายุ → ไม่ทำซ้ำ
+    if (this._captchaPrewarm) {
+      if (!this._captchaPrewarm.expiresAt || Date.now() < this._captchaPrewarm.expiresAt) return;
+    }
+    const entry = { promise: null, token: null, expiresAt: 0 };
+    entry.promise = this._getCaptchaToken('signIn').then(
+      (token) => { entry.token = token; entry.expiresAt = Date.now() + 90_000; return token; },
+      (err) => { this._captchaPrewarm = null; throw err; }
+    );
+    this._captchaPrewarm = entry;
+  },
+  async _getCachedCaptchaToken() {
+    if (!window.KB_CONFIG?.HCAPTCHA_SITE_KEY) return undefined;
+    const c = this._captchaPrewarm;
+    if (c && c.promise) {
+      try {
+        const token = await c.promise;
+        if (c.expiresAt && Date.now() < c.expiresAt) {
+          this._captchaPrewarm = null;  // consume cache
+          return token;
+        }
+      } catch (e) { /* fall through to fresh execute */ }
+    }
+    return this._getCaptchaToken('signIn');
+  },
   async _getCaptchaToken(actionLabel = 'auth') {
     const siteKey = window.KB_CONFIG?.HCAPTCHA_SITE_KEY;
     if (!siteKey) return undefined;  // ปิด captcha
@@ -138,7 +171,9 @@ const DB = {
   async signIn(email, password) {
     // ─── PERF: timestamp ก่อน captcha → ก่อน auth → ก่อน data ───
     const _tSignIn0 = performance.now();
-    const captchaToken = await this._getCaptchaToken('signIn');
+    // ใช้ cached token จาก prewarm (ตอน user focus input ก่อนหน้า) ถ้ามี
+    // — ตัดเวลา captcha 2-2.5s ออกจาก critical path (เพราะ run ขนานกับ user typing)
+    const captchaToken = await this._getCachedCaptchaToken();
     const _tAfterCaptcha = performance.now();
     const { data, error } = await this.client.auth.signInWithPassword({
       email, password,

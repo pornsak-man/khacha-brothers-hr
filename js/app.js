@@ -356,6 +356,21 @@ const modal = {
 // ─────────────── AUTH ───────────────
 const auth = {
   init() {
+    // ─── [PERF] Pre-warm hCaptcha ตอน user focus input ครั้งแรก ───
+    // hCaptcha invisible execute ใช้ ~2-2.5 วินาที — แทนที่จะรอตอนกด login,
+    // เริ่ม execute ตอน user เริ่มกรอกฟอร์ม → token พร้อมก่อนกดปุ่ม
+    // (run ขนานกับ user typing → critical path ไม่เห็นเวลา 2.4s นี้แล้ว)
+    let _prewarmed = false;
+    const triggerPrewarm = () => {
+      if (_prewarmed) return;
+      _prewarmed = true;
+      try { DB.prewarmCaptcha?.(); } catch (e) {}
+    };
+    $('#loginEmail')?.addEventListener('focus', triggerPrewarm, { once: true });
+    $('#loginPass')?.addEventListener('focus', triggerPrewarm, { once: true });
+    $('#loginEmail')?.addEventListener('input', triggerPrewarm, { once: true });
+    $('#loginPass')?.addEventListener('input', triggerPrewarm, { once: true });
+
     $('#loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const raw = $('#loginEmail').value.trim();
