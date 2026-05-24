@@ -273,8 +273,10 @@ function wireBranchPicker(root) {
 // ใช้แทน <select> ที่มีพนักงานเยอะ — พิมพ์ ชื่อ/นามสกุล/ชื่อเล่น/รหัส กรองได้
 // คืน HTML string. Call wireEmployeePickers() หลัง render เพื่อ attach listeners
 let _empPickerSeq = 0;
-function employeePicker({ name, emps, selected = '', required = false, placeholder = 'พิมพ์ค้นหา ชื่อ / นามสกุล / ชื่อเล่น / รหัส', containerClass = '' }) {
-  const id = 'emp_pk_' + (++_empPickerSeq);
+function employeePicker({ name, emps, selected = '', required = false, placeholder = 'พิมพ์ค้นหา ชื่อ / นามสกุล / ชื่อเล่น / รหัส', containerClass = '', inputId = null, disabled = false } = {}) {
+  // inputId = hidden input id ที่ caller กำหนด (เพื่อให้ existing code ที่ reference เลข id เดิมยังใช้ได้)
+  // ถ้าไม่กำหนด → auto-gen
+  const id = inputId || ('emp_pk_' + (++_empPickerSeq));
   const dlId = id + '_dl';
   const empFormat = (e) => `${e.id} — ${(e.title || '') + (e.firstName || '')} ${e.lastName || ''}${e.nickname ? ' (' + e.nickname + ')' : ''}`;
   const selectedEmp = selected ? emps.find(e => e.id === selected) : null;
@@ -287,6 +289,7 @@ function employeePicker({ name, emps, selected = '', required = false, placehold
            list="${dlId}"
            autocomplete="off"
            ${required ? 'required' : ''}
+           ${disabled ? 'disabled' : ''}
            placeholder="${escapeHtml(placeholder)}"
            value="${escapeHtml(displayVal)}"/>
     <input type="hidden" name="${name}" id="${id}" value="${escapeHtml(selected)}"/>
@@ -9363,18 +9366,14 @@ function openSwapRequestForm(calendarItemId = null) {
     .filter(c => parseYMD(c.date)?.[0] === todayYear) // เฉพาะปีนี้ (กัน clutter)
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  // Employee picker (เฉพาะ HR/manager)
+  // Employee picker (เฉพาะ HR/manager) — searchable แทน select เพราะพนักงานเยอะ
   let empPickerHtml = '';
   if (canAssignOthers) {
-    const empOptions = DB.getEmployees({ status: 'active' })
-      .sort((a, b) => (a.firstName || '').localeCompare(b.firstName || ''))
-      .map(e => `<option value="${escapeHtml(e.id)}" ${myEmpId === e.id ? 'selected' : ''}>${escapeHtml(e.firstName + ' ' + (e.lastName || ''))} (${escapeHtml(e.id)})${e.branch ? ' · ' + escapeHtml(e.branch) : ''}</option>`).join('');
+    const empList = DB.getEmployees({ status: 'active' })
+      .sort((a, b) => (a.firstName || '').localeCompare(b.firstName || ''));
     empPickerHtml = `<div class="form-group">
       <label>พนักงาน *</label>
-      <select name="employeeId" id="swapEmpId" required>
-        <option value="">— เลือกพนักงาน —</option>
-        ${empOptions}
-      </select>
+      ${employeePicker({ name: 'employeeId', emps: empList, selected: myEmpId || '', required: true, inputId: 'swapEmpId' })}
       <div id="swapApproverHint" class="muted-2" style="font-size:11.5px;margin-top:6px"></div>
     </div>`;
   }
@@ -9462,8 +9461,11 @@ function openSwapRequestForm(calendarItemId = null) {
       ? `ผู้อนุมัติ: <strong>${escapeHtml(approverName)}</strong>`
       : `<span style="color:var(--warning-text)">⚠ ไม่พบผู้อนุมัติ — ต้องติ๊ก "อนุมัติทันที"</span>`;
   };
-  document.getElementById('swapEmpId')?.addEventListener('change', updateApproverHint);
-  if (canAssignOthers) updateApproverHint();
+  // wire searchable employee picker → fire updateApproverHint เมื่อเลือก
+  if (canAssignOthers) {
+    wireEmployeePickers('#swapReqForm', updateApproverHint);
+    updateApproverHint();
+  }
 
   $('#swapReqForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -10956,18 +10958,14 @@ function openLeaveRequestForm(id = null, prefilledType = null) {
   const selectedType = editing?.leaveType || prefilledType || '';
 
   // ใช้ getEmployees() เพื่อ auto-scope: branch_staff เห็นเฉพาะตัวเอง, branch_mgr เห็นสาขา ฯลฯ
-  const empOptions = DB.getEmployees({ status: 'active' })
-    .sort((a, b) => (a.firstName || '').localeCompare(b.firstName || ''))
-    .map(e => `<option value="${e.id}" ${defaultEmpId === e.id ? 'selected' : ''}>${escapeHtml(e.firstName + ' ' + (e.lastName || ''))} (${escapeHtml(e.id)})</option>`).join('');
+  const empList = DB.getEmployees({ status: 'active' })
+    .sort((a, b) => (a.firstName || '').localeCompare(b.firstName || ''));
 
   modal.open(editing ? 'แก้ไขคำขอลา' : 'ส่งคำขอลา', `
     <form id="leaveForm">
       <div class="form-grid">
         <div class="form-group span-2"><label>พนักงาน *</label>
-          <select name="employeeId" id="leaveEmp" required ${DB.isHR ? '' : 'disabled'}>
-            <option value="">— เลือกพนักงาน —</option>
-            ${empOptions}
-          </select>
+          ${employeePicker({ name: 'employeeId', emps: empList, selected: defaultEmpId, required: true, inputId: 'leaveEmp', disabled: !DB.isHR })}
           <div id="leaveApproverHint" class="muted-2" style="font-size:12px;margin-top:6px"></div>
         </div>
         <div class="form-group span-2"><label>ประเภทการลา *</label>
@@ -11041,10 +11039,11 @@ function openLeaveRequestForm(id = null, prefilledType = null) {
       hint.innerHTML = `โควต้า: <strong>${b.quota}</strong> วัน · ใช้ไป <strong>${b.used}</strong> · คงเหลือ <strong style="color:${willExceed ? 'var(--danger)' : 'var(--success)'}">${b.remaining}</strong> วัน${willExceed ? ` <span style="color:var(--danger)">⚠️ เกินโควต้า ${days - b.remaining} วัน</span>` : ''}`;
     }
   };
+  // wire employee picker — sync hidden input #leaveEmp + fire update hooks
+  wireEmployeePickers('#leaveForm', () => { updateHint(); updateApprover(); });
   $('#leaveStart').addEventListener('change', () => { recalc(); updateHint(); updateBackdate(); });
   $('#leaveEnd').addEventListener('change', () => { recalc(); updateHint(); });
   $('#leaveDays').addEventListener('input', updateHint);
-  $('#leaveEmp').addEventListener('change', () => { updateHint(); updateApprover(); });
   $('#leaveType').addEventListener('change', () => { updateHint(); updateBackdate(); });
   updateHint();
   updateApprover();
