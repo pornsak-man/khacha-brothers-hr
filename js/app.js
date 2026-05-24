@@ -2271,7 +2271,13 @@ function openEmployeeForm(id = null, init = null, onSaved = null) {
   const depts = DB.getDepartments();
   const positions = DB.getPositions();
 
-  const opt = (values, current) => values.map(v => `<option ${v === current ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('');
+  // opt() — render <option> list, ถ้าค่า current ไม่อยู่ในรายการ → prepend option พิเศษ
+  // (กันการสูญหายของค่าที่ import มาจาก source ที่ใช้รูปแบบต่าง เช่น "น.ส." ที่ไม่ได้อยู่ใน titles list)
+  const opt = (values, current) => {
+    const inList = current && values.includes(current);
+    const extra = !inList && current ? `<option selected value="${escapeHtml(current)}">${escapeHtml(current)} (เดิม)</option>` : '';
+    return extra + values.map(v => `<option ${v === current ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('');
+  };
   const dataListOpt = (values) => values.map(v => `<option value="${escapeHtml(v)}">`).join('');
 
   const formTitle = id ? 'แก้ไขข้อมูลพนักงาน' : (init?.fromApplicant ? 'รับเข้าทำงาน — กรอกข้อมูลพนักงาน' : 'เพิ่มพนักงานใหม่');
@@ -3358,9 +3364,16 @@ function parseImportRow(row) {
     }
     return s;
   };
+  // Normalize คำนำหน้า: "น.ส." (ย่อ) → "นางสาว" (รูปเต็ม ตรงกับ EMP_OPTIONS.titles)
+  // ถ้าใช้ค่าย่อ form dropdown จะ fallback ไป option แรก ("นาย") → กลายเป็น overwrite ข้อมูลเดิม
+  const normalizeTitle = (t) => {
+    const v = (t || '').trim();
+    if (v === 'น.ส.' || v === 'นส.' || v === 'น.ส') return 'นางสาว';
+    return v || 'นาย';
+  };
   return {
     id: get('รหัสพนักงาน'),
-    title: get('คำนำหน้า') || 'นาย',
+    title: normalizeTitle(get('คำนำหน้า')),
     firstName: get('ชื่อ'),
     lastName: get('นามสกุล'),
     nickname: get('ชื่อเล่น'),
