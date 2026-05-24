@@ -777,6 +777,7 @@ const router = {
     if (name === 'recruit') wireRecruitPage();
     if (name === 'settings' && typeof renderEmpAccounts === 'function') renderEmpAccounts();
     if (name === 'user-roles' && typeof renderEmpAccounts === 'function') renderEmpAccounts();
+    if (name === 'user-roles' && typeof renderPermMatrix === 'function') renderPermMatrix();
     $('#sidebar').classList.remove('open');
   },
   refresh() { this.go(this.current); }
@@ -11049,6 +11050,21 @@ router.register('user-roles', () => {
       </table></div>
     </div>
 
+    <!-- ⚡ LIVE Permission Matrix — Phase 4 dynamic RBAC -->
+    ${DB.isAdmin ? `
+    <div class="sw-chart-card" style="margin-bottom:20px">
+      <div class="sw-chart-header" style="align-items:flex-start">
+        <div>
+          <div class="sw-chart-title">⚡ ตารางสิทธิ์ใช้งานจริง <span class="badge badge-gold" style="font-size:10.5px;margin-left:8px">LIVE</span></div>
+          <div class="sw-chart-sub">Admin ปรับสิทธิ์ของแต่ละ role ได้ — มีผลกับการใช้งานจริงในระบบ</div>
+        </div>
+      </div>
+      <div id="permMatrixBox" style="margin-top:14px">
+        <div class="muted-2" style="padding:20px;text-align:center">กำลังโหลด...</div>
+      </div>
+    </div>
+    ` : ''}
+
     <!-- User accounts management — reuse renderEmpAccounts() -->
     <div class="sw-chart-card">
       <div class="sw-chart-header">
@@ -11244,6 +11260,301 @@ async function openRoleMatrixEditor() {
       btn.disabled = false; btn.textContent = 'บันทึก';
     }
   });
+}
+
+// ═══════════════════════════════════════════════════════════
+// Phase 4 — LIVE Permission Matrix editor
+// admin tick เปิด/ปิดสิทธิ์ของแต่ละ role → save ผ่าน RPC set_role_permissions
+// ═══════════════════════════════════════════════════════════
+const SCOPE_META = {
+  employee: { icon: '👥', label: 'พนักงาน',         color: 'var(--info-text)' },
+  payroll:  { icon: '💰', label: 'เงินเดือน',        color: 'var(--warning-text)' },
+  leave:    { icon: '📅', label: 'ลา / กะ / ปฏิทิน', color: 'var(--success-text)' },
+  system:   { icon: '⚙️', label: 'ตั้งค่าระบบ',     color: 'var(--gold-text)' }
+};
+const _permMatrixState = {
+  roles: null, perms: null, current: null, draft: null,
+  collapsed: new Set(),  // scope keys ที่ user ย่อไว้
+  loading: false, error: null
+};
+
+async function renderPermMatrix() {
+  if (!DB.isAdmin) return;
+  const box = document.getElementById('permMatrixBox');
+  if (!box) return;
+  _permMatrixState.loading = true;
+  box.innerHTML = `<div class="muted-2" style="padding:24px;text-align:center">กำลังโหลดตารางสิทธิ์...</div>`;
+  try {
+    const [roles, perms, current] = await Promise.all([
+      DB.getPermRoles(),
+      DB.getPermCatalog(),
+      DB.getRolePermissions()
+    ]);
+    _permMatrixState.roles = roles;
+    _permMatrixState.perms = perms;
+    _permMatrixState.current = current;
+    // ถ้า migration ยังไม่รัน → ทั้งหมดเป็น null
+    if (!roles || !perms || !current) {
+      _permMatrixState.error = 'migration_not_run';
+      box.innerHTML = _renderMatrixEmptyState();
+      return;
+    }
+    // initial draft = current state (clone)
+    _permMatrixState.draft = new Map();
+    for (const r of roles) {
+      _permMatrixState.draft.set(r.id, new Set(current.get(r.id) || []));
+    }
+    _permMatrixState.loading = false;
+    _permMatrixState.error = null;
+    box.innerHTML = _renderMatrixHtml();
+    _wireMatrixEvents();
+  } catch (ex) {
+    _permMatrixState.error = ex?.message || String(ex);
+    box.innerHTML = `<div class="empty-state" style="padding:24px">
+      <div style="color:var(--danger);font-weight:600">โหลดไม่สำเร็จ</div>
+      <div class="muted-2" style="margin-top:6px;font-size:12.5px">${escapeHtml(_permMatrixState.error)}</div>
+    </div>`;
+  }
+}
+
+function _renderMatrixEmptyState() {
+  return `
+    <div class="pm-empty">
+      <div class="pm-empty-icon">📋</div>
+      <div class="pm-empty-title">ยังไม่ได้รัน Migration</div>
+      <div class="pm-empty-body">
+        ตารางสิทธิ์ใช้งานจริงต้องการ migration <code>supabase-migration-permissions-v1.sql</code><br>
+        ไปที่ Supabase SQL Editor → paste ไฟล์ → Run → กด F5 ที่หน้านี้
+      </div>
+      <div class="pm-empty-hint">
+        ระหว่างนี้ระบบใช้ <strong>กฎเดิม</strong> (isHR / isAdmin) — การใช้งานปกติ ไม่กระทบ
+      </div>
+    </div>`;
+}
+
+function _changedCount() {
+  const d = _permMatrixState.draft, c = _permMatrixState.current;
+  if (!d || !c) return 0;
+  let n = 0;
+  for (const [roleId, set] of d) {
+    const orig = c.get(roleId) || new Set();
+    if (set.size !== orig.size) { n += Math.abs(set.size - orig.size); continue; }
+    for (const k of set) if (!orig.has(k)) n++;
+  }
+  return n;
+}
+
+function _renderMatrixHtml() {
+  const { roles, perms, draft, current, collapsed } = _permMatrixState;
+  // group perms by scope (รักษา sort_order)
+  const byScope = new Map();
+  for (const p of perms) {
+    if (!byScope.has(p.scope)) byScope.set(p.scope, []);
+    byScope.get(p.scope).push(p);
+  }
+  const changed = _changedCount();
+
+  return `
+    <div class="pm-toolbar">
+      <div class="pm-search">
+        <input type="search" id="pmSearchInput" placeholder="ค้นหาสิทธิ์..." aria-label="ค้นหา"/>
+      </div>
+      <div class="pm-toolbar-stats">
+        <span class="pm-stat"><strong>${roles.length}</strong> roles</span>
+        <span class="pm-stat"><strong>${perms.length}</strong> permissions</span>
+        <span class="pm-stat pm-stat-changed" data-pm-changed style="${changed ? '' : 'display:none'}">
+          <strong id="pmChangedNum">${changed}</strong> การเปลี่ยนแปลง
+        </span>
+      </div>
+      <div class="pm-actions">
+        <button type="button" class="btn btn-secondary btn-sm" id="pmResetBtn" ${changed ? '' : 'disabled'}>คืนค่า</button>
+        <button type="button" class="btn btn-primary btn-sm" id="pmSaveBtn" ${changed ? '' : 'disabled'}>บันทึก</button>
+      </div>
+    </div>
+
+    <div class="pm-matrix-wrap">
+      <table class="pm-matrix">
+        <thead>
+          <tr>
+            <th class="pm-th-perm">Permission</th>
+            ${roles.map(r => `
+              <th class="pm-th-role" data-role="${escapeHtml(r.id)}">
+                <div class="pm-role-label">${escapeHtml(r.label_th)}</div>
+                <div class="pm-role-sub">${escapeHtml(r.id)}${r.is_protected ? ' 🔒' : ''}</div>
+              </th>
+            `).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${Array.from(byScope.entries()).map(([scope, items]) => {
+            const meta = SCOPE_META[scope] || { icon: '•', label: scope };
+            const isCollapsed = collapsed.has(scope);
+            return `
+              <tr class="pm-scope-row" data-scope="${escapeHtml(scope)}">
+                <td colspan="${roles.length + 1}" class="pm-scope-header">
+                  <button type="button" class="pm-scope-toggle" data-scope-toggle="${escapeHtml(scope)}" aria-expanded="${!isCollapsed}">
+                    <span class="pm-scope-chevron">${isCollapsed ? '▸' : '▾'}</span>
+                    <span class="pm-scope-icon">${meta.icon}</span>
+                    <span class="pm-scope-label">${escapeHtml(meta.label)}</span>
+                    <span class="pm-scope-count">${items.length}</span>
+                  </button>
+                </td>
+              </tr>
+              ${isCollapsed ? '' : items.map(p => {
+                const isCritical = p.is_critical;
+                const isDangerous = p.is_dangerous;
+                return `
+                  <tr class="pm-perm-row" data-scope-rows="${escapeHtml(scope)}" data-search="${escapeHtml((p.key + ' ' + p.label_th).toLowerCase())}">
+                    <td class="pm-perm-cell">
+                      <div class="pm-perm-label">
+                        ${escapeHtml(p.label_th)}
+                        ${isCritical ? '<span class="pm-tag pm-tag-critical" title="safety lock — ทุก role ต้องเปิด">CRITICAL</span>' : ''}
+                        ${isDangerous ? '<span class="pm-tag pm-tag-dangerous" title="sensitive permission">DANGER</span>' : ''}
+                      </div>
+                      <div class="pm-perm-key">${escapeHtml(p.key)}</div>
+                      ${p.description ? `<div class="pm-perm-desc">${escapeHtml(p.description)}</div>` : ''}
+                    </td>
+                    ${roles.map(r => {
+                      const curr = (current.get(r.id) || new Set()).has(p.key);
+                      const next = (draft.get(r.id)  || new Set()).has(p.key);
+                      const dirty = curr !== next;
+                      const locked = isCritical || (r.is_protected && isDangerous);
+                      return `
+                        <td class="pm-cell ${dirty ? 'is-dirty' : ''} ${locked ? 'is-locked' : ''}"
+                            data-role="${escapeHtml(r.id)}" data-perm="${escapeHtml(p.key)}">
+                          <label class="pm-toggle ${locked ? 'is-locked' : ''}" title="${locked ? 'ล็อก — แก้ไม่ได้' : (dirty ? 'มีการเปลี่ยนแปลง' : '')}">
+                            <input type="checkbox" ${next ? 'checked' : ''} ${locked ? 'disabled' : ''} data-pm-toggle/>
+                            <span class="pm-toggle-mark"></span>
+                          </label>
+                        </td>
+                      `;
+                    }).join('')}
+                  </tr>
+                `;
+              }).join('')}
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pm-legend">
+      <span><span class="pm-legend-dot pm-legend-on"></span>เปิด</span>
+      <span><span class="pm-legend-dot pm-legend-off"></span>ปิด</span>
+      <span><span class="pm-legend-dot pm-legend-dirty"></span>ยังไม่บันทึก</span>
+      <span>🔒 role ที่ protect</span>
+      <span><span class="pm-tag pm-tag-critical">CRITICAL</span> ทุก role ต้องเปิด</span>
+    </div>
+  `;
+}
+
+function _wireMatrixEvents() {
+  const box = document.getElementById('permMatrixBox');
+  if (!box) return;
+
+  // toggle checkbox → update draft
+  box.addEventListener('change', (e) => {
+    const cb = e.target.closest('[data-pm-toggle]');
+    if (!cb) return;
+    const cell = cb.closest('.pm-cell');
+    const roleId = cell?.dataset.role;
+    const permKey = cell?.dataset.perm;
+    if (!roleId || !permKey) return;
+    const set = _permMatrixState.draft.get(roleId) || new Set();
+    if (cb.checked) set.add(permKey); else set.delete(permKey);
+    _permMatrixState.draft.set(roleId, set);
+    // update dirty class
+    const curr = (_permMatrixState.current.get(roleId) || new Set()).has(permKey);
+    cell.classList.toggle('is-dirty', curr !== cb.checked);
+    _updateChangedBadge();
+  });
+
+  // collapse scope
+  box.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-scope-toggle]');
+    if (btn) {
+      const scope = btn.dataset.scopeToggle;
+      if (_permMatrixState.collapsed.has(scope)) _permMatrixState.collapsed.delete(scope);
+      else _permMatrixState.collapsed.add(scope);
+      // re-render เฉพาะ matrix (เก็บ search term + scroll)
+      const search = document.getElementById('pmSearchInput')?.value || '';
+      box.innerHTML = _renderMatrixHtml();
+      _wireMatrixEvents();
+      if (search) {
+        const inp = document.getElementById('pmSearchInput');
+        if (inp) { inp.value = search; inp.dispatchEvent(new Event('input')); }
+      }
+    }
+  });
+
+  // search
+  const search = document.getElementById('pmSearchInput');
+  if (search) {
+    search.addEventListener('input', () => {
+      const q = search.value.trim().toLowerCase();
+      const rows = box.querySelectorAll('.pm-perm-row');
+      rows.forEach(row => {
+        const key = row.getAttribute('data-search') || '';
+        row.style.display = (!q || key.includes(q)) ? '' : 'none';
+      });
+    });
+  }
+
+  // reset
+  const resetBtn = document.getElementById('pmResetBtn');
+  if (resetBtn) resetBtn.addEventListener('click', () => {
+    if (!confirm('คืนค่ากลับเป็นที่บันทึกล่าสุด? การเปลี่ยนแปลงทั้งหมดจะหายไป')) return;
+    // rebuild draft จาก current
+    _permMatrixState.draft = new Map();
+    for (const [roleId, set] of _permMatrixState.current) {
+      _permMatrixState.draft.set(roleId, new Set(set));
+    }
+    // ensure ทุก role มี Set (กรณี role ไม่มี granted แม้แต่อันเดียว)
+    for (const r of _permMatrixState.roles) {
+      if (!_permMatrixState.draft.has(r.id)) _permMatrixState.draft.set(r.id, new Set());
+    }
+    box.innerHTML = _renderMatrixHtml();
+    _wireMatrixEvents();
+  });
+
+  // save
+  const saveBtn = document.getElementById('pmSaveBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const changed = _changedCount();
+    if (!changed) return;
+    if (!confirm(`บันทึก ${changed} การเปลี่ยนแปลง? — มีผลกับการใช้งานจริงทันที`)) return;
+    saveBtn.disabled = true; saveBtn.textContent = 'กำลังบันทึก...';
+    try {
+      // หา role ที่มี diff แล้ว save ทีละตัว
+      const toSave = [];
+      for (const [roleId, set] of _permMatrixState.draft) {
+        const orig = _permMatrixState.current.get(roleId) || new Set();
+        let dirty = set.size !== orig.size;
+        if (!dirty) for (const k of set) if (!orig.has(k)) { dirty = true; break; }
+        if (dirty) toSave.push({ roleId, keys: Array.from(set) });
+      }
+      for (const { roleId, keys } of toSave) {
+        await DB.setRolePermissions(roleId, keys);
+      }
+      toast(`บันทึก ${toSave.length} role · ${changed} การเปลี่ยนแปลง`, 'success');
+      renderPermMatrix();   // reload เพื่อ sync current/draft
+    } catch (ex) {
+      toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error');
+      saveBtn.disabled = false; saveBtn.textContent = 'บันทึก';
+    }
+  });
+}
+
+function _updateChangedBadge() {
+  const n = _changedCount();
+  const stat = document.querySelector('[data-pm-changed]');
+  const num = document.getElementById('pmChangedNum');
+  const reset = document.getElementById('pmResetBtn');
+  const save = document.getElementById('pmSaveBtn');
+  if (stat) stat.style.display = n ? '' : 'none';
+  if (num) num.textContent = String(n);
+  if (reset) reset.disabled = !n;
+  if (save) save.disabled = !n;
 }
 
 router.register('settings', () => {

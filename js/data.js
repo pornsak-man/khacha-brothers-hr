@@ -355,6 +355,61 @@ const DB = {
     return false;
   },
 
+  // ────────────────────────────────────────────────────────────
+  // Phase 4 — Permission Matrix data layer (admin UI)
+  // ทุก method คืน null/[] ถ้า migration ยังไม่รัน (table not exist)
+  // → caller render empty state แทนที่จะ throw
+  // ────────────────────────────────────────────────────────────
+  async getPermRoles() {
+    try {
+      const { data, error } = await this.client.from('roles').select('*').order('sort_order');
+      if (error) throw error;
+      return data || [];
+    } catch (ex) {
+      console.warn('[perm] getPermRoles failed:', ex?.message || ex);
+      return null;  // signal: migration not run
+    }
+  },
+  async getPermCatalog() {
+    try {
+      const { data, error } = await this.client.from('permissions').select('*').order('sort_order');
+      if (error) throw error;
+      return data || [];
+    } catch (ex) {
+      console.warn('[perm] getPermCatalog failed:', ex?.message || ex);
+      return null;
+    }
+  },
+  async getRolePermissions() {
+    try {
+      const { data, error } = await this.client.from('role_permissions').select('role_id, permission_key, granted');
+      if (error) throw error;
+      // คืนเป็น Map<roleId, Set<permKey>> เพื่อ lookup เร็ว
+      const map = new Map();
+      for (const row of data || []) {
+        if (!row.granted) continue;
+        if (!map.has(row.role_id)) map.set(row.role_id, new Set());
+        map.get(row.role_id).add(row.permission_key);
+      }
+      return map;
+    } catch (ex) {
+      console.warn('[perm] getRolePermissions failed:', ex?.message || ex);
+      return null;
+    }
+  },
+  async setRolePermissions(roleId, permKeys) {
+    if (!roleId || !Array.isArray(permKeys)) throw new Error('roleId + permKeys[] required');
+    const { data, error } = await this.client.rpc('set_role_permissions', {
+      p_role_id: roleId,
+      p_perm_keys: permKeys
+    });
+    if (error) throw error;
+    // refresh cache ของ current user ทันที (กรณีแก้ role ตัวเอง)
+    this._permCache = null;
+    await this._loadPermissions();
+    return data;
+  },
+
   // ─── SCOPE FILTER (สาขาที่ดูแลได้) ───
   // คืน array ของ branch IDs ที่ user ดูแล หรือ null = ทุกสาขา (no filter)
   scopedBranches() {
