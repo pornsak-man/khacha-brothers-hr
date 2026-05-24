@@ -4657,3 +4657,22 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
   background: rgba(220, 38, 38, 0.18);
   color: #fecaca;
 }
+
+/* === SCHEDULE: Overview ทุกสาขา === */
+.overview-toolbar {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.overview-week-label strong { color: var(--text); }
+.overview-stats {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.overview-stats .badge {
+  font-size: 12px; padding: 3px 8px;
+}
+.muted-row td { opacity: 0.6; }

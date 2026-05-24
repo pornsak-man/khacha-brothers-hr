@@ -873,8 +873,11 @@ const DB = {
       if (!list.find(x => x.id === newRow.id)) list.unshift(m.from(newRow));
     } else if (eventType === 'UPDATE' && newRow) {
       const idx = list.findIndex(x => x.id === newRow.id);
-      if (idx >= 0) list[idx] = m.from(newRow);
-      else list.unshift(m.from(newRow));
+      if (idx >= 0) {
+        // เก็บค่าเดิม (mapped format) ใน payload เพื่อให้ event handler เปรียบเทียบได้
+        payload._cachedOld = list[idx];
+        list[idx] = m.from(newRow);
+      } else list.unshift(m.from(newRow));
     } else if (eventType === 'DELETE' && oldRow) {
       this.data[m.list] = list.filter(x => x.id !== oldRow.id);
     }
