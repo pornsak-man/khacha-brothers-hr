@@ -410,6 +410,46 @@ const DB = {
     return data;
   },
 
+  // ─── Role CRUD (Phase 4b) ───
+  async createRole({ id, label_th, badge_class = '', description = '', clone_from = null } = {}) {
+    if (!id || !label_th) throw new Error('id + label_th required');
+    const { data, error } = await this.client.rpc('create_role', {
+      p_id: id, p_label_th: label_th, p_badge_class: badge_class,
+      p_description: description, p_clone_from: clone_from || null
+    });
+    if (error) throw error;
+    return data;
+  },
+  async updateRole({ id, label_th, badge_class = '', description = '' } = {}) {
+    if (!id || !label_th) throw new Error('id + label_th required');
+    const { data, error } = await this.client.rpc('update_role', {
+      p_id: id, p_label_th: label_th, p_badge_class: badge_class, p_description: description
+    });
+    if (error) throw error;
+    return data;
+  },
+  async deleteRole(id, migrateToRole = null) {
+    if (!id) throw new Error('id required');
+    const { data, error } = await this.client.rpc('delete_role', {
+      p_id: id, p_migrate_to_role: migrateToRole || null
+    });
+    if (error) throw error;
+    return data;
+  },
+  // นับจำนวน user ที่ใช้ role แต่ละตัว — ใช้ตอนถามว่าจะลบ role ที่มี user หรือไม่
+  async getRoleUserCounts() {
+    try {
+      const { data, error } = await this.client.from('user_profiles').select('role');
+      if (error) throw error;
+      const counts = {};
+      for (const r of data || []) counts[r.role || 'viewer'] = (counts[r.role || 'viewer'] || 0) + 1;
+      return counts;
+    } catch (ex) {
+      console.warn('[perm] getRoleUserCounts failed:', ex?.message || ex);
+      return {};
+    }
+  },
+
   // ─── SCOPE FILTER (สาขาที่ดูแลได้) ───
   // คืน array ของ branch IDs ที่ user ดูแล หรือ null = ทุกสาขา (no filter)
   scopedBranches() {

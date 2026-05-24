@@ -11379,6 +11379,7 @@ function _renderMatrixHtml() {
         </span>
       </div>
       <div class="pm-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="pmAddRoleBtn" title="สร้าง role ใหม่">+ Role</button>
         <button type="button" class="btn btn-secondary btn-sm" id="pmResetBtn" ${changed ? '' : 'disabled'}>คืนค่า</button>
         <button type="button" class="btn btn-primary btn-sm" id="pmSaveBtn" ${changed ? '' : 'disabled'}>บันทึก</button>
       </div>
@@ -11391,8 +11392,15 @@ function _renderMatrixHtml() {
             <th class="pm-th-perm">Permission</th>
             ${roles.map(r => `
               <th class="pm-th-role" data-role="${escapeHtml(r.id)}">
-                <div class="pm-role-label">${escapeHtml(r.label_th)}</div>
-                <div class="pm-role-sub">${escapeHtml(r.id)}${r.is_protected ? ' 🔒' : ''}</div>
+                <div class="pm-role-label">
+                  ${escapeHtml(r.label_th)}
+                  ${!r.is_system ? `
+                    <span class="pm-role-actions">
+                      <button type="button" class="pm-role-edit" data-pm-edit-role="${escapeHtml(r.id)}" title="แก้ไข">✎</button>
+                      <button type="button" class="pm-role-del"  data-pm-del-role="${escapeHtml(r.id)}"  title="ลบ">🗑</button>
+                    </span>` : ''}
+                </div>
+                <div class="pm-role-sub">${escapeHtml(r.id)}${r.is_protected ? ' 🔒' : ''}${r.is_system ? ' · system' : ''}</div>
               </th>
             `).join('')}
           </tr>
@@ -11463,6 +11471,16 @@ function _renderMatrixHtml() {
 function _wireMatrixEvents() {
   const box = document.getElementById('permMatrixBox');
   if (!box) return;
+
+  // role CRUD buttons
+  const addBtn = document.getElementById('pmAddRoleBtn');
+  if (addBtn) addBtn.addEventListener('click', () => openCreateRoleModal());
+  box.addEventListener('click', (e) => {
+    const edit = e.target.closest('[data-pm-edit-role]');
+    if (edit) { openEditRoleModal(edit.dataset.pmEditRole); return; }
+    const del = e.target.closest('[data-pm-del-role]');
+    if (del)  { openDeleteRoleModal(del.dataset.pmDelRole); return; }
+  });
 
   // toggle checkbox → update draft
   box.addEventListener('change', (e) => {
@@ -11567,6 +11585,187 @@ function _updateChangedBadge() {
   if (num) num.textContent = String(n);
   if (reset) reset.disabled = !n;
   if (save) save.disabled = !n;
+}
+
+// ─── Phase 4b — Role CRUD modals ───
+const BADGE_CHOICES = [
+  { value: '',                label: '— ไม่มี —' },
+  { value: 'badge-primary',   label: 'Primary (น้ำเงินเข้ม)' },
+  { value: 'badge-success',   label: 'Success (เขียว)' },
+  { value: 'badge-info',      label: 'Info (น้ำเงิน)' },
+  { value: 'badge-warning',   label: 'Warning (เหลือง)' },
+  { value: 'badge-danger',    label: 'Danger (แดง)' },
+  { value: 'badge-gold',      label: 'Gold (champagne)' },
+  { value: 'badge-neutral',   label: 'Neutral (เทา)' }
+];
+
+function openCreateRoleModal() {
+  if (!DB.hasPermission('permission.edit_matrix')) {
+    toast('ไม่มีสิทธิ์จัดการ role', 'error'); return;
+  }
+  const roles = _permMatrixState.roles || [];
+  modal.open('สร้าง Role ใหม่', `
+    <form id="createRoleForm">
+      <div class="form-grid">
+        <div class="form-group span-2">
+          <label>Role ID (snake_case)</label>
+          <input name="id" required pattern="^[a-z][a-z0-9_]{1,31}$" placeholder="เช่น junior_hr" autocomplete="off"/>
+          <small class="muted-2" style="font-size:11px;margin-top:4px;display:block">ใช้ภายในระบบ — แก้ภายหลังไม่ได้ · ตัวอักษร a-z, 0-9, _ เริ่มด้วยตัวอักษร</small>
+        </div>
+        <div class="form-group span-2">
+          <label>ชื่อแสดงผล (Label)</label>
+          <input name="label_th" required placeholder="เช่น HR ฝึกงาน" maxlength="64"/>
+        </div>
+        <div class="form-group">
+          <label>สี Badge</label>
+          <select name="badge_class">
+            ${BADGE_CHOICES.map(b => `<option value="${escapeHtml(b.value)}">${escapeHtml(b.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Clone สิทธิ์จาก Role</label>
+          <select name="clone_from">
+            <option value="">— ไม่ clone (role ใหม่ไม่มีสิทธิ์อะไรเลย) —</option>
+            ${roles.map(r => `<option value="${escapeHtml(r.id)}">${escapeHtml(r.label_th)} (${escapeHtml(r.id)})</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group span-2">
+          <label>คำอธิบาย (ทางเลือก)</label>
+          <textarea name="description" rows="2" maxlength="200" placeholder="เช่น HR ฝึกงาน — เข้าทุกหน้าได้แต่แก้ไม่ได้"></textarea>
+        </div>
+      </div>
+    </form>
+  `, {
+    footer: `<button class="btn btn-secondary" data-close>ยกเลิก</button><button class="btn btn-primary" id="createRoleSave">สร้าง</button>`
+  });
+  $('#createRoleSave').addEventListener('click', async () => {
+    const form = $('#createRoleForm');
+    if (!form.checkValidity()) { form.reportValidity(); return; }
+    const data = Object.fromEntries(new FormData(form).entries());
+    const btn = $('#createRoleSave'); btn.disabled = true; btn.textContent = 'กำลังสร้าง...';
+    try {
+      await DB.createRole({
+        id: data.id.trim(),
+        label_th: data.label_th.trim(),
+        badge_class: data.badge_class || '',
+        description: (data.description || '').trim(),
+        clone_from: data.clone_from || null
+      });
+      modal.close();
+      toast(`✓ สร้าง role "${data.label_th}" แล้ว`, 'success');
+      renderPermMatrix();
+    } catch (ex) {
+      toast('สร้างไม่สำเร็จ: ' + (ex.message || ex), 'error');
+      btn.disabled = false; btn.textContent = 'สร้าง';
+    }
+  });
+}
+
+function openEditRoleModal(roleId) {
+  if (!DB.hasPermission('permission.edit_matrix')) {
+    toast('ไม่มีสิทธิ์จัดการ role', 'error'); return;
+  }
+  const r = (_permMatrixState.roles || []).find(x => x.id === roleId);
+  if (!r) { toast('ไม่พบ role: ' + roleId, 'error'); return; }
+  modal.open(`แก้ไข Role — ${r.label_th}`, `
+    <form id="editRoleForm">
+      <div class="form-grid">
+        <div class="form-group span-2">
+          <label>Role ID</label>
+          <input value="${escapeHtml(r.id)}" disabled style="background:var(--surface-2);font-family:monospace;font-size:12.5px"/>
+          <small class="muted-2" style="font-size:11px;margin-top:4px;display:block">แก้ ID ไม่ได้ — ถ้าต้องการเปลี่ยน ลบและสร้างใหม่</small>
+        </div>
+        <div class="form-group span-2">
+          <label>ชื่อแสดงผล</label>
+          <input name="label_th" required value="${escapeHtml(r.label_th)}" maxlength="64"/>
+        </div>
+        <div class="form-group span-2">
+          <label>สี Badge</label>
+          <select name="badge_class">
+            ${BADGE_CHOICES.map(b => `<option value="${escapeHtml(b.value)}" ${r.badge_class === b.value ? 'selected' : ''}>${escapeHtml(b.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group span-2">
+          <label>คำอธิบาย</label>
+          <textarea name="description" rows="2" maxlength="200">${escapeHtml(r.description || '')}</textarea>
+        </div>
+      </div>
+    </form>
+  `, {
+    footer: `<button class="btn btn-secondary" data-close>ยกเลิก</button><button class="btn btn-primary" id="editRoleSave">บันทึก</button>`
+  });
+  $('#editRoleSave').addEventListener('click', async () => {
+    const form = $('#editRoleForm');
+    if (!form.checkValidity()) { form.reportValidity(); return; }
+    const data = Object.fromEntries(new FormData(form).entries());
+    const btn = $('#editRoleSave'); btn.disabled = true; btn.textContent = 'กำลังบันทึก...';
+    try {
+      await DB.updateRole({
+        id: roleId,
+        label_th: data.label_th.trim(),
+        badge_class: data.badge_class || '',
+        description: (data.description || '').trim()
+      });
+      modal.close();
+      toast('✓ แก้ไข role แล้ว', 'success');
+      renderPermMatrix();
+    } catch (ex) {
+      toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error');
+      btn.disabled = false; btn.textContent = 'บันทึก';
+    }
+  });
+}
+
+async function openDeleteRoleModal(roleId) {
+  if (!DB.hasPermission('permission.edit_matrix')) {
+    toast('ไม่มีสิทธิ์จัดการ role', 'error'); return;
+  }
+  const r = (_permMatrixState.roles || []).find(x => x.id === roleId);
+  if (!r) { toast('ไม่พบ role: ' + roleId, 'error'); return; }
+  if (r.is_system) { toast('ลบ system role ไม่ได้', 'error'); return; }
+  // นับ user ที่ใช้ role นี้
+  const counts = await DB.getRoleUserCounts();
+  const userCount = counts[roleId] || 0;
+  const otherRoles = (_permMatrixState.roles || []).filter(x => x.id !== roleId);
+  modal.open(`ลบ Role — ${r.label_th}`, `
+    <form id="delRoleForm">
+      <div style="padding:14px 16px;background:var(--danger-soft);border:1px solid rgba(196,36,63,0.3);border-radius:10px;margin-bottom:14px">
+        <strong style="color:var(--danger-text)">⚠️ การลบ role นี้จะลบ permission mapping ทั้งหมดด้วย</strong>
+        ${userCount > 0
+          ? `<div style="margin-top:8px;font-size:13px;color:var(--text-2)">มีผู้ใช้ <strong>${userCount} คน</strong> ใช้ role นี้อยู่ — ต้องเลือก role ปลายทางเพื่อ migrate</div>`
+          : `<div style="margin-top:8px;font-size:13px;color:var(--text-2)">ไม่มีผู้ใช้ที่ใช้ role นี้ — ลบได้เลย</div>`}
+      </div>
+      ${userCount > 0 ? `
+        <div class="form-group">
+          <label>ย้ายผู้ใช้ ${userCount} คนไปเป็น Role:</label>
+          <select name="migrate_to" required>
+            <option value="">— เลือก role ปลายทาง —</option>
+            ${otherRoles.map(x => `<option value="${escapeHtml(x.id)}">${escapeHtml(x.label_th)} (${escapeHtml(x.id)})</option>`).join('')}
+          </select>
+        </div>
+      ` : ''}
+    </form>
+  `, {
+    footer: `<button class="btn btn-secondary" data-close>ยกเลิก</button><button class="btn btn-danger" id="delRoleConfirm">ลบ Role</button>`
+  });
+  $('#delRoleConfirm').addEventListener('click', async () => {
+    const form = $('#delRoleForm');
+    if (!form.checkValidity()) { form.reportValidity(); return; }
+    const data = Object.fromEntries(new FormData(form).entries());
+    const btn = $('#delRoleConfirm'); btn.disabled = true; btn.textContent = 'กำลังลบ...';
+    try {
+      const res = await DB.deleteRole(roleId, data.migrate_to || null);
+      modal.close();
+      const msg = res.migrated_users > 0
+        ? `✓ ลบ role + ย้าย ${res.migrated_users} ผู้ใช้ → ${res.migrated_to}`
+        : '✓ ลบ role แล้ว';
+      toast(msg, 'success');
+      renderPermMatrix();
+    } catch (ex) {
+      toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error');
+      btn.disabled = false; btn.textContent = 'ลบ Role';
+    }
+  });
 }
 
 router.register('settings', () => {
