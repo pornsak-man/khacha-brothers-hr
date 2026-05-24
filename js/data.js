@@ -244,6 +244,11 @@ const DB = {
       if (enabled) sessionStorage.setItem('kb_as_employee', '1');
       else sessionStorage.removeItem('kb_as_employee');
     } catch (e) {}
+    // [Security H6] เขียน server-side audit log (fire-and-forget — ไม่ block UI)
+    // ถ้า RPC ยังไม่ deploy → fail silently (console.warn) เพื่อไม่ break UX
+    this.client.rpc('log_impersonate_toggle', { p_enabled: enabled })
+      .then(({ error }) => { if (error) console.warn('[impersonate-audit]', error.message); })
+      .catch(ex => console.warn('[impersonate-audit]', ex?.message || ex));
     return enabled;
   },
 
@@ -2369,6 +2374,14 @@ const DB = {
     // ─── 2) Update เป็นรหัสใหม่ ───
     const { error: updErr } = await this.client.auth.updateUser({ password: newPassword });
     if (updErr) throw updErr;
+    // ─── 3) [C2] เคลียร์ force_password_change flag (no-op ถ้าไม่ได้ตั้งอยู่) ───
+    try {
+      await this.client.rpc('clear_force_password_change');
+      if (this.profile) this.profile.force_password_change = false;
+    } catch (ex) {
+      // RPC ยังไม่ deploy → ไม่ block — แค่ log
+      console.warn('[clear_force_password_change]', ex?.message || ex);
+    }
   },
 
   // ─── EMPLOYEE ACCOUNT MANAGEMENT (admin only — RPC calls) ───

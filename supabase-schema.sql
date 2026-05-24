@@ -183,7 +183,9 @@ CREATE TABLE IF NOT EXISTS public.company_settings (
 CREATE TABLE IF NOT EXISTS public.user_profiles (
   user_id      UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   name         TEXT,
-  role         TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('admin', 'viewer')),
+  -- หมายเหตุ: role list ต้องตรงกับ rbac-hierarchy.sql migration
+  -- ห้ามแก้ที่นี่อย่างเดียว ต้องอัพ rbac-hierarchy.sql ด้วย (และ permissions-v1.sql)
+  role         TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('admin', 'hr', 'operation_manager', 'area_manager', 'branch_manager', 'branch_staff', 'viewer')),
   employee_id  TEXT REFERENCES public.employees(id) ON DELETE SET NULL,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );

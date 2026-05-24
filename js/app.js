@@ -503,19 +503,31 @@ const modal = {
   open(title, bodyHtml, opts = {}) {
     const root = $('#modalRoot');
     const sizeCls = opts.size === 'lg' ? ' lg' : '';
+    // backdropClose / escapeClose default = true (backward compat)
+    const backdropClose = opts.backdropClose !== false;
+    const escapeClose = opts.escapeClose !== false;
+    this._escapeClose = escapeClose;
+    // ซ่อนปุ่ม X ในโหมดบังคับ (force) — user ต้องทำ action ให้เสร็จ
+    const closeBtn = escapeClose ? `<button class="modal-close" data-close title="ปิด (ESC)" aria-label="ปิด">&times;</button>` : '';
     root.innerHTML = `
       <div class="modal-backdrop">
         <div class="modal${sizeCls}">
           <div class="modal-header">
             <div class="modal-title">${escapeHtml(title)}</div>
-            <button class="modal-close" data-close title="ปิด (ESC)" aria-label="ปิด">&times;</button>
+            ${closeBtn}
           </div>
           <div class="modal-body">${bodyHtml}</div>
           ${opts.footer ? `<div class="modal-footer">${opts.footer}</div>` : ''}
         </div>
       </div>`;
     root.querySelector('.modal-backdrop').addEventListener('click', (e) => {
-      if (e.target.classList.contains('modal-backdrop') || e.target.dataset.close !== undefined) this.close();
+      // backdrop click ปิดได้เฉพาะถ้า backdropClose=true
+      if (e.target.classList.contains('modal-backdrop')) {
+        if (backdropClose) this.close();
+        return;
+      }
+      // [data-close] (X button, ปุ่ม "ยกเลิก") ปิดได้เสมอถ้ามี element อยู่ — force mode ไม่ render
+      if (e.target.dataset.close !== undefined) this.close();
     });
     // Push history state — browser back button จะปิด modal แทนการออกจากเว็บ
     if (!this._historyPushed) {
@@ -528,6 +540,7 @@ const modal = {
     const root = $('#modalRoot');
     if (!root.children.length) return;
     root.innerHTML = '';
+    this._escapeClose = true;  // reset เพื่อไม่ให้ค่า force ค้างไปยัง modal ถัดไป
     if (this._historyPushed && !skipHistory && history.state?.kbModal) {
       this._historyPushed = false;
       history.back();
@@ -600,6 +613,12 @@ const auth = {
         const blocked = await this.checkTerminationAndBlock();
         if (blocked) {
           err.textContent = blocked;
+          return;
+        }
+        // [C2] บังคับเปลี่ยนรหัสผ่านถ้า HR เพิ่ง reset / สร้างบัญชีใหม่
+        if (DB.profile?.force_password_change) {
+          this.showApp();
+          openChangePasswordModal({ force: true });
           return;
         }
         this.showApp();
@@ -784,9 +803,23 @@ function requirePermission(key, label) {
 }
 
 // ─────────────── CHANGE PASSWORD (ทุกคน) ───────────────
-function openChangePasswordModal() {
+// opts.force = true → บังคับเปลี่ยน (ปิด modal ไม่ได้, ไม่มีปุ่ม "ยกเลิก", logout ถ้าปิดด้วย ESC)
+// opts.onDone = callback หลังเปลี่ยนสำเร็จ (เช่น showApp ในกรณี force)
+function openChangePasswordModal(opts = {}) {
   if (!DB.user) { toast('กรุณา login ก่อน', 'error'); return; }
-  modal.open('🔑 เปลี่ยนรหัสผ่าน', `
+  const force = !!opts.force;
+  const onDone = opts.onDone;
+
+  const forceNotice = force
+    ? `<div style="font-size:13px;color:var(--warning);padding:10px 12px;background:rgba(217,119,6,0.08);border:1px solid var(--warning);border-radius:8px;margin-bottom:12px">
+         🔒 ระบบบังคับเปลี่ยนรหัสผ่านก่อนใช้งาน — เป็นรหัสเริ่มต้นจาก HR (เลข ปชช หรือรหัสพนักงาน) ที่ใครก็เดาได้
+       </div>`
+    : '';
+
+  const cancelBtn = force ? '' : '<button type="button" class="btn btn-secondary" data-close>ยกเลิก</button>';
+
+  modal.open(force ? '🔒 บังคับเปลี่ยนรหัสผ่าน' : '🔑 เปลี่ยนรหัสผ่าน', `
+    ${forceNotice}
     <form id="changePwdForm">
       <div class="form-group">
         <label>รหัสผ่านปัจจุบัน *</label>
@@ -805,11 +838,11 @@ function openChangePasswordModal() {
       </div>
       <div id="changePwdError" class="login-error" style="color:var(--danger);font-size:13px;margin:8px 0;display:none"></div>
       <div class="form-actions">
-        <button type="button" class="btn btn-secondary" data-close>ยกเลิก</button>
+        ${cancelBtn}
         <button type="submit" class="btn btn-primary" id="changePwdSubmit">เปลี่ยนรหัสผ่าน</button>
       </div>
     </form>
-  `, { size: 'sm' });
+  `, { size: 'sm', backdropClose: !force, escapeClose: !force });
 
   const errEl = document.getElementById('changePwdError');
   const showErr = (msg) => { errEl.textContent = msg; errEl.style.display = ''; };
@@ -829,7 +862,10 @@ function openChangePasswordModal() {
     try {
       await DB.changePassword(oldPwd, newPwd);
       modal.close();
-      toast('✓ เปลี่ยนรหัสผ่านสำเร็จ — login ครั้งต่อไปใช้รหัสใหม่', 'success');
+      toast(force ? '✓ เปลี่ยนรหัสผ่านสำเร็จ — กำลังเข้าสู่ระบบ' : '✓ เปลี่ยนรหัสผ่านสำเร็จ — login ครั้งต่อไปใช้รหัสใหม่', 'success');
+      if (typeof onDone === 'function') {
+        try { onDone(); } catch (_) {}
+      }
     } catch (ex) {
       showErr(ex.message || String(ex));
       btn.disabled = false; btn.textContent = 'เปลี่ยนรหัสผ่าน';
@@ -14283,9 +14319,9 @@ async function deleteShiftUI(shiftId) {
 //  STARTUP
 // ═══════════════════════════════════════════════════════
 // ─── KEYBOARD + BROWSER BACK SUPPORT ───
-// ESC = ปิด modal
+// ESC = ปิด modal (ยกเว้นโหมด force — _escapeClose=false)
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && $('#modalRoot').children.length) {
+  if (e.key === 'Escape' && $('#modalRoot').children.length && modal._escapeClose !== false) {
     e.preventDefault();
     modal.close();
   }
@@ -14347,7 +14383,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (DB.user && DB.profile) {
       // ตรวจสถานะพ้นสภาพก่อนแสดง app (เผื่อ user ถูกพ้นสภาพระหว่าง session ก่อนหน้า)
       const blocked = await auth.checkTerminationAndBlock();
-      if (!blocked) auth.showApp();
+      if (!blocked) {
+        auth.showApp();
+        // [C2] บังคับเปลี่ยนรหัสผ่านถ้า flag ถูกตั้งไว้ (HR เพิ่ง reset ขณะ user offline)
+        if (DB.profile?.force_password_change) {
+          openChangePasswordModal({ force: true });
+        }
+      }
       // ถ้า blocked → checkTerminationAndBlock() จะ showLogin() ให้แล้ว
     } else {
       auth.showLogin();
