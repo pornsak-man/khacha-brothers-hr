@@ -727,8 +727,11 @@ const router = {
     // Fallback: เบราว์เซอร์เก่าจะ render ทันทีเหมือนเดิม (graceful degradation)
     if (document.startViewTransition && !isNavigation) {
       const t = document.startViewTransition(() => this._doRender(name, isNavigation));
-      // กลืน InvalidStateError ที่เกิดเมื่อมี transition ซ้อน (Edge บ่นเสียงดัง แต่ render ปกติ)
+      // กลืน InvalidStateError จากทุก promise ของ ViewTransition (มี 3 ตัว)
+      // เกิดเมื่อ transition ซ้อนหรือ abort — render ปกติ แค่ console บ่น
       t.finished?.catch?.(() => {});
+      t.ready?.catch?.(() => {});
+      t.updateCallbackDone?.catch?.(() => {});
       return t;
     }
     return this._doRender(name, isNavigation);
