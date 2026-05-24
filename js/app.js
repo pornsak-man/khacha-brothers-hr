@@ -13199,13 +13199,25 @@ function openCustomShiftForm(empId, workDate, existingEntry) {
 
 // === ADD CROSS-BRANCH EMPLOYEE ===
 
-function openAddCrossBranchEmployee() {
+async function openAddCrossBranchEmployee() {
   const branchId = _scheduleState.branchId;
   if (!branchId) return;
-  // พนักงาน active ที่อยู่สาขาอื่น
-  const candidates = (DB.data.employees || [])
-    .filter(e => e.branch && e.branch !== branchId && DB.empStatus(e) !== 'resigned')
+  // โหลดรายชื่อพนักงานทุกสาขาผ่าน RPC (bypass RLS scope สำหรับ feature นี้)
+  let roster;
+  try {
+    roster = await DB.fetchCrossBranchRoster();
+  } catch (ex) {
+    toast('โหลดรายชื่อพนักงานข้ามสาขาไม่สำเร็จ: ' + (ex.message || ex), 'error');
+    return;
+  }
+  const candidates = (roster || [])
+    .filter(e => e.branch && e.branch !== branchId)
     .sort((a, b) => (a.branch || '').localeCompare(b.branch || '') || (a.firstName || '').localeCompare(b.firstName || '', 'th'));
+
+  if (!candidates.length) {
+    toast('ไม่พบพนักงานสาขาอื่น — ต้องรัน supabase-migration-cross-branch-roster.sql ก่อน', 'warning');
+    return;
+  }
 
   const body = `
     <div class="schedule-info-note">

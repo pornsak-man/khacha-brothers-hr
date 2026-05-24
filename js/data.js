@@ -3860,6 +3860,32 @@ const DB = {
     return managed.includes(branchId);
   },
 
+  // โหลดรายชื่อพนักงานทุกสาขา (ผ่าน RPC SECURITY DEFINER — bypass RLS scope)
+  // ใช้สำหรับ feature "เพิ่มพนักงานข้ามสาขา" — ผู้จัดการสาขาเห็นได้
+  // เฉพาะข้อมูล non-sensitive (id/ชื่อ/สาขา/ตำแหน่ง)
+  async fetchCrossBranchRoster() {
+    if (this._crossBranchRoster) return this._crossBranchRoster;
+    const { data, error } = await this.client.rpc('list_employees_for_cross_branch');
+    if (error) {
+      console.warn('list_employees_for_cross_branch failed:', error);
+      // fallback ใช้ cache เดิม (จะได้แค่สาขาตัวเอง)
+      return (this.data.employees || []).filter(e => this.empStatus(e) !== 'resigned');
+    }
+    this._crossBranchRoster = (data || []).map(r => ({
+      id: r.id,
+      firstName: r.first_name || '',
+      lastName: r.last_name || '',
+      nickname: r.nickname || '',
+      branch: r.branch || '',
+      department: r.department || '',
+      position: r.position || '',
+      positionTitle: r.position_title || '',
+      employeeType: r.employee_type || '',
+      hireDate: r.hire_date || ''
+    }));
+    return this._crossBranchRoster;
+  },
+
   // คืน list ของพนักงานที่มีสิทธิ์จัดตารางของสาขา (สำหรับแสดงใน UI)
   getScheduleCreators(branchId) {
     if (!branchId) return [];
