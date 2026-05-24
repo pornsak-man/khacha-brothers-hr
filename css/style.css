@@ -3640,14 +3640,16 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 }
 .branch-picker-search input {
   width: 100%;
-  padding: 8px 12px 8px 34px;
+  padding: 9px 12px 9px 40px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--text);
   font-size: 13px;
+  font-family: inherit;
   transition: all var(--transition);
 }
+.branch-picker-search input::placeholder { color: var(--text-3); }
 .branch-picker-search input:hover { border-color: var(--border-strong); }
 .branch-picker-search input:focus {
   outline: none;
@@ -3657,13 +3659,13 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 }
 .branch-picker-search::before {
   content: "";
-  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
-  width: 14px; height: 14px;
-  background: currentColor;
-  color: var(--text-3);
-  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>") center/contain no-repeat;
-          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>") center/contain no-repeat;
+  position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+  width: 15px; height: 15px;
+  background: var(--text-3);
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>") center/contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>") center/contain no-repeat;
   pointer-events: none;
+  z-index: 1;
 }
 
 .branch-picker-count {
@@ -3763,28 +3765,30 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 .branch-chip-code {
   flex-shrink: 0;
   font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 2px 7px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 4px 10px;
   border-radius: var(--radius-xs);
   background: var(--surface-2);
-  color: var(--text-2);
+  color: var(--text);
   border: 1px solid var(--border);
-  min-width: 36px;
+  min-width: 44px;
   text-align: center;
+  line-height: 1.2;
   transition: all var(--transition);
 }
 
 .branch-chip-name {
   flex: 1; min-width: 0;
-  font-size: 12.5px;
-  color: var(--text);
-  font-weight: 500;
+  font-size: 11.5px;
+  color: var(--text-2);
+  font-weight: 400;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   letter-spacing: 0.005em;
+  line-height: 1.35;
 }
 
 /* Selected state — champagne gold luxe accent */
