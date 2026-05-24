@@ -12873,12 +12873,23 @@ function openCustomShiftForm(empId, workDate, existingEntry) {
     return new Date(y, m - 1, d).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long' });
   })();
 
+  // parse "HH:MM" → [hour, minute] (snap minute to 0 or 30)
+  const parseHM = (s) => {
+    const [h, m] = (s || '').split(':').map(Number);
+    return [isNaN(h) ? 17 : h, (isNaN(m) || m < 30) ? 0 : 30];
+  };
+  const [sH, sM] = parseHM((existingEntry?.customStartTime || '').slice(0, 5) || '17:00');
+  const [eH, eM] = parseHM((existingEntry?.customEndTime   || '').slice(0, 5) || '21:00');
   const cur = {
-    startTime: (existingEntry?.customStartTime || '').slice(0, 5) || '17:00',
-    endTime:   (existingEntry?.customEndTime   || '').slice(0, 5) || '21:00',
     breakMinutes: existingEntry?.customBreakMinutes || 0,
     label: existingEntry?.customLabel || ''
   };
+  // generate hour (00-23) + minute (00, 30) selects
+  const hourOpts = (sel) => Array.from({ length: 24 }, (_, i) => {
+    const v = String(i).padStart(2, '0');
+    return `<option value="${i}" ${i === sel ? 'selected' : ''}>${v}</option>`;
+  }).join('');
+  const minOpts = (sel) => `<option value="0" ${sel === 0 ? 'selected' : ''}>00</option><option value="30" ${sel === 30 ? 'selected' : ''}>30</option>`;
 
   const body = `
     <div class="custom-shift-form">
@@ -12890,11 +12901,19 @@ function openCustomShiftForm(empId, workDate, existingEntry) {
       <form id="customShiftForm" class="form-grid">
         <div class="form-group">
           <label>เวลาเริ่ม</label>
-          <input type="time" name="startTime" value="${escapeHtml(cur.startTime)}" step="900" required />
+          <div class="time-select-group">
+            <select name="startHour" class="time-select" required>${hourOpts(sH)}</select>
+            <span class="time-colon">:</span>
+            <select name="startMin" class="time-select" required>${minOpts(sM)}</select>
+          </div>
         </div>
         <div class="form-group">
           <label>เวลาเลิก</label>
-          <input type="time" name="endTime" value="${escapeHtml(cur.endTime)}" step="900" required />
+          <div class="time-select-group">
+            <select name="endHour" class="time-select" required>${hourOpts(eH)}</select>
+            <span class="time-colon">:</span>
+            <select name="endMin" class="time-select" required>${minOpts(eM)}</select>
+          </div>
         </div>
         <div class="form-group">
           <label>พักกี่นาที <span class="muted-2">(0 = ไม่พัก)</span></label>
@@ -12918,29 +12937,28 @@ function openCustomShiftForm(empId, workDate, existingEntry) {
 
   const form = $('#customShiftForm');
   const preview = $('#customShiftPreview');
-  const updatePreview = () => {
+  const pad = (n) => String(n).padStart(2, '0');
+  const readTimes = () => {
     const fd = new FormData(form);
-    const s = fd.get('startTime'), e = fd.get('endTime');
+    const sh = Number(fd.get('startHour')), sm = Number(fd.get('startMin'));
+    const eh = Number(fd.get('endHour')),   em = Number(fd.get('endMin'));
     const br = Number(fd.get('breakMinutes') || 0);
-    if (s && e) {
-      const [sh, sm] = s.split(':').map(Number);
-      const [eh, em] = e.split(':').map(Number);
-      let mins = (eh * 60 + em) - (sh * 60 + sm);
-      if (mins < 0) mins += 24 * 60;
-      const work = Math.max(0, mins - br);
-      preview.innerHTML = `รวมเวลา <strong>${(mins / 60).toFixed(1)}</strong> ชม. · พัก <strong>${br}</strong> นาที · ทำงานจริง <strong>${(work / 60).toFixed(1)}</strong> ชม.`;
-    } else {
-      preview.textContent = '';
-    }
+    return { sh, sm, eh, em, br, startTime: `${pad(sh)}:${pad(sm)}`, endTime: `${pad(eh)}:${pad(em)}` };
   };
+  const updatePreview = () => {
+    const { sh, sm, eh, em, br } = readTimes();
+    let mins = (eh * 60 + em) - (sh * 60 + sm);
+    if (mins < 0) mins += 24 * 60;
+    const work = Math.max(0, mins - br);
+    preview.innerHTML = `รวมเวลา <strong>${(mins / 60).toFixed(1)}</strong> ชม. · พัก <strong>${br}</strong> นาที · ทำงานจริง <strong>${(work / 60).toFixed(1)}</strong> ชม.`;
+  };
+  form.addEventListener('change', updatePreview);
   form.addEventListener('input', updatePreview);
   updatePreview();
 
   $('#customShiftSaveBtn').addEventListener('click', async () => {
+    const { startTime, endTime, br } = readTimes();
     const fd = new FormData(form);
-    const startTime = fd.get('startTime');
-    const endTime = fd.get('endTime');
-    if (!startTime || !endTime) { toast('ระบุเวลาเริ่ม-เลิกให้ครบ', 'warning'); return; }
     try {
       const w = await DB.ensureScheduleWeek(branchId, weekStart);
       const isCrossBranch = emp.branch !== branchId;
@@ -12955,7 +12973,7 @@ function openCustomShiftForm(empId, workDate, existingEntry) {
         note: existingEntry?.note || '',
         customStartTime: startTime,
         customEndTime: endTime,
-        customBreakMinutes: Number(fd.get('breakMinutes') || 0),
+        customBreakMinutes: br,
         customLabel: (fd.get('label') || '').toString().trim()
       });
       modal.close();

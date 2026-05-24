@@ -4582,3 +4582,28 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
   border-left: 3px solid var(--primary);
 }
 .custom-shift-preview strong { font-size: 14px; }
+
+/* === Custom shift time selects (HH : 00/30) === */
+.time-select-group {
+  display: flex; align-items: center; gap: 6px;
+}
+.time-select {
+  flex: 1; min-width: 0;
+  font-size: 16px; font-weight: 600;
+  font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+  text-align: center;
+  padding: 6px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+}
+.time-select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+.time-colon {
+  font-size: 18px; font-weight: 700; color: var(--text-2);
+  user-select: none;
+}
