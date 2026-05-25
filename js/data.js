@@ -1419,7 +1419,58 @@ const DB = {
     return this._empIndex.get(id);
   },
 
-  async saveEmployee(emp) {
+  // เช็คว่ารหัสพนักงานนี้มีอยู่แล้วในระบบหรือยัง — เช็คทั้ง cache + DB
+  // คืน employee row (รวม resigned) ถ้ามี, null ถ้าไม่มี
+  async checkDuplicateEmployeeId(id) {
+    if (!id) return null;
+    const idStr = String(id).trim();
+    if (!idStr) return null;
+    // 1) cache check
+    const cached = this.data.employees.find(e => String(e.id).trim() === idStr);
+    if (cached) return cached;
+    // 2) DB check (เผื่อ cache stale หรือ row ที่ HR ไม่มีสิทธิ์เห็นใน RLS)
+    try {
+      const { data, error } = await this.client
+        .from('employees_view')
+        .select('id, first_name, last_name, branch, status, termination_date')
+        .eq('id', idStr)
+        .maybeSingle();
+      if (error || !data) return null;
+      return {
+        id: data.id,
+        firstName: data.first_name,
+        lastName: data.last_name,
+        branch: data.branch,
+        status: data.status,
+        terminationDate: data.termination_date
+      };
+    } catch (e) { return null; }
+  },
+
+  // เช็คเลขประชาชนซ้ำ — คืน array ของ employee ที่ใช้เลขเดียวกัน
+  // (แยก digit-only เพื่อ normalize "1-2345-67890-12-3" → "1234567890123")
+  async checkDuplicateNationalId(nationalId, excludeId = null) {
+    if (!nationalId) return [];
+    const norm = String(nationalId).replace(/\D/g, '');
+    if (norm.length < 5) return [];  // สั้นเกินไป → likely typo, skip
+    // เช็คจาก cache (HR เห็นทั้ง active+resigned ผ่าน RLS แล้ว)
+    return this.data.employees.filter(e => {
+      const eNat = String(e.nationalId || '').replace(/\D/g, '');
+      return eNat && eNat === norm && (!excludeId || String(e.id) !== String(excludeId));
+    });
+  },
+
+  async saveEmployee(emp, opts = {}) {
+    // [Anti-overwrite] ถ้า caller ระบุ isNew=true → เช็คซ้ำก่อน (กัน upsert เขียนทับ)
+    if (opts.isNew === true) {
+      const dup = await this.checkDuplicateEmployeeId(emp.id);
+      if (dup) {
+        const name = `${dup.firstName || ''} ${dup.lastName || ''}`.trim() || '(ไม่มีชื่อ)';
+        const branchInfo = dup.branch ? ` · สาขา ${dup.branch}` : '';
+        const statusInfo = dup.status === 'resigned' ? ' · พ้นสภาพแล้ว' : '';
+        throw new Error(`รหัสพนักงาน "${emp.id}" มีอยู่แล้ว — ${name}${branchInfo}${statusInfo}`);
+      }
+    }
     // auto-set status จาก terminationDate
     emp.status = this.empStatus(emp) === 'resigned' ? 'resigned' : 'active';
     const row = this._empToDB(emp);

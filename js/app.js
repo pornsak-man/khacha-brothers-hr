@@ -2854,6 +2854,51 @@ function buildEmployeePreview(data, isNew, currentEmp, pendingPhotoBlob, removeP
   `;
 }
 
+// แสดง modal แจ้งเตือนเลขประชาชนซ้ำ + ให้ HR ยืนยัน — คืน Promise<boolean>
+function confirmDuplicateNationalId(duplicates) {
+  return new Promise((resolve) => {
+    const rows = duplicates.map(d => {
+      const fullName = `${d.firstName || ''} ${d.lastName || ''}`.trim() || '<span class="muted-2">(ไม่มีชื่อ)</span>';
+      const statusBadge = d.status === 'resigned'
+        ? `<span class="badge badge-warning">พ้นสภาพ${d.terminationDate ? ' ' + fmt.date(d.terminationDate) : ''}</span>`
+        : `<span class="badge badge-success">กำลังปฏิบัติงาน</span>`;
+      return `<tr>
+        <td><code style="font-weight:700">${escapeHtml(d.id)}</code></td>
+        <td><strong>${typeof fullName === 'string' && fullName.startsWith('<') ? fullName : escapeHtml(fullName)}</strong></td>
+        <td>${escapeHtml(d.branch || '-')}</td>
+        <td>${statusBadge}</td>
+      </tr>`;
+    }).join('');
+    modal.open('⚠️ เลขประชาชนซ้ำในระบบ', `
+      <p style="margin:0 0 10px 0">พบพนักงาน <strong>${duplicates.length}</strong> ราย ใช้เลขประชาชนเดียวกัน:</p>
+      <div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;margin-bottom:12px">
+        <table style="width:100%;border-collapse:collapse;font-size:13.5px">
+          <thead><tr style="background:var(--surface-2);font-size:11.5px;text-transform:uppercase;color:var(--text-3)">
+            <th style="padding:8px 12px;text-align:left">รหัส</th>
+            <th style="padding:8px 12px;text-align:left">ชื่อ</th>
+            <th style="padding:8px 12px;text-align:left">สาขา</th>
+            <th style="padding:8px 12px;text-align:left">สถานะ</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div style="font-size:13px;color:var(--text-2);padding:10px 12px;background:rgba(217,119,6,0.08);border:1px solid var(--warning);border-radius:8px">
+        💡 ถ้าพนักงานออกแล้วกลับเข้ามา <strong>ควรกลับไปใช้รหัสเดิม</strong> (ปลดล็อกใน auth + ปรับ termination_date) ไม่ใช่สร้างเป็นพนักงานใหม่<br>
+        ถ้าเลข ปชช ป้อนผิด → กดยกเลิกแล้วแก้ก่อน
+      </div>
+    `, {
+      size: 'sm',
+      footer: `<button class="btn btn-secondary" data-cancel>ยกเลิก</button>
+               <button class="btn btn-danger" data-ok>ยืนยันสร้างเป็นพนักงานใหม่</button>`
+    });
+    const root = $('#modalRoot');
+    root.addEventListener('click', (e) => {
+      if (e.target.dataset.ok !== undefined) { modal.close(); resolve(true); }
+      else if (e.target.dataset.cancel !== undefined) { modal.close(); resolve(false); }
+    }, { once: true });
+  });
+}
+
 function openEmployeeForm(id = null, init = null, onSaved = null) {
   if (!requireHR()) return;
   // init: pre-fill values (เช่นจาก applicant). ถ้า init.skipAutoId = true → ID ว่าง (user กรอกเอง)
@@ -3467,7 +3512,28 @@ function openEmployeeForm(id = null, init = null, onSaved = null) {
       }
 
       btn.textContent = 'กำลังบันทึก...';
-      const saved = await DB.saveEmployee(data);
+
+      // ─── [Anti-duplicate] เช็คซ้ำก่อนบันทึก ───
+      const isNewEmp = !id;
+      // 1) เช็คเลขประชาชนซ้ำ (ทั้ง new + edit ที่เปลี่ยน ปชช)
+      if (data.nationalId) {
+        const oldNat = id ? String(emp.nationalId || '').replace(/\D/g, '') : '';
+        const newNat = String(data.nationalId).replace(/\D/g, '');
+        const natChanged = newNat !== oldNat;
+        if (isNewEmp || natChanged) {
+          const dupNats = await DB.checkDuplicateNationalId(data.nationalId, id);
+          if (dupNats.length > 0) {
+            const ok = await confirmDuplicateNationalId(dupNats);
+            if (!ok) {
+              btn.disabled = false;
+              btn.textContent = id ? 'บันทึก' : 'เพิ่มพนักงาน';
+              return;
+            }
+          }
+        }
+      }
+
+      const saved = await DB.saveEmployee(data, { isNew: isNewEmp });
 
       // ── อัปเดต role/branches ถ้า admin เปลี่ยน + พนักงานมีบัญชีอยู่ ──
       if (id && DB.isHR && currentProfile && newRole) {
