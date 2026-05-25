@@ -13085,7 +13085,7 @@ router.register('leave-calendar', () => {
         <select class="sw-filter-select" onchange="setLeaveCalBranch(this.value)" ${(branchOptions.length === 1 && !canSelectAll) ? 'disabled' : ''}>
           ${branchOptions.length === 0 ? '<option value="">— ไม่มีสาขา —</option>' : ''}
           ${canSelectAll ? `<option value="" ${isAllBranches ? 'selected' : ''}>📊 ทุกสาขา (${branchOptions.length} สาขา)</option>` : ''}
-          ${branchOptions.map(b => `<option value="${escapeHtml(b.id)}" ${branchId === b.id ? 'selected' : ''}>${escapeHtml(b.id)}${b.name ? ' · ' + escapeHtml(b.name) : ''}</option>`).join('')}
+          ${branchOptions.map(b => `<option value="${escapeHtml(b.id)}" ${branchId === b.id ? 'selected' : ''} title="${escapeHtml(b.name || '')}">${escapeHtml(b.id)}</option>`).join('')}
         </select>
       </div>
       <div class="lcal-legend">
@@ -13318,7 +13318,7 @@ router.register('schedule', () => {
         <div class="schedule-controls-spacer"></div>
         <select class="sw-filter-select schedule-branch-select" onchange="setScheduleBranch(this.value)" ${(branchOptions.length === 1 && !DB.isHR) ? 'disabled' : ''} title="พิมพ์อักษรแรกของชื่อย่อเพื่อกระโดด เช่น K → KMB">
           ${branchOptions.length === 0 ? '<option value="">— ไม่มีสาขาในสิทธิ์ —</option>' : ''}
-          ${branchOptions.map(b => `<option value="${escapeHtml(b.id)}" ${branchId === b.id ? 'selected' : ''}>${escapeHtml(b.id)}${b.name ? ' · ' + escapeHtml(b.name) : ''}</option>`).join('')}
+          ${branchOptions.map(b => `<option value="${escapeHtml(b.id)}" ${branchId === b.id ? 'selected' : ''} title="${escapeHtml(b.name || '')}">${escapeHtml(b.id)}</option>`).join('')}
         </select>
       </div>
       <div class="schedule-status-row">
