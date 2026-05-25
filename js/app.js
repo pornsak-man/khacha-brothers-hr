@@ -492,11 +492,17 @@ const _recentToasts = new Map();   // "type|msg" → timestamp
 const toast = (msg, type = 'info') => {
   const root = $('#toastRoot');
   if (!root) return;
+  // [DEBUG] log call stack เพื่อ trace ที่มา toast — เปิดได้ผ่าน window.__TOAST_DEBUG = true ใน console
+  if (window.__TOAST_DEBUG) {
+    const stack = new Error().stack.split('\n').slice(2, 6).join('\n');
+    console.log('%c[TOAST]', 'color:#b87a08;font-weight:bold', `[${type}]`, msg, '\n', stack);
+  }
   // dedup: ถ้า toast เดียวกันเพิ่งแสดง < 2s ที่แล้ว → skip
   const key = `${type}|${msg}`;
   const now = Date.now();
   const last = _recentToasts.get(key);
   if (last && (now - last) < 2000) {
+    if (window.__TOAST_DEBUG) console.log('%c[TOAST] suppressed (dedup)', 'color:#ef4444', msg);
     return;   // duplicate suppression
   }
   _recentToasts.set(key, now);
