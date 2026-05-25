@@ -58,10 +58,39 @@ CREATE TRIGGER trg_borrow_updated_at
   BEFORE UPDATE ON public.cross_branch_borrow_requests
   FOR EACH ROW EXECUTE FUNCTION public.fn_borrow_set_updated_at();
 
--- ════════ 3. RLS ════════
-ALTER TABLE public.cross_branch_borrow_requests ENABLE ROW LEVEL SECURITY;
+-- ════════ 3. HELPER FUNCTIONS (ต้องสร้างก่อน RLS policies ที่ใช้) ════════
+
+-- helper: เช็คว่า user สามารถสร้าง schedule ของ branch นั้นได้ไหม
+-- (ใช้ใน RLS INSERT — ต้อง STABLE function)
+CREATE OR REPLACE FUNCTION public.can_create_schedule_for_branch(p_branch TEXT)
+RETURNS BOOLEAN
+LANGUAGE PLPGSQL
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+  v_role TEXT;
+  v_branches TEXT[];
+  v_my_branch TEXT;
+BEGIN
+  IF public.is_hr_or_admin() THEN RETURN TRUE; END IF;
+  SELECT role, managed_branches INTO v_role, v_branches
+  FROM public.user_profiles WHERE user_id = auth.uid();
+  IF v_role = 'operation_manager' THEN RETURN TRUE; END IF;
+  IF v_role NOT IN ('branch_manager', 'area_manager') THEN RETURN FALSE; END IF;
+  IF v_branches IS NOT NULL AND array_length(v_branches, 1) > 0 THEN
+    RETURN p_branch = ANY(v_branches);
+  END IF;
+  SELECT e.branch INTO v_my_branch
+  FROM public.employees e
+  JOIN public.user_profiles up ON up.employee_id = e.id
+  WHERE up.user_id = auth.uid();
+  RETURN v_my_branch = p_branch;
+END $$;
 
 -- HELPER: ใครเป็นผู้เกี่ยวข้องกับคำขอ (BM/AM ของ source หรือ destination)
+-- (ใช้ใน RLS SELECT/UPDATE — ต้อง STABLE function)
 CREATE OR REPLACE FUNCTION public.is_borrow_party(p_source TEXT, p_dest TEXT)
 RETURNS BOOLEAN
 LANGUAGE PLPGSQL
@@ -92,6 +121,9 @@ BEGIN
   RETURN v_my_branch IN (p_source, p_dest);
 END $$;
 
+-- ════════ 3.5 RLS POLICIES ════════
+ALTER TABLE public.cross_branch_borrow_requests ENABLE ROW LEVEL SECURITY;
+
 -- SELECT: HR/admin + party ทั้ง source/destination + AM/OM
 DROP POLICY IF EXISTS "borrow_select" ON public.cross_branch_borrow_requests;
 CREATE POLICY "borrow_select" ON public.cross_branch_borrow_requests
@@ -104,7 +136,7 @@ CREATE POLICY "borrow_insert" ON public.cross_branch_borrow_requests
   FOR INSERT TO authenticated
   WITH CHECK (
     public.is_hr_or_admin()
-    OR public.canCreateScheduleForBranch_check(destination_branch_id)
+    OR public.can_create_schedule_for_branch(destination_branch_id)
   );
 
 -- UPDATE: HR/admin + AM ของ source (เพราะ approve/reject) + requester (cancel)
@@ -119,35 +151,6 @@ DROP POLICY IF EXISTS "borrow_delete" ON public.cross_branch_borrow_requests;
 CREATE POLICY "borrow_delete" ON public.cross_branch_borrow_requests
   FOR DELETE TO authenticated
   USING (public.is_admin());
-
--- helper สำหรับ check ว่า user สามารถสร้าง schedule ของ branch นั้นได้ไหม
--- (ใช้ใน RLS INSERT — ต้อง STABLE function)
-CREATE OR REPLACE FUNCTION public.canCreateScheduleForBranch_check(p_branch TEXT)
-RETURNS BOOLEAN
-LANGUAGE PLPGSQL
-SECURITY DEFINER
-STABLE
-SET search_path = public
-AS $$
-DECLARE
-  v_role TEXT;
-  v_branches TEXT[];
-  v_my_branch TEXT;
-BEGIN
-  IF public.is_hr_or_admin() THEN RETURN TRUE; END IF;
-  SELECT role, managed_branches INTO v_role, v_branches
-  FROM public.user_profiles WHERE user_id = auth.uid();
-  IF v_role = 'operation_manager' THEN RETURN TRUE; END IF;
-  IF v_role NOT IN ('branch_manager', 'area_manager') THEN RETURN FALSE; END IF;
-  IF v_branches IS NOT NULL AND array_length(v_branches, 1) > 0 THEN
-    RETURN p_branch = ANY(v_branches);
-  END IF;
-  SELECT e.branch INTO v_my_branch
-  FROM public.employees e
-  JOIN public.user_profiles up ON up.employee_id = e.id
-  WHERE up.user_id = auth.uid();
-  RETURN v_my_branch = p_branch;
-END $$;
 
 -- ════════ 4. RPCs ════════
 
@@ -167,7 +170,7 @@ DECLARE
   v_source_branch TEXT;
   v_new_id        UUID;
 BEGIN
-  IF NOT public.canCreateScheduleForBranch_check(p_destination_branch_id) THEN
+  IF NOT public.can_create_schedule_for_branch(p_destination_branch_id) THEN
     RAISE EXCEPTION 'ไม่มีสิทธิ์ขอยืมพนักงานเข้าสาขานี้';
   END IF;
 
