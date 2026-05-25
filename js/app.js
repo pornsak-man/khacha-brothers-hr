@@ -4931,15 +4931,102 @@ function renderBulkPhotoPreview(total, matches, unmatched) {
   `;
 }
 
-async function exportEmployeesXLSX() {
+// dialog เลือก scope สำหรับ export — คืน { scope, branch } หรือ null ถ้ายกเลิก
+function pickExportFilter() {
+  return new Promise((resolve) => {
+    const branches = DB.getBranchMaster ? DB.getBranchMaster() : [];
+    modal.open('📥 Export Excel — เลือกพนักงาน', `
+      <div class="form-group">
+        <label style="font-weight:600">กลุ่มพนักงาน</label>
+        <div style="display:grid;gap:8px;margin-top:6px">
+          <label style="display:flex;gap:10px;padding:12px;border:2px solid var(--success);border-radius:8px;cursor:pointer;background:rgba(34,197,94,0.04)" id="optActive">
+            <input type="radio" name="scope" value="active" checked style="margin-top:3px" />
+            <div style="flex:1">
+              <div style="font-weight:600">🟢 พนักงานที่ยังทำงาน (active เท่านั้น)</div>
+              <div class="muted-2" style="font-size:12.5px;margin-top:2px">แนะนำ — สำหรับแก้ไขข้อมูลแล้ว re-import (ไม่กระทบพนักงานที่ลาออก)</div>
+            </div>
+          </label>
+          <label style="display:flex;gap:10px;padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer" id="optAll">
+            <input type="radio" name="scope" value="all" style="margin-top:3px" />
+            <div style="flex:1">
+              <div style="font-weight:600">📂 ทั้งหมด (รวมพ้นสภาพ)</div>
+              <div class="muted-2" style="font-size:12.5px;margin-top:2px">สำหรับ archive หรือรายงาน HR ต้องดูครบทุกคน</div>
+            </div>
+          </label>
+          <label style="display:flex;gap:10px;padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer" id="optResigned">
+            <input type="radio" name="scope" value="resigned" style="margin-top:3px" />
+            <div style="flex:1">
+              <div style="font-weight:600">🚪 พ้นสภาพเท่านั้น</div>
+              <div class="muted-2" style="font-size:12.5px;margin-top:2px">รายงานพนักงานที่ออกแล้ว</div>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:14px">
+        <label style="font-weight:600">เฉพาะสาขา <span class="muted-2" style="font-weight:normal;font-size:11.5px">(เว้นว่าง = ทุกสาขา)</span></label>
+        <select name="branch" style="margin-top:4px">
+          <option value="">— ทุกสาขา —</option>
+          ${branches.map(b => `<option value="${escapeHtml(b.id)}" title="${escapeHtml(b.name || '')}">${escapeHtml(b.id)}</option>`).join('')}
+        </select>
+      </div>
+      <div style="font-size:12px;color:var(--text-3);padding:10px 12px;background:var(--surface-2);border-radius:8px;margin-top:8px">
+        💡 ไฟล์ที่ export มาสามารถนำกลับมา re-import เพื่อแก้ไขข้อมูลได้ — ระบบจะอัปเดต <strong>เฉพาะคนที่อยู่ในไฟล์</strong>
+      </div>
+    `, {
+      size: 'sm',
+      footer: '<button class="btn btn-secondary" data-cancel>ยกเลิก</button><button class="btn btn-primary" data-ok>Export</button>'
+    });
+    const root = $('#modalRoot');
+    // visual feedback: เปลี่ยน border ตาม radio ที่เลือก
+    const updateBorder = () => {
+      root.querySelectorAll('#optActive,#optAll,#optResigned').forEach(el => {
+        const radio = el.querySelector('input[type=radio]');
+        el.style.borderWidth = radio.checked ? '2px' : '1px';
+        el.style.borderColor = radio.checked ? 'var(--success)' : 'var(--border)';
+        el.style.background = radio.checked ? 'rgba(34,197,94,0.04)' : '';
+      });
+    };
+    root.querySelectorAll('input[name="scope"]').forEach(r => r.addEventListener('change', updateBorder));
+    root.querySelector('[data-ok]').addEventListener('click', () => {
+      const scope = root.querySelector('input[name="scope"]:checked')?.value || 'active';
+      const branch = root.querySelector('select[name="branch"]')?.value || '';
+      modal.close();
+      resolve({ scope, branch });
+    });
+    root.querySelector('[data-cancel]').addEventListener('click', () => { modal.close(); resolve(null); });
+  });
+}
+
+async function exportEmployeesXLSX(opts = null) {
   if (!requireHR()) return; // 🔒 เฉพาะ admin/HR — มีข้อมูลส่วนตัว + เงินเดือน
   if (typeof XLSX === 'undefined') {
     toast('กำลังโหลด XLSX library...', 'info');
     try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; }
   }
+  // ถ้าไม่ส่ง opts มา → เปิด dialog ให้ HR เลือก scope
+  let filter = opts;
+  if (!filter) {
+    filter = await pickExportFilter();
+    if (!filter) return; // user ยกเลิก
+  }
+  // กรองพนักงานตาม filter
+  let employees = DB.getEmployees();
+  if (filter.scope === 'active') {
+    employees = employees.filter(e => e.status !== 'resigned');
+  } else if (filter.scope === 'resigned') {
+    employees = employees.filter(e => e.status === 'resigned');
+  }
+  // scope === 'all' → ไม่กรอง
+  if (filter.branch) {
+    employees = employees.filter(e => e.branch === filter.branch);
+  }
+  if (employees.length === 0) {
+    toast('ไม่มีพนักงานในเกณฑ์ที่เลือก', 'warning');
+    return;
+  }
   // text fields ผ่าน csvSafe() เพื่อกัน CSV-injection (ชื่อขึ้นต้น = + - @ จะถูก prefix ด้วย ')
   const cs = csvSafe;
-  const rows = DB.getEmployees().map(e => ({
+  const rows = employees.map(e => ({
     'รหัส': excelNum(e.id), 'คำนำหน้า': cs(e.title), 'ชื่อ': cs(e.firstName), 'นามสกุล': cs(e.lastName),
     'ชื่อเล่น': cs(e.nickname),
     'เลขประชาชน': excelNum(e.nationalId), 'Passport': cs(e.passportNumber), 'Work Permit': cs(e.workPermitNumber), 'วันเกิด': excelDate(e.dob), 'เพศ': cs(e.gender),
@@ -5004,8 +5091,13 @@ async function exportEmployeesXLSX() {
   });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'พนักงาน');
-  XLSX.writeFile(wb, `คชา-บราเธอร์ส-พนักงาน-${tz.today()}.xlsx`);
-  toast('ส่งออกไฟล์ Excel แล้ว', 'success');
+  // filename สะท้อน filter เพื่อให้ HR แยกออกว่าไฟล์ไหนกรองยังไง
+  const scopeTag = filter.scope === 'active' ? '-active' : filter.scope === 'resigned' ? '-resigned' : '';
+  const branchTag = filter.branch ? `-${filter.branch}` : '';
+  XLSX.writeFile(wb, `คชา-พนักงาน${scopeTag}${branchTag}-${employees.length}คน-${tz.today()}.xlsx`);
+  const scopeLabel = filter.scope === 'active' ? 'ที่ยังทำงาน' : filter.scope === 'resigned' ? 'พ้นสภาพ' : 'ทั้งหมด';
+  const branchLabel = filter.branch ? ` สาขา ${filter.branch}` : '';
+  toast(`ส่งออก Excel — ${employees.length} คน (${scopeLabel}${branchLabel})`, 'success');
 }
 
 // ═══════════════════════════════════════════════════════
