@@ -1578,6 +1578,100 @@ const DB = {
     return { succeeded, failed };
   },
 
+  // ─── DIFFERENTIAL IMPORT ───
+  // map JS key → DB column name (สำหรับ partial UPDATE — patch เฉพาะ field ที่เปลี่ยน)
+  _EMP_FIELD_TO_DB: {
+    title: 'title', firstName: 'first_name', lastName: 'last_name', nickname: 'nickname',
+    gender: 'gender', dob: 'dob', nationalId: 'national_id',
+    passportNumber: 'passport_number', workPermitNumber: 'work_permit_number',
+    nationality: 'nationality', religion: 'religion', education: 'education',
+    phone: 'phone', email: 'email', address: 'address',
+    subDistrict: 'sub_district', district: 'district',
+    province: 'province', postalCode: 'postal_code',
+    department: 'department', branch: 'branch',
+    position: 'position', positionTitle: 'position_title',
+    employeeType: 'employee_type', hireDate: 'hire_date',
+    terminationDate: 'termination_date', terminationReason: 'termination_reason',
+    terminationNote: 'termination_note',
+    bank: 'bank', bankAccount: 'bank_account',
+    salary: 'salary',
+    allowancePosition: 'allowance_position', allowanceTravel: 'allowance_travel',
+    allowanceFood: 'allowance_food', allowancePerDiem: 'allowance_per_diem',
+    allowanceLanguage: 'allowance_language', allowancePhone: 'allowance_phone',
+    allowanceOther: 'allowance_other',
+    ssoNo: 'sso_no', ssoEnrolledDate: 'sso_enrolled_date',
+    ssoTerminatedDate: 'sso_terminated_date', ssoHospital: 'sso_hospital',
+    status: 'status', note: 'note'
+  },
+
+  // Bulk patch — เปลี่ยนเฉพาะ field ที่ระบุ ไม่กระทบ column อื่น
+  // patches = [{ id, changedFields: [{ key, newValue }, ...] }, ...]
+  // หลักการ: group ตาม "ชุดของ field ที่เปลี่ยน" (signature)
+  //   - HR เปลี่ยน bank ของทุกคน → 1 signature = 1 batch upsert (เร็ว)
+  //   - HR แก้คนละฟิลด์กัน → หลาย signature = หลาย batch (ยังเร็วกว่า per-row)
+  // ใช้ upsert บน partial columns — PostgreSQL จะ UPDATE เฉพาะ column ที่อยู่ในชุด
+  async bulkPatchEmployees(patches, onProgress) {
+    if (!patches || patches.length === 0) {
+      return { patched: 0, failed: 0, errors: [] };
+    }
+    // กำหนด field ที่เป็น number (ส่วนที่เหลือ = string/date)
+    const NUMBER_FIELDS = new Set([
+      'salary', 'allowancePosition', 'allowanceTravel', 'allowanceFood',
+      'allowancePerDiem', 'allowanceLanguage', 'allowancePhone', 'allowanceOther'
+    ]);
+    const groups = new Map();   // signature → [{id, dbPatch}, ...]
+    for (const p of patches) {
+      const dbPatch = {};
+      for (const c of p.changedFields) {
+        const dbKey = this._EMP_FIELD_TO_DB[c.key];
+        if (!dbKey) continue;   // skip field ที่ไม่ map (เช่น _role, _scope)
+        if (NUMBER_FIELDS.has(c.key)) {
+          dbPatch[dbKey] = Number(c.newValue || 0);
+        } else if (c.newValue === '' || c.newValue == null) {
+          dbPatch[dbKey] = null;   // ว่าง → NULL (ไม่ใช่ '')
+        } else if (c.newValue instanceof Date) {
+          dbPatch[dbKey] = c.newValue.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+        } else {
+          dbPatch[dbKey] = String(c.newValue);
+        }
+      }
+      const sig = Object.keys(dbPatch).sort().join(',');
+      if (!sig) continue;   // ไม่มี field ที่ map ได้ → skip
+      if (!groups.has(sig)) groups.set(sig, []);
+      groups.get(sig).push({ id: p.id, dbPatch });
+    }
+    const result = { patched: 0, failed: 0, errors: [] };
+    let done = 0;
+    const totalToDo = Array.from(groups.values()).reduce((sum, g) => sum + g.length, 0);
+    for (const grp of groups.values()) {
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < grp.length; i += CHUNK_SIZE) {
+        const chunk = grp.slice(i, i + CHUNK_SIZE).map(p => ({ id: p.id, ...p.dbPatch }));
+        const { data, error } = await this.client
+          .from('employees')
+          .upsert(chunk, { onConflict: 'id' })
+          .select();
+        if (error) {
+          result.failed += chunk.length;
+          result.errors.push({ message: error.message, sample: chunk.slice(0, 3).map(c => c.id) });
+        } else {
+          result.patched += data.length;
+          for (const row of data) {
+            const mapped = this._empFromDB(row);
+            const idx = this.data.employees.findIndex(e => e.id === mapped.id);
+            if (idx >= 0) this.data.employees[idx] = mapped;
+            else this.data.employees.push(mapped);
+          }
+          this._invalidateIndex('employees');
+        }
+        done += chunk.length;
+        if (onProgress) onProgress(done, totalToDo);
+        await new Promise(r => requestAnimationFrame(r));
+      }
+    }
+    return result;
+  },
+
   // ─── BULK IMPORT ───
   async bulkUpsertEmployees(rows, onProgress) {
     const CHUNK_SIZE = 100;

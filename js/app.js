@@ -4123,15 +4123,35 @@ function validateImportRows(rows) {
     if (nat) existingEmpByNat.set(nat, e);
   }
 
+  // header set สำหรับ diff (เช็คว่า Excel มี column ไหนบ้าง)
+  const headerSet = new Set(rows._originalHeaders || []);
+  // map ของพนักงานปัจจุบัน id → employee object (สำหรับเทียบ diff)
+  const empById = new Map();
+  for (const e of DB.data.employees) empById.set(String(e.id), e);
+
   rows.forEach((r, i) => {
     const rowNum = i + 2; // header at row 1
     if (!r.id) { errors.push({ row: rowNum, msg: 'รหัสพนักงานว่าง' }); return; }
     if (idsSeen.has(r.id)) errors.push({ row: rowNum, msg: 'รหัสซ้ำในไฟล์: ' + r.id });
     idsSeen.add(r.id);
-    if (!r.firstName) errors.push({ row: rowNum, msg: 'ชื่อว่าง' });
+    // firstName check — เฉพาะ insert หรือ update ที่มี column "ชื่อ" ใน Excel
+    if (r._op === undefined && headerSet.has('ชื่อ') && !r.firstName) {
+      errors.push({ row: rowNum, msg: 'ชื่อว่าง' });
+    }
 
     // ─── classify: insert vs update vs returning-worker ───
-    r._op = existingEmpIds.has(String(r.id)) ? 'update' : 'insert';
+    const isUpdate = existingEmpIds.has(String(r.id));
+    r._op = isUpdate ? 'update' : 'insert';
+
+    // ─── Differential diff: เทียบเซลล์-ต่อ-เซลล์ สำหรับ update rows ───
+    if (isUpdate) {
+      const currentEmp = empById.get(String(r.id));
+      r._changedFields = computeRowDiff(r, currentEmp, headerSet);
+      r._unchanged = r._changedFields.length === 0;
+    } else {
+      r._changedFields = null;  // insert ใช้ทั้ง row
+      r._unchanged = false;
+    }
 
     // เช็คเลข ปชช
     if (r.nationalId) {
@@ -4168,17 +4188,15 @@ function validateImportRows(rows) {
   });
   // คืน errors + warnings (backward compat: ถ้า caller ใช้แค่ errors ก็ยังใช้ได้)
   errors._warnings = warnings;
-  // ─── ตรวจ "Excel แบบบาง" — ขาด column สำคัญหลายตัว ───
+  // ─── ตรวจ "Excel แบบบาง" — ขาด column สำคัญ ───
+  // [Differential] หลังมี diff logic แล้ว partial Excel ไม่ใช่ data loss risk
+  // เพราะระบบ update เฉพาะ column ที่อยู่ใน Excel เท่านั้น
+  // → ลด severity 'block' เป็น 'info' แค่บอก HR ว่า "เห็นไม่ครบ"
   const headers = rows._originalHeaders || [];
   if (headers.length > 0) {
     const partial = detectPartialExcel(headers);
     errors._partial = partial;
-    if (partial.severity === 'block') {
-      errors.push({
-        row: 0,
-        msg: `Excel ขาดคอลัมน์สำคัญ ${partial.missingCount} ตัว (${Math.round(partial.ratio*100)}%) — ฟิลด์ที่ไม่มีในไฟล์จะถูกล้างเป็นค่าว่าง. แนะนำ Export ก่อนแล้วแก้ไฟล์เดิม`
-      });
-    }
+    // ไม่ block แล้ว — diff logic จัดการ partial Excel ปลอดภัยอยู่แล้ว
   }
   return errors;
 }
@@ -4213,6 +4231,90 @@ async function readExcelFile(file) {
     reader.onerror = () => reject(new Error('อ่านไฟล์ไม่สำเร็จ'));
     reader.readAsArrayBuffer(file);
   });
+}
+
+// ─── Differential Import: เทียบเซลล์-ต่อ-เซลล์ ───
+// FIELD_TO_HEADER: map ชื่อ field ใน employee object → ชื่อคอลัมน์ใน Excel
+// ใช้เพื่อ:
+//   - รู้ว่า Excel มี column นี้ไหม (ถ้าไม่มี = ไม่เปลี่ยน — skip diff)
+//   - สร้างตาราง diff ที่อ่านง่าย ("ธนาคาร: KBANK → BBL")
+const FIELD_TO_HEADER = {
+  title: 'คำนำหน้า', firstName: 'ชื่อ', lastName: 'นามสกุล', nickname: 'ชื่อเล่น',
+  gender: 'เพศ', dob: 'วันเกิด', nationalId: 'เลขประชาชน',
+  passportNumber: 'Passport', workPermitNumber: 'Work Permit',
+  nationality: 'สัญชาติ', religion: 'ศาสนา', education: 'วุฒิการศึกษา',
+  phone: 'เบอร์โทร', email: 'อีเมล',
+  address: 'ที่อยู่', subDistrict: 'แขวง/ตำบล', district: 'เขต/อำเภอ',
+  province: 'จังหวัด', postalCode: 'รหัสไปรษณีย์',
+  department: 'รหัสฝ่าย', branch: 'สาขา',
+  position: 'รหัสระดับตำแหน่ง', positionTitle: 'ตำแหน่ง',
+  employeeType: 'ประเภทพนักงาน',
+  hireDate: 'วันเริ่มงาน', terminationDate: 'วันพ้นสภาพ',
+  terminationReason: 'เหตุผลพ้นสภาพ', terminationNote: 'รายละเอียดพ้นสภาพ',
+  bank: 'ธนาคาร', bankAccount: 'เลขบัญชี',
+  salary: 'เงินเดือน',
+  allowancePosition: 'ค่าตำแหน่ง', allowanceTravel: 'ค่าเดินทาง',
+  allowanceFood: 'ค่าอาหาร', allowancePerDiem: 'ค่าเบี้ยเลี้ยง',
+  allowanceLanguage: 'ค่าภาษา', allowancePhone: 'ค่าโทรศัพท์',
+  allowanceOther: 'ค่าอื่นๆ',
+  ssoNo: 'เลข สปส.', ssoEnrolledDate: 'วันที่แจ้งเข้า สปส.',
+  ssoTerminatedDate: 'วันที่แจ้งออก สปส.', ssoHospital: 'สถานพยาบาล สปส.',
+  note: 'หมายเหตุ'
+};
+// FIELD_TYPE: ใช้เพื่อ normalize ค่าก่อนเปรียบเทียบ
+const FIELD_TYPE = {
+  dob: 'date', hireDate: 'date', terminationDate: 'date',
+  ssoEnrolledDate: 'date', ssoTerminatedDate: 'date',
+  nationalId: 'natid',
+  salary: 'number',
+  allowancePosition: 'number', allowanceTravel: 'number',
+  allowanceFood: 'number', allowancePerDiem: 'number',
+  allowanceLanguage: 'number', allowancePhone: 'number',
+  allowanceOther: 'number'
+};
+
+// เปรียบเทียบ 2 ค่าตาม type (normalize ก่อน)
+function valuesEqual(a, b, type) {
+  // null/undefined/'' ทั้งหมดถือว่าเท่ากัน
+  const na = a == null ? '' : a;
+  const nb = b == null ? '' : b;
+  if (type === 'number') {
+    return Number(na || 0) === Number(nb || 0);
+  }
+  if (type === 'date') {
+    // normalize เป็น YYYY-MM-DD เพื่อเปรียบเทียบ
+    const norm = (v) => {
+      if (!v) return '';
+      if (v instanceof Date) return v.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+      const s = String(v).trim();
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return m ? `${m[1]}-${m[2]}-${m[3]}` : s;
+    };
+    return norm(na) === norm(nb);
+  }
+  if (type === 'natid') {
+    return String(na).replace(/\D/g, '') === String(nb).replace(/\D/g, '');
+  }
+  return String(na).trim() === String(nb).trim();
+}
+
+// คำนวณ diff ระหว่าง Excel row กับ employee ปัจจุบัน
+// คืน array [{ key, label, oldValue, newValue, type }]
+// — เช็คเฉพาะ field ที่ Excel มี column ของมัน (อย่างน้อย — ถ้าไม่มี = HR ไม่ตั้งใจเปลี่ยน)
+function computeRowDiff(excelRow, currentEmp, headerSet) {
+  const changes = [];
+  if (!currentEmp) return changes;  // new row → ไม่มี diff (ใช้ทั้ง row)
+  for (const [key, label] of Object.entries(FIELD_TO_HEADER)) {
+    // skip field ที่ Excel ไม่มี column — ไม่ใช่การเปลี่ยน
+    if (!headerSet.has(label)) continue;
+    const type = FIELD_TYPE[key] || 'string';
+    const oldVal = currentEmp[key];
+    const newVal = excelRow[key];
+    if (!valuesEqual(oldVal, newVal, type)) {
+      changes.push({ key, label, type, oldValue: oldVal, newValue: newVal });
+    }
+  }
+  return changes;
 }
 
 // คอลัมน์ที่ทุก Excel ควรมี (subset ของ IMPORT_COLUMNS) — ขาดเยอะ = "Excel แบบบาง" → เตือน
@@ -4401,13 +4503,49 @@ function openImportEmployees() {
       `;
     }
 
-    const result = await DB.bulkUpsertEmployees(parsedRows, (done, total) => {
-      const pct = (done / total) * 100;
+    // ─── Differential import: แยก insert vs patch vs skip ───
+    const insertRows = parsedRows.filter(r => r._op === 'insert');
+    const updateRows = parsedRows.filter(r => r._op === 'update' && !r._unchanged);
+    const skippedCount = parsedRows.filter(r => r._unchanged).length;
+    const totalToProcess = insertRows.length + updateRows.length;
+    let processedCount = 0;
+    const onProgress = (delta) => {
+      processedCount += delta;
+      const pct = totalToProcess > 0 ? (processedCount / totalToProcess) * 100 : 0;
       const fill = $('#progressFill');
       const text = $('#progressText');
       if (fill) fill.style.width = pct + '%';
-      if (text) text.textContent = done.toLocaleString();
-    });
+      if (text) text.textContent = processedCount.toLocaleString();
+    };
+    const result = { inserted: 0, patched: 0, skipped: skippedCount, failed: 0, errors: [] };
+    // 1) insert rows (ใช้ทั้ง row)
+    if (insertRows.length > 0) {
+      const r = await DB.bulkUpsertEmployees(insertRows, (done) => {
+        // bulkUpsertEmployees ใช้ callback (done, total) — convert เป็น delta
+        // ใช้ closure track ค่า prev
+      });
+      result.inserted = r.inserted;
+      result.failed += r.failed;
+      result.errors.push(...r.errors);
+      processedCount += insertRows.length;
+      onProgress(0);  // update UI
+    }
+    // 2) patch rows (เปลี่ยนเฉพาะ field ที่เปลี่ยน — Differential!)
+    if (updateRows.length > 0) {
+      const patches = updateRows.map(r => ({ id: r.id, changedFields: r._changedFields }));
+      const r = await DB.bulkPatchEmployees(patches, (done, total) => {
+        // คำนวณ progress รวม
+        const overallDone = insertRows.length + done;
+        const pct = totalToProcess > 0 ? (overallDone / totalToProcess) * 100 : 0;
+        const fill = $('#progressFill');
+        const text = $('#progressText');
+        if (fill) fill.style.width = pct + '%';
+        if (text) text.textContent = overallDone.toLocaleString();
+      });
+      result.patched = r.patched;
+      result.failed += r.failed;
+      result.errors.push(...r.errors);
+    }
     const elapsed = ((performance.now() - start) / 1000).toFixed(1);
 
     // ── หลัง upsert พนักงานสำเร็จ → สร้างบัญชี + ตั้ง role (admin เท่านั้น) ──
@@ -4455,8 +4593,10 @@ function openImportEmployees() {
           if (text) text.textContent = processed.toLocaleString();
         }
       };
-      for (let i = 0; i < parsedRows.length; i += CHUNK) {
-        const chunk = parsedRows.slice(i, i + CHUNK);
+      // [Differential] skip rows ที่ไม่มีการเปลี่ยนแปลง — ประหยัด HTTP call
+      const rowsForAccount = parsedRows.filter(r => !r._unchanged);
+      for (let i = 0; i < rowsForAccount.length; i += CHUNK) {
+        const chunk = rowsForAccount.slice(i, i + CHUNK);
         await Promise.all(chunk.map(processRow));
         // yield ให้ UI update (กัน freeze) ระหว่าง chunk
         await new Promise(r => requestAnimationFrame(r));
@@ -4469,8 +4609,10 @@ function openImportEmployees() {
         <div style="font-size:14px;line-height:1.8">
           ${deptCreated ? `• สร้างฝ่ายอัตโนมัติ: <strong style="color:var(--success)">${deptCreated.toLocaleString()}</strong> ฝ่าย<br>` : ''}
           ${deptErrors.length ? `• สร้างฝ่ายไม่สำเร็จ: <strong style="color:var(--danger)">${deptErrors.length.toLocaleString()}</strong> ฝ่าย<br>` : ''}
-          • นำเข้าพนักงาน: <strong>${result.inserted.toLocaleString()}</strong> คน<br>
-          ${result.failed ? `• ผิดพลาด (พนักงาน): <strong style="color:var(--danger)">${result.failed.toLocaleString()}</strong> คน<br>` : ''}
+          ${result.inserted ? `• + เพิ่มพนักงานใหม่: <strong style="color:var(--success)">${result.inserted.toLocaleString()}</strong> คน<br>` : ''}
+          ${result.patched ? `• ↻ อัปเดตเฉพาะ field ที่เปลี่ยน: <strong style="color:#2563eb">${result.patched.toLocaleString()}</strong> คน <span class="muted-2" style="font-size:12px">(differential — ไม่กระทบ field อื่น)</span><br>` : ''}
+          ${result.skipped ? `• ⊝ ข้าม (ข้อมูลตรงกับ DB อยู่แล้ว): <strong class="muted-2">${result.skipped.toLocaleString()}</strong> คน<br>` : ''}
+          ${result.failed ? `• ❌ ผิดพลาด: <strong style="color:var(--danger)">${result.failed.toLocaleString()}</strong> คน<br>` : ''}
           ${DB.isHR ? `
             • สร้างบัญชี login ใหม่: <strong style="color:var(--success)">${accSuccess.toLocaleString()}</strong> คน<br>
             ${accSkip ? `• ข้าม (มีบัญชีอยู่แล้ว): <strong>${accSkip.toLocaleString()}</strong> คน<br>` : ''}
@@ -4575,16 +4717,44 @@ async function downloadImportBackup(affectedEmployees) {
   return true;
 }
 
+// แสดงค่าให้อ่านง่ายใน diff table
+function formatDiffValue(v, type) {
+  if (v == null || v === '') return '<span class="muted-2" style="font-style:italic">(ว่าง)</span>';
+  if (type === 'number') return fmt.money ? fmt.money(v) : Number(v).toLocaleString();
+  if (type === 'date') {
+    if (v instanceof Date) return v.toLocaleDateString('th-TH');
+    return String(v);
+  }
+  const s = String(v);
+  // truncate string ยาว
+  return s.length > 50 ? escapeHtml(s.slice(0, 47)) + '...' : escapeHtml(s);
+}
+
 function renderImportPreview(rows, errors) {
   const warnings = errors._warnings || [];
   const partial = errors._partial || null;
-  const sample = rows.slice(0, 5);
   // จำแนกแถว
   const insertCount = rows.filter(r => r._op === 'insert').length;
-  const updateCount = rows.filter(r => r._op === 'update').length;
+  const updateRowsAll = rows.filter(r => r._op === 'update');
+  const unchangedCount = updateRowsAll.filter(r => r._unchanged).length;
+  const updateCount = updateRowsAll.length - unchangedCount;   // จะ patch จริงๆ
   const returningCount = rows.filter(r => r._isReturning).length;
-  const needsBackup = updateCount > 0;
+  // นับเซลล์ที่จะเปลี่ยน (เฉพาะ update rows ที่มีการเปลี่ยน)
+  const totalChangedCells = updateRowsAll.reduce((sum, r) => sum + (r._changedFields?.length || 0), 0);
+  const needsBackup = updateCount > 0;   // patch ต้องมี backup
   const isLargeBatch = rows.length >= 50;
+  // sample สำหรับตาราง (เน้น update rows ที่มี diff)
+  const sample = rows.slice(0, 5);
+  // diff sample สำหรับตาราง cell-level (เอา 20 row แรกที่มี diff)
+  const diffSample = [];
+  for (const r of updateRowsAll) {
+    if (!r._changedFields || r._changedFields.length === 0) continue;
+    for (const c of r._changedFields) {
+      diffSample.push({ id: r.id, name: `${r.firstName || ''} ${r.lastName || ''}`.trim(), ...c });
+      if (diffSample.length >= 20) break;
+    }
+    if (diffSample.length >= 20) break;
+  }
 
   // (Banner ถูกประกอบในตัวแปร partialBanner ด้านล่าง — แล้ว inject ตอนต้น return)
   // ─── Partial Excel warning banner — แสดงเด่นที่สุดเหนือ stats ───
@@ -4630,18 +4800,24 @@ function renderImportPreview(rows, errors) {
         ${warnings.length ? `<span class="badge badge-warning">${warnings.length} คำเตือน</span>` : ''}
       </div>
 
-      <!-- สถิติ insert vs update -->
+      <!-- สถิติ insert vs update (cell-level diff) -->
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <div style="flex:1;min-width:140px;padding:10px 12px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);border-radius:8px">
-          <div style="font-size:11.5px;color:var(--text-3);text-transform:uppercase">เพิ่มใหม่</div>
+          <div style="font-size:11.5px;color:var(--text-3);text-transform:uppercase">+ เพิ่มใหม่</div>
           <div style="font-size:20px;font-weight:700;color:var(--success);font-variant-numeric:tabular-nums">${insertCount.toLocaleString()}</div>
           <div style="font-size:11.5px;color:var(--text-3)">รหัสยังไม่มีในระบบ</div>
         </div>
         <div style="flex:1;min-width:140px;padding:10px 12px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.3);border-radius:8px">
-          <div style="font-size:11.5px;color:var(--text-3);text-transform:uppercase">อัปเดต</div>
-          <div style="font-size:20px;font-weight:700;color:#2563eb;font-variant-numeric:tabular-nums">${updateCount.toLocaleString()}</div>
-          <div style="font-size:11.5px;color:var(--text-3)">รหัสมีอยู่แล้ว → ข้อมูลใหม่ทับของเดิม</div>
+          <div style="font-size:11.5px;color:var(--text-3);text-transform:uppercase">↻ จะอัปเดตเฉพาะ field ที่เปลี่ยน</div>
+          <div style="font-size:20px;font-weight:700;color:#2563eb;font-variant-numeric:tabular-nums">${updateCount.toLocaleString()} <span style="font-size:13px;color:var(--text-3);font-weight:500">คน</span> · ${totalChangedCells.toLocaleString()} <span style="font-size:13px;color:var(--text-3);font-weight:500">เซลล์</span></div>
+          <div style="font-size:11.5px;color:var(--text-3)">เฉลี่ย ${updateCount ? (totalChangedCells/updateCount).toFixed(1) : 0} เซลล์/คน</div>
         </div>
+        ${unchangedCount > 0 ? `
+        <div style="flex:1;min-width:140px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px">
+          <div style="font-size:11.5px;color:var(--text-3);text-transform:uppercase">⊝ ไม่เปลี่ยน — จะ skip</div>
+          <div style="font-size:20px;font-weight:700;color:var(--text-3);font-variant-numeric:tabular-nums">${unchangedCount.toLocaleString()}</div>
+          <div style="font-size:11.5px;color:var(--text-3)">ข้อมูลใน Excel = DB ทุกฟิลด์</div>
+        </div>` : ''}
         ${returningCount > 0 ? `
         <div style="flex:1;min-width:140px;padding:10px 12px;background:rgba(217,119,6,0.08);border:1px solid var(--warning);border-radius:8px">
           <div style="font-size:11.5px;color:var(--text-3);text-transform:uppercase">⚠️ น่าสงสัย</div>
@@ -4649,6 +4825,29 @@ function renderImportPreview(rows, errors) {
           <div style="font-size:11.5px;color:var(--text-3)">เลข ปชช ตรงพนักงานเดิม</div>
         </div>` : ''}
       </div>
+
+      ${diffSample.length > 0 ? `
+      <details class="card" style="margin:8px 0 12px 0;padding:0;border:1px solid var(--border);background:var(--surface)">
+        <summary style="cursor:pointer;padding:10px 12px;font-weight:600;font-size:13px">
+          🔍 ดูตัวอย่างการเปลี่ยนแปลง (${totalChangedCells > 20 ? '20 จาก ' + totalChangedCells.toLocaleString() : totalChangedCells.toLocaleString()} เซลล์)
+        </summary>
+        <div style="overflow-x:auto;border-top:1px solid var(--border)">
+          <table class="table" style="font-size:12.5px;margin:0">
+            <thead><tr style="background:var(--surface-2)">
+              <th>รหัส</th><th>ชื่อ</th><th>ฟิลด์</th><th>ค่าเดิม</th><th>ค่าใหม่</th>
+            </tr></thead>
+            <tbody>
+              ${diffSample.map(d => `<tr>
+                <td><code>${escapeHtml(d.id)}</code></td>
+                <td>${escapeHtml(d.name)}</td>
+                <td><strong>${escapeHtml(d.label)}</strong></td>
+                <td style="color:var(--danger);text-decoration:line-through;opacity:0.7">${formatDiffValue(d.oldValue, d.type)}</td>
+                <td style="color:var(--success);font-weight:600">${formatDiffValue(d.newValue, d.type)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </details>` : ''}
 
       ${errors.length ? `
         <div style="background:var(--danger-soft);border-radius:8px;padding:12px;max-height:180px;overflow-y:auto;font-size:12.5px;margin-bottom:12px">
