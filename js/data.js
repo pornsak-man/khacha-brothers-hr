@@ -4431,6 +4431,28 @@ const DB = {
     return list;
   },
 
+  // [Echo suppression] ติดตาม schedule change ที่ user คนนี้เพิ่งเขียนเอง
+  // ใช้เพื่อให้ realtime handler ไม่แจ้งซ้ำ (echo) ของเปลี่ยนแปลงที่ user ทำเอง
+  _recentSelfSchedWrites: new Map(),  // key: "weekId|empId|date" → timestamp ms
+  isRecentSelfSchedWrite(weekId, empId, workDate) {
+    const k = `${weekId}|${empId}|${workDate}`;
+    const ts = this._recentSelfSchedWrites.get(k);
+    if (!ts) return false;
+    // ผ่านมา < 5 วินาที = ยังถือว่า echo
+    return (Date.now() - ts) < 5000;
+  },
+  _markSelfSchedWrite(weekId, empId, workDate) {
+    const k = `${weekId}|${empId}|${workDate}`;
+    this._recentSelfSchedWrites.set(k, Date.now());
+    // cleanup entries เก่ากว่า 30s — กันโตเรื่อยๆ
+    if (this._recentSelfSchedWrites.size > 100) {
+      const cutoff = Date.now() - 30000;
+      for (const [key, t] of this._recentSelfSchedWrites) {
+        if (t < cutoff) this._recentSelfSchedWrites.delete(key);
+      }
+    }
+  },
+
   async saveScheduleEntry(entry) {
     const week = (this.data.scheduleWeeks || []).find(w => w.id === entry.scheduleWeekId);
     if (!week) throw new Error('ไม่พบสัปดาห์ — กรุณารีโหลด');
@@ -4446,6 +4468,8 @@ const DB = {
     }
     const row = this._schedEntryToDB(entry);
     if (entry.id) row.id = entry.id;
+    // [Echo suppression] mark ก่อนยิง upsert — กัน realtime echo
+    this._markSelfSchedWrite(entry.scheduleWeekId, entry.employeeId, entry.workDate);
     const { data, error } = await this.client.from('schedule_entries')
       .upsert(row, { onConflict: 'schedule_week_id,employee_id,work_date' })
       .select().single();

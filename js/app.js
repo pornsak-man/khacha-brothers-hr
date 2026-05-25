@@ -1037,6 +1037,13 @@ function handleScheduleEntryChange(payload) {
 
   const dateStr = ref.work_date || cachedOld?.workDate;
   if (!dateStr) return;
+
+  // [Echo suppression] ถ้า user คนนี้เพิ่งบันทึกเอง (< 5s) — ไม่ต้อง toast
+  // ป้องกันแสดงข้อความซ้ำ: "บันทึกกะแล้ว" (จาก local) + "เพิ่มกะใหม่..." (จาก realtime echo)
+  if (DB.isRecentSelfSchedWrite && DB.isRecentSelfSchedWrite(weekId, refEmpId, dateStr)) {
+    return;
+  }
+
   const dateLabel = fmt.date(dateStr);
 
   // text จาก raw row (snake_case)
