@@ -4226,16 +4226,94 @@ function openImportEmployees() {
 
   let parsedRows = null;
   let validationErrors = [];
+  let backupDownloaded = false;       // [Safety] true เมื่อ HR กด backup สำเร็จ
+  let isLargeBatch = false;            // ≥ 50 rows → ต้องติ๊ก 3 ช่อง
+
+  // ─── คำนวณว่า submit ได้ไหม — เรียกทุกครั้งที่ state เปลี่ยน ───
+  const recomputeSubmitState = () => {
+    const btn = $('#importStartBtn');
+    if (!btn) return;
+    if (!parsedRows || parsedRows.length === 0 || validationErrors.length > 0) {
+      btn.disabled = true;
+      btn.textContent = validationErrors.length > 0 ? 'แก้ข้อผิดพลาดก่อน' : 'เริ่มนำเข้า';
+      return;
+    }
+    const updateCount = parsedRows.filter(r => r._op === 'update').length;
+    const needsBackup = updateCount > 0;
+    // ถ้ามี update row → ต้อง backup ก่อน
+    if (needsBackup && !backupDownloaded) {
+      btn.disabled = true;
+      btn.textContent = '⛔ ดาวน์โหลด backup ก่อน';
+      return;
+    }
+    // ≥ 50 rows → ต้องติ๊ก confirm ครบ 3 ช่อง
+    if (isLargeBatch) {
+      const checks = document.querySelectorAll('.import-confirm-check');
+      const allChecked = checks.length > 0 && Array.from(checks).every(c => c.checked);
+      if (!allChecked) {
+        btn.disabled = true;
+        btn.textContent = '⛔ ติ๊กยืนยันให้ครบก่อน';
+        return;
+      }
+    }
+    btn.disabled = false;
+    btn.textContent = `เริ่มนำเข้า (${parsedRows.length.toLocaleString()} แถว)`;
+  };
+
+  // ─── Wire up backup + confirm handlers หลัง render preview ───
+  const wireSafetyHandlers = () => {
+    const backupBtn = $('#importBackupBtn');
+    if (backupBtn) {
+      backupBtn.addEventListener('click', async () => {
+        const updateRows = parsedRows.filter(r => r._op === 'update');
+        const affectedIds = new Set(updateRows.map(r => String(r.id)));
+        const affectedEmployees = DB.data.employees.filter(e => affectedIds.has(String(e.id)));
+        backupBtn.disabled = true;
+        backupBtn.textContent = 'กำลังสร้าง...';
+        try {
+          const ok = await downloadImportBackup(affectedEmployees);
+          if (ok) {
+            backupDownloaded = true;
+            backupBtn.textContent = '✓ ดาวน์โหลดแล้ว — กดอีกครั้งเพื่อโหลดซ้ำ';
+            backupBtn.classList.remove('btn-warning');
+            backupBtn.classList.add('btn-success');
+            backupBtn.disabled = false;
+            const status = $('#importBackupStatus');
+            if (status) {
+              status.textContent = `✓ backup ${affectedEmployees.length} คน เรียบร้อย — เก็บไฟล์ใน secure folder`;
+              status.style.color = 'var(--success)';
+            }
+            toast('ดาวน์โหลด backup แล้ว — ตอนนี้ import ต่อได้', 'success');
+            recomputeSubmitState();
+          } else {
+            backupBtn.disabled = false;
+            backupBtn.textContent = `${ICON.download} ดาวน์โหลด backup`;
+          }
+        } catch (ex) {
+          backupBtn.disabled = false;
+          backupBtn.textContent = `${ICON.download} ดาวน์โหลด backup (ลองใหม่)`;
+          toast('สร้าง backup ไม่สำเร็จ: ' + (ex.message || ex), 'error');
+        }
+      });
+    }
+    document.querySelectorAll('.import-confirm-check').forEach(c => {
+      c.addEventListener('change', recomputeSubmitState);
+    });
+  };
 
   $('#importFile').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     $('#importBody').innerHTML = '<div class="muted-2 mt-4">กำลังอ่านไฟล์...</div>';
+    // reset state สำหรับไฟล์ใหม่
+    backupDownloaded = false;
     try {
       parsedRows = await readExcelFile(file);
       validationErrors = validateImportRows(parsedRows);
+      isLargeBatch = parsedRows.length >= 50;
       $('#importBody').innerHTML = renderImportPreview(parsedRows, validationErrors);
-      $('#importStartBtn').disabled = validationErrors.length > 0 || parsedRows.length === 0;
+      wireSafetyHandlers();
+      recomputeSubmitState();
     } catch (ex) {
       $('#importBody').innerHTML = `<div class="card mt-4" style="border-color:var(--danger);color:var(--danger)">อ่านไฟล์ไม่สำเร็จ: ${escapeHtml(ex.message)}</div>`;
       $('#importStartBtn').disabled = true;
@@ -4386,6 +4464,79 @@ function openImportEmployees() {
   });
 }
 
+// ดาวน์โหลด backup ของพนักงานที่กำลังจะถูก import ทับ (เฉพาะ "update" rows)
+// ใช้โครงสร้างเดียวกับ exportEmployeesXLSX → ถ้าต้อง rollback HR ก็ import กลับได้เลย
+async function downloadImportBackup(affectedEmployees) {
+  if (!affectedEmployees.length) {
+    toast('ไม่มีข้อมูลให้ backup (ทุกแถวเป็นพนักงานใหม่)', 'info');
+    return false;
+  }
+  if (typeof XLSX === 'undefined') {
+    try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return false; }
+  }
+  const cs = csvSafe;
+  const rows = affectedEmployees.map(e => ({
+    'รหัส': excelNum(e.id), 'คำนำหน้า': cs(e.title), 'ชื่อ': cs(e.firstName), 'นามสกุล': cs(e.lastName),
+    'ชื่อเล่น': cs(e.nickname),
+    'เลขประชาชน': excelNum(e.nationalId), 'Passport': cs(e.passportNumber), 'Work Permit': cs(e.workPermitNumber),
+    'วันเกิด': excelDate(e.dob), 'เพศ': cs(e.gender),
+    'สัญชาติ': cs(e.nationality), 'ศาสนา': cs(e.religion), 'วุฒิการศึกษา': cs(e.education),
+    'เบอร์โทร': cs(e.phone), 'อีเมล': cs(e.email),
+    'ที่อยู่': cs(e.address), 'แขวง/ตำบล': cs(e.subDistrict), 'เขต/อำเภอ': cs(e.district),
+    'จังหวัด': cs(e.province), 'รหัสไปรษณีย์': cs(e.postalCode),
+    'ฝ่าย': cs((DB.getDepartment(e.department) || {}).name || ''),
+    'สาขา': cs(e.branch),
+    'ระดับตำแหน่งงาน': cs((DB.getPosition(e.position) || {}).name || ''),
+    'ตำแหน่ง': cs(e.positionTitle),
+    'ประเภทพนักงาน': cs(e.employeeType),
+    'วันเริ่มงาน': excelDate(e.hireDate),
+    'วันพ้นสภาพ': excelDate(e.terminationDate),
+    'เหตุผลพ้นสภาพ': cs(e.terminationReason),
+    'รายละเอียดพ้นสภาพ': cs(e.terminationNote),
+    'ธนาคาร': cs(e.bank), 'เลขบัญชี': cs(e.bankAccount),
+    'เงินเดือน': Number(e.salary || 0),
+    'ค่าตำแหน่ง': Number(e.allowancePosition || 0),
+    'ค่าเดินทาง': Number(e.allowanceTravel || 0),
+    'ค่าอาหาร': Number(e.allowanceFood || 0),
+    'ค่าเบี้ยเลี้ยง': Number(e.allowancePerDiem || 0),
+    'ค่าภาษา': Number(e.allowanceLanguage || 0),
+    'ค่าโทรศัพท์': Number(e.allowancePhone || 0),
+    'ค่าอื่นๆ': Number(e.allowanceOther || 0),
+    'เลข สปส.': cs(e.ssoNo),
+    'วันที่แจ้งเข้า สปส.': excelDate(e.ssoEnrolledDate),
+    'วันที่แจ้งออก สปส.': excelDate(e.ssoTerminatedDate),
+    'สถานพยาบาล สปส.': cs(e.ssoHospital),
+    'สถานะ': e.status === 'active' ? 'ปฏิบัติงาน' : 'ลาออก',
+    'หมายเหตุ': cs(e.note)
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows, { cellDates: true, dateNF: 'dd mmm yyyy' });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'BACKUP-ก่อน-import');
+  // เพิ่ม sheet "วิธีใช้" — เผื่อ HR ลืมว่า backup นี้ทำตอนไหน
+  const usage = [
+    ['🛡 BACKUP — ข้อมูลก่อน import'],
+    [''],
+    [`สร้างเมื่อ: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}`],
+    [`จำนวนพนักงาน: ${affectedEmployees.length} คน`],
+    [`สร้างโดย: ${DB.profile?.name || DB.user?.email || '-'}`],
+    [''],
+    ['วิธีใช้ rollback ถ้าเกิดข้อผิดพลาด:'],
+    ['  1. เก็บไฟล์นี้ไว้อย่างน้อย 90 วัน (PDPA)'],
+    ['  2. ถ้าต้องการ rollback → เปิดเมนู "นำเข้า Excel" อีกครั้ง'],
+    ['  3. อัปโหลดไฟล์ backup นี้ (sheet "BACKUP-ก่อน-import") → กด "เริ่มนำเข้า"'],
+    ['  4. ระบบจะอัปเดตข้อมูลกลับเป็นค่าเดิม (เฉพาะ field ที่เปลี่ยน)'],
+    [''],
+    ['⚠️ ห้ามแชร์ไฟล์นี้ — มีเลข ปชช + เงินเดือน + บัญชีธนาคาร (PDPA sensitive)']
+  ];
+  const wsUsage = XLSX.utils.aoa_to_sheet(usage);
+  wsUsage['!cols'] = [{ wch: 80 }];
+  XLSX.utils.book_append_sheet(wb, wsUsage, 'วิธีใช้');
+  const ts = new Date();
+  const stamp = `${ts.getFullYear()}${String(ts.getMonth()+1).padStart(2,'0')}${String(ts.getDate()).padStart(2,'0')}-${String(ts.getHours()).padStart(2,'0')}${String(ts.getMinutes()).padStart(2,'0')}`;
+  XLSX.writeFile(wb, `BACKUP-ก่อน-import-${stamp}-(${affectedEmployees.length}คน).xlsx`);
+  return true;
+}
+
 function renderImportPreview(rows, errors) {
   const warnings = errors._warnings || [];
   const sample = rows.slice(0, 5);
@@ -4393,6 +4544,8 @@ function renderImportPreview(rows, errors) {
   const insertCount = rows.filter(r => r._op === 'insert').length;
   const updateCount = rows.filter(r => r._op === 'update').length;
   const returningCount = rows.filter(r => r._isReturning).length;
+  const needsBackup = updateCount > 0;
+  const isLargeBatch = rows.length >= 50;
   return `
     <div class="card mt-4">
       <div class="flex items-center gap-2" style="margin-bottom:10px;flex-wrap:wrap">
@@ -4467,6 +4620,60 @@ function renderImportPreview(rows, errors) {
         </table>
       </div>
     </div>
+
+    ${errors.length ? '' : `
+    <!-- ─── ขั้นที่ 3: Backup ก่อน + confirm ─── -->
+    <div class="card mt-4" id="importSafetyBox" style="border:2px solid var(--warning);background:rgba(217,119,6,0.04)">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div style="font-size:24px">🛡</div>
+        <div>
+          <div style="font-weight:700;font-size:15px">ขั้นที่ 3 — ความปลอดภัยก่อน Import</div>
+          <div class="muted-2" style="font-size:12.5px">กระบวนการเหล่านี้เป็นไปตาม PDPA + กฎ HR ของบริษัท</div>
+        </div>
+      </div>
+
+      ${needsBackup ? `
+      <div style="padding:12px;background:var(--surface);border-radius:8px;margin-bottom:12px">
+        <div style="font-weight:600;margin-bottom:6px">📥 1. ดาวน์โหลด backup ของพนักงาน ${updateCount} คนที่จะถูกอัปเดต</div>
+        <div class="muted-2" style="font-size:12.5px;margin-bottom:8px">
+          ไฟล์ Excel ที่ดาวน์โหลดสามารถ <strong>นำเข้ากลับเพื่อ rollback</strong> ได้ถ้าเกิดข้อผิดพลาด<br>
+          ระบบ <strong>บังคับให้ download ก่อน</strong> ค่อย import ได้ — กัน data loss ในเคสที่ HR กดผิด
+        </div>
+        <button type="button" class="btn btn-warning" id="importBackupBtn" style="font-weight:600">
+          ${ICON.download} ดาวน์โหลด backup (${updateCount} คน)
+        </button>
+        <span id="importBackupStatus" class="muted-2" style="margin-left:10px;font-size:12.5px">— ยังไม่ดาวน์โหลด</span>
+      </div>
+      ` : `
+      <div style="padding:12px;background:var(--surface);border-radius:8px;margin-bottom:12px;color:var(--text-2);font-size:13px">
+        ℹ️ ไม่มี backup เพราะทุกแถวเป็นพนักงานใหม่ (insert ล้วน) — ไม่มีข้อมูลเดิมให้สูญหาย
+      </div>
+      `}
+
+      ${isLargeBatch ? `
+      <div style="padding:12px;background:var(--surface);border-radius:8px;margin-bottom:12px">
+        <div style="font-weight:600;margin-bottom:8px">✓ 2. ยืนยันสำหรับ batch ใหญ่ (${rows.length} แถว)</div>
+        <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-bottom:6px">
+          <input type="checkbox" class="import-confirm-check" data-key="size" />
+          <span>ฉันเข้าใจว่าจะแก้ไขข้อมูลพนักงาน <strong>${rows.length} คน</strong> ในครั้งเดียว</span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-bottom:6px">
+          <input type="checkbox" class="import-confirm-check" data-key="backup" />
+          <span>ฉันได้ดาวน์โหลด backup และเก็บไว้ในที่ปลอดภัยแล้ว</span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" class="import-confirm-check" data-key="responsibility" />
+          <span>ฉันยินยอมรับผิดชอบหากเกิดข้อผิดพลาดจากการกระทำนี้</span>
+        </label>
+      </div>
+      ` : ''}
+
+      <div style="padding:12px;background:rgba(217,119,6,0.06);border-radius:8px;font-size:12px;color:var(--text-2)">
+        💡 <strong>คำแนะนำเพิ่มเติม:</strong>
+        ทำ bulk import ในช่วงนอกเวลางาน (หลัง 18:00 หรือเสาร์-อาทิตย์) เพื่อลดผลกระทบต่อ payroll calc และให้เวลา HR ตรวจทาน
+      </div>
+    </div>
+    `}
   `;
 }
 
