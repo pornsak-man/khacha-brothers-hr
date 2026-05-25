@@ -487,30 +487,31 @@ const _toastIcons = {
   warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
   info:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
 };
-// [Dedupe] กัน toast ซ้ำ — message + type เดียวกันภายใน 2 วินาที จะถูก block
-const _recentToasts = new Map();   // "type|msg" → timestamp
+// [Dedupe v2] Set-based: block ทันทีโดยไม่พึ่ง timestamp comparison
+// — เด็ดขาดกว่า เพราะ Set.has() + delete() ไม่มี race condition
+// — ใช้ setTimeout เพื่อปลด block หลัง 3s (เผื่อ toast ที่ผู้ใช้ตั้งใจซ้ำหลังจากนั้น)
+const _toastInflight = new Set();   // "type|msg" — มีอยู่ = กำลังแสดง = block ใหม่
 const toast = (msg, type = 'info') => {
   const root = $('#toastRoot');
   if (!root) return;
-  // [DEBUG] log call stack เพื่อ trace ที่มา toast — เปิดได้ผ่าน window.__TOAST_DEBUG = true ใน console
-  if (window.__TOAST_DEBUG) {
-    const stack = new Error().stack.split('\n').slice(2, 6).join('\n');
-    console.log('%c[TOAST]', 'color:#b87a08;font-weight:bold', `[${type}]`, msg, '\n', stack);
-  }
-  // dedup: ถ้า toast เดียวกันเพิ่งแสดง < 2s ที่แล้ว → skip
   const key = `${type}|${msg}`;
-  const now = Date.now();
-  const last = _recentToasts.get(key);
-  if (last && (now - last) < 2000) {
-    if (window.__TOAST_DEBUG) console.log('%c[TOAST] suppressed (dedup)', 'color:#ef4444', msg);
-    return;   // duplicate suppression
+  // [DEBUG] log call stack — เปิดได้ผ่าน window.__TOAST_DEBUG = true ใน console
+  if (window.__TOAST_DEBUG) {
+    const blocked = _toastInflight.has(key);
+    const stack = new Error().stack.split('\n').slice(2, 6).join('\n');
+    console.log(
+      `%c[TOAST]${blocked ? ' BLOCKED' : ''}`,
+      blocked ? 'color:#ef4444;font-weight:bold' : 'color:#b87a08;font-weight:bold',
+      `[${type}]`, msg, '\n', stack
+    );
   }
-  _recentToasts.set(key, now);
-  // cleanup entries เก่ากว่า 10s ถ้า map > 50 entries
-  if (_recentToasts.size > 50) {
-    const cutoff = now - 10000;
-    for (const [k, t] of _recentToasts) if (t < cutoff) _recentToasts.delete(k);
+  // ★ Strict dedup: ถ้า toast key เดียวกันยังอยู่ใน Set → BLOCK
+  if (_toastInflight.has(key)) {
+    return;
   }
+  _toastInflight.add(key);
+  // ปลด block หลัง 3 วินาที (ครอบคลุมเวลา toast แสดง 3.2s + buffer)
+  setTimeout(() => _toastInflight.delete(key), 3000);
   const el = document.createElement('div');
   el.className = 'toast toast-v3 ' + type;
   el.innerHTML = `
@@ -14678,8 +14679,13 @@ function openShiftPicker(empId, workDate, entryId) {
   `;
   modal.open('เลือกกะ', body, { footer });
   const root = $('#modalRoot');
+  let _pickerClicked = false;   // [Guard] กัน double-click / event bubble ทำให้ save ซ้ำ
   root.querySelectorAll('.shift-picker-option').forEach(btn => {
     btn.addEventListener('click', () => {
+      // ★ Guard: ถ้ามีการคลิกแล้ว → ignore ทันที (ป้องกัน 2 toasts)
+      if (_pickerClicked) return;
+      _pickerClicked = true;
+
       if (btn.dataset.custom === '1') {
         openCustomShiftForm(empId, workDate, existingEntry);
         return;
