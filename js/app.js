@@ -14522,7 +14522,7 @@ function renderScheduleGrid(branchId, weekStart, canEdit) {
         ${emp.hireDate ? `<div class="schedule-emp-meta schedule-emp-tenure" title="วันเริ่มงาน ${fmt.date(emp.hireDate)}">เริ่ม ${fmt.date(emp.hireDate)}${tenureText ? ` · ${tenureText}` : ''}</div>` : ''}
       </th>
       ${cells}
-      <td class="schedule-summary-cell">
+      <td class="schedule-summary-cell" id="schedule-row-summary-${escapeHtml(emp.id)}">
         <div><strong>${fmt.num(summary.hours)}</strong> ชม.</div>
         <div class="muted-2 schedule-summary-meta">${summary.shiftCount} กะ · ${summary.offDays} OFF</div>
       </td>
@@ -14582,7 +14582,7 @@ function renderScheduleGrid(branchId, weekStart, canEdit) {
     const mins = totalMinsByDate.get(d) || 0;
     const count = shiftCountByDate.get(d) || 0;
     const isToday = d === today;
-    return `<td class="schedule-footer-cell ${isToday ? 'today' : ''}">
+    return `<td class="schedule-footer-cell ${isToday ? 'today' : ''}" id="schedule-day-total-${escapeHtml(d)}">
       <div class="schedule-footer-hours">${mins > 0 ? `<strong>${(mins / 60).toFixed(1)}</strong> ชม.` : '<span class="muted-2">—</span>'}</div>
       <div class="schedule-summary-meta muted-2">${count > 0 ? `${count} กะ` : ''}</div>
     </td>`;
@@ -14606,7 +14606,7 @@ function renderScheduleGrid(branchId, weekStart, canEdit) {
               <div class="muted-2 schedule-summary-meta">ทั้งสาขา · ไม่นับลา/OFF</div>
             </th>
             ${footerHtml}
-            <td class="schedule-summary-cell schedule-footer-grand">
+            <td class="schedule-summary-cell schedule-footer-grand" id="schedule-grand-total">
               <div><strong>${(grandTotalMins / 60).toFixed(1)}</strong> ชม.</div>
               <div class="muted-2 schedule-summary-meta">${grandTotalShifts} กะ ทั้งสัปดาห์</div>
             </td>
@@ -14615,6 +14615,137 @@ function renderScheduleGrid(branchId, weekStart, canEdit) {
       </table>
     </div>
   </div>`;
+}
+
+// === Surgical update of schedule totals (no full re-render) ===
+// คำนวณ row total + day total + grand total ใหม่จาก cache แล้วอัปเดต DOM เฉพาะส่วน
+// → ใช้แทน router.go('schedule') หลัง save → ไม่กระตุก + ผลรวมตรง
+function refreshScheduleTotals() {
+  const branchId = _scheduleState.branchId;
+  const weekStart = _scheduleState.weekStart;
+  if (!branchId || !weekStart) return;
+  const week = DB.getScheduleWeek(branchId, weekStart);
+  if (!week) return;
+
+  // ─── สร้างชุดของวันใน week (7 days starting from weekStart) ───
+  const dates = [];
+  const [sy, sm, sd] = parseYMD(weekStart);
+  for (let i = 0; i < 7; i++) {
+    const dt = new Date(sy, sm - 1, sd + i);
+    dates.push(dt.toLocaleDateString('en-CA'));
+  }
+
+  // ─── ดึง entries ของ week นี้ ───
+  const entries = (DB.data.scheduleEntries || []).filter(e => e.scheduleWeekId === week.id);
+  const leaves = (DB.data.leaveRequests || []).filter(r => r.status === 'approved');
+  const leavesByKey = new Map();
+  for (const l of leaves) {
+    let cur = parseYMD(l.startDate);
+    const end = parseYMD(l.endDate);
+    if (!cur || !end) continue;
+    while (cur[0] < end[0] || (cur[0] === end[0] && cur[1] < end[1]) || (cur[0] === end[0] && cur[1] === end[1] && cur[2] <= end[2])) {
+      const dStr = new Date(cur[0], cur[1] - 1, cur[2]).toLocaleDateString('en-CA');
+      leavesByKey.set(`${l.employeeId}|${dStr}`, l);
+      const nx = new Date(cur[0], cur[1] - 1, cur[2] + 1);
+      cur = [nx.getFullYear(), nx.getMonth() + 1, nx.getDate()];
+    }
+  }
+
+  // ─── คำนวณ minutes สำหรับ 1 entry ───
+  const entryMins = (entry) => {
+    if (!entry) return 0;
+    if (entry.shiftId) {
+      const sh = DB.getShift(entry.shiftId);
+      if (!sh || sh.isOffDay || !sh.startTime || !sh.endTime) return 0;
+      const [h1, m1] = sh.startTime.split(':').map(Number);
+      const [h2, m2] = sh.endTime.split(':').map(Number);
+      let mm = (h2 * 60 + m2) - (h1 * 60 + m1);
+      if (mm < 0) mm += 24 * 60;
+      mm -= Number(sh.breakMinutes || 0);
+      return Math.max(0, mm);
+    }
+    if (entry.customStartTime && entry.customEndTime) {
+      const [h1, m1] = entry.customStartTime.split(':').map(Number);
+      const [h2, m2] = entry.customEndTime.split(':').map(Number);
+      let mm = (h2 * 60 + m2) - (h1 * 60 + m1);
+      if (mm < 0) mm += 24 * 60;
+      mm -= Number(entry.customBreakMinutes || 0);
+      return Math.max(0, mm);
+    }
+    return 0;
+  };
+
+  // ─── per-day totals + grand total ───
+  const totalMinsByDate = new Map();
+  const shiftCountByDate = new Map();
+  let grandTotalMins = 0;
+  let grandTotalShifts = 0;
+
+  // ─── per-employee totals (row summary) — เฉพาะ emp ที่อยู่ใน row ของหน้าตอนนี้ ───
+  const empSummaries = new Map();   // empId → { hours, shiftCount, offDays }
+  for (const entry of entries) {
+    const d = entry.workDate;
+    if (!dates.includes(d)) continue;   // entry นอก week → skip
+    const empId = entry.employeeId;
+    if (!empSummaries.has(empId)) empSummaries.set(empId, { mins: 0, shiftCount: 0, offDays: 0 });
+    const s = empSummaries.get(empId);
+    const onLeave = !!leavesByKey.get(`${empId}|${d}`);
+    if (onLeave) continue;  // ลา ไม่นับ
+    const sh = entry.shiftId ? DB.getShift(entry.shiftId) : null;
+    if (sh && sh.isOffDay) { s.offDays++; continue; }
+    const mins = entryMins(entry);
+    if (mins > 0) {
+      s.mins += mins;
+      s.shiftCount++;
+      totalMinsByDate.set(d, (totalMinsByDate.get(d) || 0) + mins);
+      shiftCountByDate.set(d, (shiftCountByDate.get(d) || 0) + 1);
+      grandTotalMins += mins;
+      grandTotalShifts++;
+    }
+  }
+
+  // ─── update DOM: row summaries ───
+  for (const [empId, s] of empSummaries) {
+    const el = document.getElementById(`schedule-row-summary-${empId}`);
+    if (!el) continue;
+    const hours = +(s.mins / 60).toFixed(1);
+    el.innerHTML = `
+      <div><strong>${hours}</strong> ชม.</div>
+      <div class="muted-2 schedule-summary-meta">${s.shiftCount} กะ · ${s.offDays} OFF</div>
+    `;
+  }
+  // กรณี employee เคยมี entry แล้วลบหมด → summary ใน DOM ยังค้าง → reset ให้เป็น 0
+  document.querySelectorAll('[id^="schedule-row-summary-"]').forEach(el => {
+    const id = el.id.replace('schedule-row-summary-', '');
+    if (!empSummaries.has(id)) {
+      el.innerHTML = `
+        <div><strong>0</strong> ชม.</div>
+        <div class="muted-2 schedule-summary-meta">0 กะ · 0 OFF</div>
+      `;
+    }
+  });
+
+  // ─── update DOM: day totals (footer) ───
+  for (const d of dates) {
+    const el = document.getElementById(`schedule-day-total-${d}`);
+    if (!el) continue;
+    const mins = totalMinsByDate.get(d) || 0;
+    const count = shiftCountByDate.get(d) || 0;
+    const hours = (mins / 60).toFixed(1);
+    el.innerHTML = `
+      <div class="schedule-footer-hours">${mins > 0 ? `<strong>${hours}</strong> ชม.` : '<span class="muted-2">—</span>'}</div>
+      <div class="schedule-summary-meta muted-2">${count > 0 ? `${count} กะ` : ''}</div>
+    `;
+  }
+
+  // ─── update DOM: grand total ───
+  const grandEl = document.getElementById('schedule-grand-total');
+  if (grandEl) {
+    grandEl.innerHTML = `
+      <div><strong>${(grandTotalMins / 60).toFixed(1)}</strong> ชม.</div>
+      <div class="muted-2 schedule-summary-meta">${grandTotalShifts} กะ ทั้งสัปดาห์</div>
+    `;
+  }
 }
 
 // === CELL EDITOR — เลือกกะ ===
@@ -14732,11 +14863,11 @@ function openShiftPicker(empId, workDate, entryId) {
           // [PERF] ลบ pending state — realtime subscription หรือ next render
           // จะ replace cell ด้วยข้อมูลจริง (รวม totals + row summary)
           if (cellEl) cellEl.classList.remove('schedule-cell-pending');
-          // ★ ไม่ต้อง router.go('schedule') — optimistic cell update ครอบคลุมแล้ว
-          // เคย re-render ทั้งหน้า → user เห็นภาพ "กระตุก" 2 ครั้ง (optimistic + re-render)
-          // Trade-off: row totals (ชม./กะ ที่ท้ายแถว + แถวล่างสุด) อาจ stale เล็กน้อย
-          // — ผู้ใช้ refresh หน้าตอนต้องการ totals ที่ตรงจริง
-          // — Realtime subscription ก็ update DB.data cache อยู่แล้ว
+          // ★ Surgical update: คำนวณ row/day/grand totals ใหม่ + อัปเดตเฉพาะ DOM ส่วนนั้น
+          // ไม่ re-render ทั้งหน้า → ไม่กระตุก + ผลรวมตรงทันที
+          if (typeof refreshScheduleTotals === 'function') {
+            refreshScheduleTotals();
+          }
         } catch (ex) {
           // [PERF] Revert optimistic UI ถ้า save fail
           if (cellEl && oldHtml !== null) {
