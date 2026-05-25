@@ -14732,12 +14732,11 @@ function openShiftPicker(empId, workDate, entryId) {
           // [PERF] ลบ pending state — realtime subscription หรือ next render
           // จะ replace cell ด้วยข้อมูลจริง (รวม totals + row summary)
           if (cellEl) cellEl.classList.remove('schedule-cell-pending');
-          // defer re-render to next idle tick
-          setTimeout(() => {
-            if (router.current === 'schedule') router.go('schedule');
-          }, 0);
-          // ★ ไม่ต้องมี toast — cell update ทันที (optimistic) เป็น visual feedback ที่ชัดเจนแล้ว
-          // (เคยลอง toast แต่มีปัญหา "2 ครั้ง" จาก source ที่ตรวจไม่เจอ — ลบทิ้งดีกว่า)
+          // ★ ไม่ต้อง router.go('schedule') — optimistic cell update ครอบคลุมแล้ว
+          // เคย re-render ทั้งหน้า → user เห็นภาพ "กระตุก" 2 ครั้ง (optimistic + re-render)
+          // Trade-off: row totals (ชม./กะ ที่ท้ายแถว + แถวล่างสุด) อาจ stale เล็กน้อย
+          // — ผู้ใช้ refresh หน้าตอนต้องการ totals ที่ตรงจริง
+          // — Realtime subscription ก็ update DB.data cache อยู่แล้ว
         } catch (ex) {
           // [PERF] Revert optimistic UI ถ้า save fail
           if (cellEl && oldHtml !== null) {
