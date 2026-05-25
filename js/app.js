@@ -487,9 +487,24 @@ const _toastIcons = {
   warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
   info:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
 };
+// [Dedupe] กัน toast ซ้ำ — message + type เดียวกันภายใน 2 วินาที จะถูก block
+const _recentToasts = new Map();   // "type|msg" → timestamp
 const toast = (msg, type = 'info') => {
   const root = $('#toastRoot');
   if (!root) return;
+  // dedup: ถ้า toast เดียวกันเพิ่งแสดง < 2s ที่แล้ว → skip
+  const key = `${type}|${msg}`;
+  const now = Date.now();
+  const last = _recentToasts.get(key);
+  if (last && (now - last) < 2000) {
+    return;   // duplicate suppression
+  }
+  _recentToasts.set(key, now);
+  // cleanup entries เก่ากว่า 10s ถ้า map > 50 entries
+  if (_recentToasts.size > 50) {
+    const cutoff = now - 10000;
+    for (const [k, t] of _recentToasts) if (t < cutoff) _recentToasts.delete(k);
+  }
   const el = document.createElement('div');
   el.className = 'toast toast-v3 ' + type;
   el.innerHTML = `
