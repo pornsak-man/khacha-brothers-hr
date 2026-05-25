@@ -3897,27 +3897,28 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 
 .branch-picker-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 8px;
-  padding: 12px;
-  max-height: 280px;
+  /* code-only chips → ใช้ขนาดเล็กลง 7-8 คอลัมน์ต่อแถว สะอาดตา */
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 6px;
+  padding: 10px;
+  max-height: 320px;
   overflow-y: auto;
 }
 
 .branch-chip {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px 10px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   cursor: pointer;
   transition: all var(--transition);
   position: relative;
   font-weight: 400;
   margin: 0;
-  min-height: 44px;
-  overflow: hidden;       /* กัน content spillover ออกนอก chip */
-  min-width: 0;           /* กัน grid item ขยายเกิน column */
+  min-height: 34px;
+  overflow: hidden;
+  min-width: 0;
 }
 .branch-chip:hover {
   border-color: var(--gold);
@@ -3933,8 +3934,8 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 
 .branch-chip-indicator {
   flex-shrink: 0;
-  width: 18px; height: 18px;
-  border-radius: var(--radius-xs);
+  width: 14px; height: 14px;
+  border-radius: 3px;
   border: 1.5px solid var(--border-strong);
   background: var(--surface);
   display: flex; align-items: center; justify-content: center;
@@ -3942,7 +3943,7 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 }
 .branch-chip-indicator::after {
   content: "";
-  width: 10px; height: 10px;
+  width: 8px; height: 8px;
   background: var(--surface);
   -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>") center/contain no-repeat;
           mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>") center/contain no-repeat;
@@ -3952,27 +3953,27 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 }
 
 .branch-chip-content {
-  flex: 1; min-width: 0;
+  flex: 0 1 auto; min-width: 0;
   display: flex; flex-direction: row;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: 4px;
   overflow: hidden;
 }
 
 .branch-chip-code {
   flex-shrink: 0;
   font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   color: var(--text);
-  line-height: 1.3;
+  line-height: 1;
   transition: color var(--transition);
 }
 
 .branch-chip-name {
   flex: 1; min-width: 0;
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--text-3);
   font-weight: 400;
   white-space: nowrap;
@@ -3980,17 +3981,17 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
   text-overflow: ellipsis;
   letter-spacing: 0;
   line-height: 1.3;
-  text-transform: none;       /* เก็บตามต้นฉบับ — UPPERCASE ก็ UPPERCASE ตามที่ admin กรอก */
+  text-transform: none;
 }
 .branch-chip-name::before {
   content: "·";
   display: inline-block;
-  margin-right: 6px;
+  margin-right: 4px;
   color: var(--border-strong);
   font-weight: 700;
 }
 
-.branch-chip.is-codeonly .branch-chip-code { font-size: 14.5px; }
+.branch-chip.is-codeonly .branch-chip-code { font-size: 13.5px; }
 
 /* Selected state — champagne gold luxe accent */
 .branch-chip:has(input:checked) {
