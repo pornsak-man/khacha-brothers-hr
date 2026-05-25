@@ -14238,12 +14238,12 @@ function openShiftEditor(shiftId) {
         <label><input type="checkbox" name="isOffDay" ${cur.isOffDay ? 'checked' : ''} onchange="document.querySelectorAll('.shift-time-row input,.shift-break-row input').forEach(i=>i.disabled=this.checked)" /> วันหยุด (OFF — ไม่นับชั่วโมงงาน)</label>
       </div>
       <div class="form-group shift-time-row">
-        <label>เวลาเริ่ม</label>
-        <input type="time" name="startTime" value="${escapeHtml((cur.startTime || '').slice(0,5))}" ${cur.isOffDay ? 'disabled' : ''} />
+        <label>เวลาเริ่ม <span class="muted-2" style="font-weight:normal;font-size:11px">(นาทีเลือกได้แค่ 00/30)</span></label>
+        <input type="time" name="startTime" value="${escapeHtml((cur.startTime || '').slice(0,5))}" step="1800" ${cur.isOffDay ? 'disabled' : ''} />
       </div>
       <div class="form-group shift-time-row">
-        <label>เวลาสิ้นสุด</label>
-        <input type="time" name="endTime" value="${escapeHtml((cur.endTime || '').slice(0,5))}" ${cur.isOffDay ? 'disabled' : ''} />
+        <label>เวลาสิ้นสุด <span class="muted-2" style="font-weight:normal;font-size:11px">(นาทีเลือกได้แค่ 00/30)</span></label>
+        <input type="time" name="endTime" value="${escapeHtml((cur.endTime || '').slice(0,5))}" step="1800" ${cur.isOffDay ? 'disabled' : ''} />
       </div>
       <div class="form-group shift-break-row">
         <label>พักกี่นาที</label>
@@ -14285,6 +14285,19 @@ function openShiftEditor(shiftId) {
   $('#shiftSaveBtn').addEventListener('click', async () => {
     const form = $('#shiftForm');
     const fd = new FormData(form);
+    // [UI] บังคับนาที = 00 หรือ 30 เท่านั้น (กันกรณี browser ไม่ enforce step=1800)
+    const enforceHalfHour = (t) => {
+      const s = (t || '').toString().trim();
+      if (!s) return s;
+      const m = s.match(/^(\d{1,2}):(\d{2})/);
+      if (!m) return s;
+      const hh = m[1].padStart(2, '0');
+      const mm = parseInt(m[2], 10);
+      if (mm !== 0 && mm !== 30) {
+        throw new Error(`เวลา ${s} — นาทีต้องเป็น 00 หรือ 30 เท่านั้น`);
+      }
+      return `${hh}:${String(mm).padStart(2, '0')}`;
+    };
     const data = {
       id: s?.id,
       code: (fd.get('code') || '').toString().trim().toUpperCase(),
@@ -14301,6 +14314,11 @@ function openShiftEditor(shiftId) {
       note: (fd.get('note') || '').toString()
     };
     try {
+      // เช็คเวลาเป็น 30-min step เฉพาะตอนไม่ใช่ off-day
+      if (!data.isOffDay) {
+        data.startTime = enforceHalfHour(data.startTime);
+        data.endTime = enforceHalfHour(data.endTime);
+      }
       await DB.saveShift(data);
       modal.close();
       openShiftsManager();
