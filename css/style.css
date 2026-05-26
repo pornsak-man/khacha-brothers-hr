@@ -3153,18 +3153,37 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .sw-cal-table {
   table-layout: auto;
   width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
 }
+.sw-cal-table thead th {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-3);
+  padding: 12px 14px;
+  border-bottom: 1.5px solid var(--border);
+  background: rgba(0,0,0,0.015);
+}
+[data-theme="dark"] .sw-cal-table thead th { background: rgba(255,255,255,0.02); }
 .sw-cal-table tbody tr td {
-  padding-top: 12px;
-  padding-bottom: 12px;
+  padding: 14px 14px;
   vertical-align: top;
+  border-bottom: 1px solid var(--border);
 }
+.sw-cal-table tbody tr:last-child td { border-bottom: none; }
+.sw-cal-table tbody tr:hover td {
+  background: rgba(99,102,241,0.04);
+  transition: background 0.12s;
+}
+[data-theme="dark"] .sw-cal-table tbody tr:hover td { background: rgba(99,102,241,0.08); }
 /* หัวข้อ (column 2) — wrap คำยาว ไม่ทำให้ตาราง overflow */
 .sw-cal-table tbody tr td:nth-child(2) {
   word-break: break-word;
   white-space: normal;
   max-width: 0;       /* trick: ทำให้ column ขยายตาม flex แต่ wrap */
-  line-height: 1.5;
+  line-height: 1.55;
 }
 /* Mobile / จอเล็ก — เปลี่ยน table เป็น card-like (stacked rows) */
 @media (max-width: 768px) {

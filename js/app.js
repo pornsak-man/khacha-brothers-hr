@@ -10391,7 +10391,7 @@ router.register('calendar', () => {
 
     // ปุ่ม actions
     const actions = [];
-    if (canRequestSwap) actions.push(`<button class="btn btn-ghost btn-sm" style="font-size:11.5px" onclick="openSwapRequestForm('${escapeHtml(c.id)}')">⇄ เสนอเปลี่ยน</button>`);
+    if (canRequestSwap) actions.push(`<button class="btn btn-primary btn-sm" style="font-size:12px;font-weight:600" onclick="openSwapRequestForm('${escapeHtml(c.id)}')">⇄ ขออนุมัติหยุดแทน</button>`);
     if (DB.isHR && !isTarget) {
       actions.push(`<button class="btn btn-ghost btn-sm" style="font-size:11.5px" onclick="openCalForm('${escapeHtml(c.id)}')">แก้</button>`);
       actions.push(`<button class="btn btn-ghost btn-sm" style="font-size:11.5px;color:var(--danger)" onclick="deleteCalRec('${escapeHtml(c.id)}')">ลบ</button>`);
@@ -10772,7 +10772,7 @@ function openCalForm(id = null) {
           }${otherReqsCount ? ` · มีคำขอ pending ของพนักงานอื่น ${otherReqsCount} รายการ` : ''}</div>
         </div>
         ${myEmpId ? `<button type="button" class="btn btn-secondary btn-sm" onclick="modal.close(); ${myPendingReq || myApprovedReq ? `openSwapRequestDetail('${escapeHtml((myPendingReq || myApprovedReq).id)}')` : `openSwapRequestForm('${escapeHtml(id)}')`}">
-          ${myPendingReq || myApprovedReq ? 'ดูคำขอของฉัน' : '+ เสนอเปลี่ยน'}
+          ${myPendingReq || myApprovedReq ? 'ดูคำขอของฉัน' : '+ ขออนุมัติหยุดแทน'}
         </button>` : ''}
       </div>
     </div>` : '';
