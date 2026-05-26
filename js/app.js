@@ -10398,14 +10398,16 @@ router.register('calendar', () => {
     }
 
     return `<tr style="${rowStyle}">
-      <td style="white-space:nowrap;width:140px">
+      <td style="white-space:nowrap;width:140px;vertical-align:top">
         <div style="font-weight:600;font-size:13.5px;font-variant-numeric:tabular-nums">${fmt.date(c.date)}</div>
         <div class="muted-2" style="font-size:11.5px">${thaiDow(c.date)}</div>
       </td>
-      <td><strong style="${titleStyle};font-size:14px">${escapeHtml(c.title)}</strong></td>
-      <td><span class="badge ${isTarget ? 'badge-success' : typeBadge(c.type)}" style="font-size:10.5px">${isTarget ? 'หยุดชดเชย' : typeLabel(c.type)}</span></td>
-      <td>${statusCell}</td>
-      <td style="text-align:right;white-space:nowrap">${actions.join(' ')}</td>
+      <td style="word-break:break-word;white-space:normal;line-height:1.5;vertical-align:top">
+        <strong style="${titleStyle};font-size:13.5px;display:block">${escapeHtml(c.title)}</strong>
+      </td>
+      <td style="white-space:nowrap;vertical-align:top"><span class="badge ${isTarget ? 'badge-success' : typeBadge(c.type)}" style="font-size:10.5px">${isTarget ? 'หยุดชดเชย' : typeLabel(c.type)}</span></td>
+      <td style="vertical-align:top">${statusCell}</td>
+      <td style="text-align:right;white-space:nowrap;vertical-align:top">${actions.join(' ')}</td>
     </tr>`;
   };
 

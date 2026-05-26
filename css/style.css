@@ -3150,10 +3150,45 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 }
 
 /* Calendar table — compact list view */
+.sw-cal-table {
+  table-layout: auto;
+  width: 100%;
+}
 .sw-cal-table tbody tr td {
   padding-top: 12px;
   padding-bottom: 12px;
-  vertical-align: middle;
+  vertical-align: top;
+}
+/* หัวข้อ (column 2) — wrap คำยาว ไม่ทำให้ตาราง overflow */
+.sw-cal-table tbody tr td:nth-child(2) {
+  word-break: break-word;
+  white-space: normal;
+  max-width: 0;       /* trick: ทำให้ column ขยายตาม flex แต่ wrap */
+  line-height: 1.5;
+}
+/* Mobile / จอเล็ก — เปลี่ยน table เป็น card-like (stacked rows) */
+@media (max-width: 768px) {
+  .sw-cal-table thead { display: none; }
+  .sw-cal-table tbody tr {
+    display: block;
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .sw-cal-table tbody tr td {
+    display: block;
+    padding: 4px 0;
+    border: none;
+  }
+  .sw-cal-table tbody tr td:nth-child(2) {
+    max-width: 100%;
+  }
+  .sw-cal-table tbody tr td:last-child {
+    text-align: left;
+    margin-top: 8px;
+  }
 }
 
 /* Swap requests table — premium row layout */
