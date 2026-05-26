@@ -1436,8 +1436,8 @@ const DB = {
         (sDigits && (e.nationalId || '').includes(sDigits))
       );
     }
-    // Scope filter — ใช้ resolution chain เดียวกับ _filterByScope (position.scope → dept.scope)
-    if (filter.scope) list = this._filterByScope(list, filter.scope);
+    // Scope filter — ใช้ resolution chain ของ _filterByPositionScope (position.scope → dept.scope)
+    if (filter.scope) list = this._filterByPositionScope(list, filter.scope);
     if (filter.branch) list = list.filter(e => e.branch === filter.branch);
     if (filter.position) {
       // dropdown ส่ง position.id มา — แต่บางแถว (legacy import) มี e.position เป็น "" / ชื่อตำแหน่ง / id เก่า
@@ -3849,7 +3849,7 @@ const DB = {
     const yearStart = `${ty}-01-01`;
     // ใช้ getEmployees() เพื่อ auto-scope ตาม RBAC (admin/hr เห็นทั้งหมด, manager เห็นเฉพาะสาขา)
     // + กรอง scope (สายงาน) เพิ่มเติม ถ้า dashboard ระบุมา
-    const emps = this._filterByScope(this.getEmployees(), scope);
+    const emps = this._filterByPositionScope(this.getEmployees(), scope);
     const active = emps.filter(e => this.empStatus(e) !== 'resigned');
     // Turnover คิดเฉพาะ "พนักงานประจำ" (full-time) เท่านั้น — ไม่รวม part-time/contract/probation
     const isFullTime = (e) => e.employeeType === 'พนักงานประจำ';
@@ -3940,7 +3940,7 @@ const DB = {
       () => this._computeLeaveSwapStats({ scope, year }));
   },
   _computeLeaveSwapStats({ scope = '', year } = {}) {
-    const emps = this._filterByScope(this.getEmployees(), scope);
+    const emps = this._filterByPositionScope(this.getEmployees(), scope);
     const active = emps.filter(e => this.empStatus(e) !== 'resigned');
     const empIds = new Set(active.map(e => e.id));
     const headcount = active.length;
@@ -4020,7 +4020,11 @@ const DB = {
   //   2. fallback → employee.department → departments.scope  (ถ้าฝ่ายมี scope)
   // เหตุที่ต้อง fallback: หลายองค์กรไม่ได้กรอกระดับตำแหน่งให้พนักงานทุกคน
   // (ตำแหน่งใช้ positionTitle free-text แทน) — แต่ฝ่ายต้องมีเสมอ
-  _filterByScope(emps, scope) {
+  // [Fix] เปลี่ยนชื่อจาก _filterByScope → _filterByPositionScope
+  //  เพราะชื่อ _filterByScope ชนกับ RBAC method ที่ line 2193 — JS object literal
+  //  declaration อันหลังทับอันแรก → uniforms/loans/etc. ที่เรียกแบบ (records, getEmpId)
+  //  จะ run method นี้ → return [] ว่างหมด
+  _filterByPositionScope(emps, scope) {
     if (!scope) return emps;
     return emps.filter(e => {
       // priority 1: position.scope
@@ -4037,7 +4041,7 @@ const DB = {
   },
   _computeBranchStats({ scope = '' } = {}) {
     const counts = new Map();
-    const list = this._filterByScope(this.data.employees, scope);
+    const list = this._filterByPositionScope(this.data.employees, scope);
     for (const e of list) {
       if (this.empStatus(e) === 'resigned') continue;
       const b = (e.branch || 'ไม่ระบุ').trim() || 'ไม่ระบุ';
@@ -4162,7 +4166,7 @@ const DB = {
       });
     }
     const idx = new Map(months.map(m => [m.ym, m]));
-    for (const e of this._filterByScope(this.data.employees, scope)) {
+    for (const e of this._filterByPositionScope(this.data.employees, scope)) {
       if (e.hireDate) {
         const ym = String(e.hireDate).slice(0, 7);
         const m = idx.get(ym);
@@ -4196,7 +4200,7 @@ const DB = {
       });
     }
     const idx = new Map(months.map(m => [m.ym, m]));
-    for (const e of this._filterByScope(this.data.employees, scope)) {
+    for (const e of this._filterByPositionScope(this.data.employees, scope)) {
       if (e.hireDate) {
         const ym = String(e.hireDate).slice(0, 7);
         const m = idx.get(ym);
@@ -4227,7 +4231,7 @@ const DB = {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
     const [ty, tm, td] = today.split('-').map(Number);
 
-    for (const e of this._filterByScope(this.data.employees, scope)) {
+    for (const e of this._filterByPositionScope(this.data.employees, scope)) {
       if (this.empStatus(e) === 'resigned') continue;
       const m = String(e.dob || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
       if (!m) { noBirth.count++; continue; }
@@ -4334,7 +4338,7 @@ const DB = {
   },
   _computeStats({ scope = '' } = {}) {
     // ใช้ getEmployees() เพื่อ auto-scope ตาม RBAC + กรอง scope ที่ dashboard เลือก
-    const emps = this._filterByScope(this.getEmployees(), scope);
+    const emps = this._filterByPositionScope(this.getEmployees(), scope);
     // ใช้ effective status (ตามวันพ้นสภาพ — ไม่ใช่ field 'status' ที่อาจ stale)
     const active = emps.filter(e => this.empStatus(e) !== 'resigned');
     const totalSalary = active.reduce((s, e) => s + (e.salary || 0), 0);
