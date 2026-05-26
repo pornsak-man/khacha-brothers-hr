@@ -2256,14 +2256,29 @@ function renderDashboardCharts(s, monthly, trailing12) {
     }
   }
 
-  // ── Turnover Rate ของทุกสาขา — horizontal bar, สีเปลี่ยนตามระดับ ──
+  // ── Turnover Rate ของทุกสาขา — horizontal bar (clean editorial) ──
   if ($('#chartTurnoverByBranch') && s.turnoverByBranch?.length) {
     const data = s.turnoverByBranch;
-    // สีตามระดับ turnover: > 20% danger, 10-20% warning, < 10% success
+    // สีตามระดับ turnover — ใช้สีอ่อนลง ดูสะอาดตา
     const colorFor = (rate) => {
-      if (rate >= 20) return { bg: 'rgba(215,38,38,0.78)', hover: 'rgba(215,38,38,0.95)' };
-      if (rate >= 10) return { bg: 'rgba(201,119,6,0.78)', hover: 'rgba(201,119,6,0.95)' };
-      return { bg: 'rgba(21,146,63,0.78)', hover: 'rgba(21,146,63,0.95)' };
+      if (rate >= 20) return { bg: '#ef4444', hover: '#dc2626' };  // red soft (danger)
+      if (rate >= 10) return { bg: '#f59e0b', hover: '#d97706' };  // amber (warning)
+      return                  { bg: '#10b981', hover: '#059669' };  // emerald (good)
+    };
+    // gradient fill — สีเข้มทางขวา, จางลงทางซ้าย
+    const makeBarGradient = (ctx, color) => {
+      const c = ctx.chart.ctx;
+      if (!c) return color;
+      const w = ctx.chart.width || 800;
+      const g = c.createLinearGradient(0, 0, w, 0);
+      // hex → rgb + alpha gradient (อ่อน → เข้ม)
+      const hex = color.replace('#', '');
+      const r = parseInt(hex.slice(0, 2), 16);
+      const gg = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      g.addColorStop(0, `rgba(${r},${gg},${b},0.65)`);
+      g.addColorStop(1, `rgba(${r},${gg},${b},1)`);
+      return g;
     };
     makeChart('chartTurnoverByBranch', {
       type: 'bar',
@@ -2272,14 +2287,27 @@ function renderDashboardCharts(s, monthly, trailing12) {
         datasets: [{
           label: 'Turnover Rate (%)',
           data: data.map(d => d.turnover),
-          backgroundColor: data.map(d => colorFor(d.turnover).bg),
-          hoverBackgroundColor: data.map(d => colorFor(d.turnover).hover),
-          borderRadius: 5, borderSkipped: false, barPercentage: 0.7, categoryPercentage: 0.85
+          backgroundColor: (ctx) => {
+            const d = data[ctx.dataIndex];
+            if (!d) return '#94a3b8';
+            return makeBarGradient(ctx, colorFor(d.turnover).bg);
+          },
+          hoverBackgroundColor: (ctx) => {
+            const d = data[ctx.dataIndex];
+            return d ? colorFor(d.turnover).hover : '#64748b';
+          },
+          borderRadius: { topLeft: 0, topRight: 8, bottomLeft: 0, bottomRight: 8 },  // โค้งเฉพาะปลายขวา
+          borderSkipped: false,
+          barPercentage: 0.62,        // จาก 0.7 → ผอมลง
+          categoryPercentage: 0.80,   // จาก 0.85 → spacing เพิ่ม
+          barThickness: 'flex',
+          maxBarThickness: 20         // กันสาขาน้อย bar หนาเกิน
         }]
       },
       options: {
-        indexAxis: 'y',           // horizontal bar — รองรับสาขาเยอะ
+        indexAxis: 'y',
         responsive: true, maintainAspectRatio: false,
+        layout: { padding: { right: 30 } },   // ที่ปลาย bar สำหรับ value label
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -2295,22 +2323,58 @@ function renderDashboardCharts(s, monthly, trailing12) {
                 ];
               }
             }
-          }
+          },
+          // value label ปลาย bar — ใช้ ChartJS plugin pattern (afterDatasetsDraw)
+          datalabels: { display: false }  // กัน plugin ภายนอกถ้ามี
         },
+        animation: { duration: 600, easing: 'easeOutQuart' },
         scales: {
           x: {
             beginAtZero: true,
-            ticks: { precision: 0, callback: (v) => v + '%' },
-            grid: { color: gridColor },
+            ticks: {
+              precision: 0,
+              callback: (v) => v + '%',
+              color: 'rgba(100,116,139,0.85)',
+              font: { size: 11 }
+            },
+            grid: {
+              color: 'rgba(148,163,184,0.15)',     // gridline จางลง
+              drawTicks: false
+            },
             border: { display: false }
           },
           y: {
             grid: { display: false },
-            ticks: { font: { size: 12 } },
+            ticks: {
+              font: { size: 11.5, weight: '600' },  // font ตัวหนาเล็กน้อย
+              color: 'rgba(71,85,105,0.95)',
+              padding: 8
+            },
             border: { display: false }
           }
         }
-      }
+      },
+      // ★ Plugin custom: draw value % ที่ปลาย bar
+      plugins: [{
+        id: 'turnoverValueLabel',
+        afterDatasetsDraw: (chart) => {
+          const ctx = chart.ctx;
+          const meta = chart.getDatasetMeta(0);
+          chart.data.datasets[0].data.forEach((v, i) => {
+            const bar = meta.data[i];
+            if (!bar) return;
+            const x = bar.x + 6;
+            const y = bar.y;
+            ctx.save();
+            ctx.font = '600 11px "Inter", "Sarabun", sans-serif';
+            ctx.fillStyle = 'rgba(51,65,85,0.92)';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${v}%`, x, y);
+            ctx.restore();
+          });
+        }
+      }]
     });
   }
 }
