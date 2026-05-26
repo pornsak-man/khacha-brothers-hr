@@ -1345,16 +1345,23 @@ window.onRealtimeChange = (payload) => {
     // แจ้งเตือน toast เมื่อมีคำขอใหม่ (INSERT)
     if (payload.eventType === 'INSERT' && payload.new) {
       const r = payload.new;
-      let name = '';
-      if (r.employee_id) {
-        const e = DB.getEmployee(r.employee_id);
-        if (e) name = `${e.firstName} ${e.lastName || ''}`;
+      // ★ ข้าม toast ถ้าตัวเองเป็นคนสร้างคำขอ (self-service) — ไม่ต้องแจ้งซ้ำ
+      // เพราะ form submit แสดง "ส่งคำขอแล้ว" ไปแล้ว
+      const myEmpId = DB.profile?.employee_id;
+      if (myEmpId && r.employee_id === myEmpId) {
+        // เป็นคำขอที่ตัวเองเพิ่งสร้าง → skip ไม่ต้อง toast warning
+      } else {
+        let name = '';
+        if (r.employee_id) {
+          const e = DB.getEmployee(r.employee_id);
+          if (e) name = `${e.firstName} ${e.lastName || ''}`;
+        }
+        if (!name && r.applicant_id) {
+          const ap = DB.getApplicant(r.applicant_id);
+          if (ap) name = `${ap.firstName} ${ap.lastName || ''} (ผู้สมัคร)`;
+        }
+        toast(`🚨 มีคำขอจัดชุดใหม่: ${name || 'พนักงาน'}`, 'warning');
       }
-      if (!name && r.applicant_id) {
-        const ap = DB.getApplicant(r.applicant_id);
-        if (ap) name = `${ap.firstName} ${ap.lastName || ''} (ผู้สมัคร)`;
-      }
-      toast(`🚨 มีคำขอจัดชุดใหม่: ${name || 'พนักงาน'}`, 'warning');
     }
   }
 
