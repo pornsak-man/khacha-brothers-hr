@@ -14963,7 +14963,7 @@ router.register('schedule-monthly', () => {
         <table class="table monthly-grid">
           <thead>
             <tr>
-              <th class="monthly-emp-head" style="position:sticky;left:0;background:var(--card-bg, #fff);z-index:2">พนักงาน</th>
+              <th class="monthly-emp-head">พนักงาน</th>
               ${dates.map(d => {
                 const day = new Date(d).getDay();
                 const dayNum = parseInt(d.slice(-2), 10);
@@ -14986,7 +14986,7 @@ router.register('schedule-monthly', () => {
               const s = summaries.get(emp.id) || { hours: 0, shiftCount: 0, offDays: 0, leaveDays: 0 };
               const pos = DB.getPosition(emp.position);
               return `<tr ${isHelper ? 'class="schedule-row-helper"' : ''}>
-                <th class="monthly-emp-cell" style="position:sticky;left:0;background:var(--card-bg, #fff);z-index:1">
+                <th class="monthly-emp-cell">
                   <div class="monthly-emp-name">
                     <span class="schedule-emp-id">${escapeHtml(emp.id)}</span>
                     <span class="schedule-emp-fullname">${escapeHtml(emp.firstName)} ${escapeHtml(emp.lastName || '')}</span>
@@ -15004,8 +15004,8 @@ router.register('schedule-monthly', () => {
             }).join('')}
           </tbody>
           <tfoot>
-            <tr style="font-weight:700;background:rgba(0,0,0,0.04)">
-              <th class="monthly-emp-cell" style="position:sticky;left:0;background:rgba(0,0,0,0.04);z-index:1">
+            <tr style="font-weight:700">
+              <th class="monthly-emp-cell">
                 <strong>รวม ${allEmps.length} คน</strong>
               </th>
               <td colspan="${dates.length}"></td>

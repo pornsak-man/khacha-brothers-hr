@@ -4639,34 +4639,59 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
   border-color: #9ca3af !important;
 }
 
-/* === MONTHLY GRID (31-column view) — v2 ดูง่ายขึ้น === */
-.monthly-grid-wrap { max-height: 80vh; overflow: auto; border-radius: 8px; }
+/* === MONTHLY GRID (31-column view) — v3 fix sticky === */
+.monthly-grid-wrap {
+  max-height: 80vh;
+  overflow: auto;
+  border-radius: 8px;
+  /* ★ ใช้ contain เพื่อบังคับ sticky scope */
+  position: relative;
+}
 .monthly-grid {
   font-size: 12px; border-collapse: separate; border-spacing: 0;
-  width: 100%;
+  width: max-content;   /* ★ ให้ table กว้างเต็มเนื้อหา ไม่ stretch */
+  min-width: 100%;
 }
 .monthly-grid th, .monthly-grid td {
   padding: 6px 4px;
   border-right: 1px solid var(--border, #e5e7eb);
   border-bottom: 1px solid var(--border, #e5e7eb);
   text-align: center;
+  background: var(--card-bg, #fff);  /* ★ cell ทุก cell มี bg opaque */
 }
-/* ★ alternating row stripe เพื่อแยกแถวพนักงานออกจากกันให้ชัด */
+[data-theme="dark"] .monthly-grid th,
+[data-theme="dark"] .monthly-grid td {
+  background: var(--card-bg, #1f2937);
+}
+/* ★ alternating row stripe — override base bg */
 .monthly-grid tbody tr:nth-child(even) td,
-.monthly-grid tbody tr:nth-child(even) th { background: rgba(0,0,0,0.018); }
+.monthly-grid tbody tr:nth-child(even) th {
+  background: #fafafa;
+}
 [data-theme="dark"] .monthly-grid tbody tr:nth-child(even) td,
-[data-theme="dark"] .monthly-grid tbody tr:nth-child(even) th { background: rgba(255,255,255,0.025); }
-/* ★ row hover highlight — เห็นแถวที่กำลังดูชัดมาก */
+[data-theme="dark"] .monthly-grid tbody tr:nth-child(even) th {
+  background: #232a37;
+}
+/* ★ row hover — มี z-index ต่ำกว่า sticky */
 .monthly-grid tbody tr:hover td,
 .monthly-grid tbody tr:hover th {
-  background: rgba(59,130,246,0.10) !important;
+  background: #e0ecff !important;
   transition: background 0.1s;
+}
+[data-theme="dark"] .monthly-grid tbody tr:hover td,
+[data-theme="dark"] .monthly-grid tbody tr:hover th {
+  background: #1e3a8a !important;
 }
 .monthly-emp-head, .monthly-emp-cell {
   min-width: 200px; max-width: 240px;
   text-align: left !important; padding: 10px 12px !important;
-  border-right: 2px solid var(--border, #e5e7eb);
+  border-right: 2px solid var(--border, #d1d5db);
+  /* ★ sticky-left — ทำใน CSS แทน inline */
+  position: sticky;
+  left: 0;
 }
+.monthly-emp-cell { z-index: 3; }    /* sticky-left ของ tbody */
+.monthly-emp-head { z-index: 6; }    /* sticky top-left corner — สูงสุด */
 .monthly-emp-name {
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   font-size: 13px; font-weight: 600;
@@ -4682,14 +4707,25 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 .monthly-emp-pos { font-size: 11px; margin-top: 3px; opacity: 0.75; }
 .monthly-date-head {
   min-width: 62px; max-width: 68px;
-  background: var(--card-bg, #f9fafb);
-  position: sticky; top: 0; z-index: 1;
+  background: #f3f4f6 !important;        /* ★ opaque solid */
+  position: sticky; top: 0; z-index: 5;  /* ★ sticky-top */
   padding: 8px 4px !important;
-  border-bottom: 2px solid var(--border, #e5e7eb) !important;
+  border-bottom: 2px solid var(--border, #d1d5db) !important;
 }
-.monthly-date-head.weekend { background: rgba(59,130,246,0.08); }
+[data-theme="dark"] .monthly-date-head {
+  background: #1f2937 !important;
+}
+.monthly-date-head.weekend {
+  background: #e0e7ff !important;
+}
+[data-theme="dark"] .monthly-date-head.weekend {
+  background: #1e3a8a !important;
+}
 .monthly-date-head.holiday {
-  background: rgba(239,68,68,0.13); color: #dc2626;
+  background: #fee2e2 !important; color: #dc2626;
+}
+[data-theme="dark"] .monthly-date-head.holiday {
+  background: #7f1d1d !important; color: #fca5a5;
 }
 .monthly-dow {
   font-size: 10px; opacity: 0.7; font-weight: 600;
@@ -4734,7 +4770,7 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 }
 .monthly-sum-head, .monthly-sum-cell {
   min-width: 54px;
-  background: rgba(0,0,0,0.04);
+  background: #f9fafb !important;
   font-size: 12px;
   padding: 8px 6px !important;
   border-left: 1px solid var(--border, #e5e7eb);
@@ -4744,17 +4780,22 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  position: sticky; top: 0; z-index: 5;   /* ★ sticky-top สำหรับ header */
 }
 [data-theme="dark"] .monthly-sum-head,
-[data-theme="dark"] .monthly-sum-cell { background: rgba(255,255,255,0.05); }
-.monthly-grid tfoot { position: sticky; bottom: 0; }
+[data-theme="dark"] .monthly-sum-cell { background: #161b25 !important; }
+
 .monthly-grid tfoot td, .monthly-grid tfoot th {
   border-top: 2px solid var(--border, #d1d5db);
-  background: rgba(0,0,0,0.06) !important;
+  background: #e5e7eb !important;
   font-size: 13px;
+  position: sticky; bottom: 0; z-index: 5;  /* ★ sticky-bottom */
+}
+.monthly-grid tfoot th.monthly-emp-cell {
+  z-index: 7;     /* ★ bottom-left corner สูงสุด */
 }
 [data-theme="dark"] .monthly-grid tfoot td,
-[data-theme="dark"] .monthly-grid tfoot th { background: rgba(255,255,255,0.07) !important; }
+[data-theme="dark"] .monthly-grid tfoot th { background: #2d3748 !important; }
 
 @media print {
   .monthly-grid-wrap { max-height: none; overflow: visible; }
