@@ -779,6 +779,38 @@ const DB = {
       } catch (e) { /* non-blocking — dashboard fallback เป็น slim */ }
     }
 
+    // [Org Chart] ดึง basic info ของพนักงานทุกคน (RPC SECURITY DEFINER)
+    // ใช้สำหรับแสดงชื่อ BM/AM/HR/ผู้สร้างประกาศ/ฯลฯ
+    // — staff/viewer มี RLS scope แค่ตัวเอง → ต้องใช้ org chart fallback
+    // — HR/admin อ่าน employees ครบอยู่แล้ว — org chart ช่วย enrich เพิ่ม (no-op สำหรับ row ที่มี)
+    try {
+      const { data: orgRows } = await this.client.rpc('get_org_chart_employees');
+      this._orgChartCache = new Map();
+      for (const r of (orgRows || [])) {
+        this._orgChartCache.set(r.id, {
+          id: r.id,
+          firstName: r.first_name || '',
+          lastName: r.last_name || '',
+          nickname: r.nickname || '',
+          title: r.title || '',
+          branch: r.branch || '',
+          department: r.department || '',
+          position: r.position || '',
+          positionTitle: r.position_title || '',
+          status: r.status || 'active',
+          photoUrl: r.photo_url || '',
+          hireDate: r.hire_date || '',
+          terminationDate: r.termination_date || '',
+          employeeType: r.employee_type || '',
+          gender: r.gender || '',
+          _isOrgOnly: true   // marker — ไม่มี salary, ปชช, phone, ฯลฯ
+        });
+      }
+    } catch (e) {
+      console.warn('[org-chart] RPC get_org_chart_employees failed:', e);
+      this._orgChartCache = new Map();
+    }
+
     // ─── PERF: log boot timings ทันทีหลัง Phase 1 เสร็จ (dashboard render ต่อ) ───
     // เปิด DevTools Console เห็นว่า query ไหนช้า / ส่ง screenshot/log มาบอกได้
     try {
@@ -1531,7 +1563,9 @@ const DB = {
       this._empIndex = new Map();
       for (const e of this.data.employees) this._empIndex.set(e.id, e);
     }
-    return this._empIndex.get(id);
+    // primary: employees data (มี full/slim cols ตาม RLS scope)
+    // fallback: _orgChartCache (basic cols ทุกคน — สำหรับ org chart visibility)
+    return this._empIndex.get(id) || this._orgChartCache?.get(id);
   },
 
   // [PERF] ดึง employee พร้อม field ครบ (ถ้า cache มีแค่ slim)
