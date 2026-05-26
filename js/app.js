@@ -15395,16 +15395,16 @@ function setScheduleBranch(branchId) {
 // — แทนที่ต้อง refresh ทั้งหน้า ทำให้เห็น BM/AM ทันที
 async function refreshScheduleApprovers() {
   try {
-    showToast('กำลังโหลดโปรไฟล์ผู้ใช้...', 'info');
+    toast('กำลังโหลดโปรไฟล์ผู้ใช้...', 'info');
     await DB.refetchUserProfiles();
     const count = (DB._userProfiles || []).length;
     const bmCount = (DB._userProfiles || []).filter(p => p.role === 'branch_manager').length;
     const amCount = (DB._userProfiles || []).filter(p => p.role === 'area_manager').length;
-    showToast(`โหลดแล้ว ${count} โปรไฟล์ (BM: ${bmCount}, AM: ${amCount})`, 'success');
+    toast(`โหลดแล้ว ${count} โปรไฟล์ (BM: ${bmCount}, AM: ${amCount})`, 'success');
     router.go('schedule');
   } catch (e) {
     console.error('[refreshScheduleApprovers]', e);
-    showToast('โหลดโปรไฟล์ไม่สำเร็จ: ' + (e.message || e), 'error');
+    toast('โหลดโปรไฟล์ไม่สำเร็จ: ' + (e.message || e), 'error');
   }
 }
 
