@@ -201,6 +201,14 @@ const DB = {
   },
 
   async signOut() {
+    // [Security H6+] ปิด impersonate audit ก่อน signOut — กัน audit gap
+    // (ถ้า HR ปิด browser ขณะ "ดูเสมือนพนักงาน" → log_impersonate_toggle(false) ไม่ถูกเรียก
+    //  → audit ขาด OFF event)
+    if (this._asEmployee) {
+      try {
+        await this.client.rpc('log_impersonate_toggle', { p_enabled: false });
+      } catch (e) { /* non-blocking — ปล่อยให้ signOut ดำเนินการต่อ */ }
+    }
     await this.client.auth.signOut();
     this.user = null;
     this.profile = null;
@@ -315,12 +323,23 @@ const DB = {
 
   hasPermission(key) {
     if (!key) return false;
-    // 1. ถ้า matrix โหลดแล้ว → ใช้ matrix
+    // 1. ถ้า matrix โหลดแล้ว → ใช้ matrix (source of truth)
     if (this._permCache instanceof Set) {
       return this._permCache.has(key);
     }
-    // 2. Fallback: กฎเดิม (hardcoded behavior ก่อน Phase 1)
-    return this._legacyPermission(key);
+    // [Security M-A1] 2. Fallback fail-closed:
+    //   - critical safety locks เท่านั้นที่ผ่าน legacy (ป้องกัน lockout ของ self-service)
+    //   - permission อื่น → return false จน matrix โหลดเสร็จ
+    //   ป้องกัน: ถ้า RPC user_permissions_list ล้ม → ไม่ให้ broad HR/admin access
+    //            ที่เคย hardcoded ใน _legacyPermission (ก่อน admin revoke key ในตอน Phase 1)
+    const SAFETY_LOCKS = new Set([
+      'leave.request_own',
+      'leave.cancel_own',
+      'holiday_swap.request_own',
+      'leave_calendar.view'
+    ]);
+    if (SAFETY_LOCKS.has(key)) return this._legacyPermission(key);
+    return false;
   },
 
   // ────────────────────────────────────────────────────────────
@@ -1667,6 +1686,10 @@ const DB = {
 
   // ─── BULK PHOTO UPLOAD (ปาราเลล 12 connection + bulk DB update) ───
   async bulkUploadEmployeePhotos(matches, options = {}) {
+    // [Security M-A3] DoS protection — จำกัดขนาด bulk op
+    if (Array.isArray(matches) && matches.length > 5000) {
+      throw new Error('อัปโหลดได้สูงสุด 5,000 รูปต่อครั้ง (รับมาตอนนี้ ' + matches.length + ')');
+    }
     const { concurrency = 12, onProgress } = options;
     let i = 0;
     let succeeded = 0;
@@ -1743,6 +1766,10 @@ const DB = {
   //   - HR แก้คนละฟิลด์กัน → หลาย signature = หลาย batch (ยังเร็วกว่า per-row)
   // ใช้ upsert บน partial columns — PostgreSQL จะ UPDATE เฉพาะ column ที่อยู่ในชุด
   async bulkPatchEmployees(patches, onProgress) {
+    // [Security M-A3] DoS protection
+    if (Array.isArray(patches) && patches.length > 5000) {
+      throw new Error('แก้ไขได้สูงสุด 5,000 row ต่อครั้ง (รับมาตอนนี้ ' + patches.length + ')');
+    }
     if (!patches || patches.length === 0) {
       return { patched: 0, failed: 0, errors: [] };
     }
@@ -1806,6 +1833,10 @@ const DB = {
 
   // ─── BULK IMPORT ───
   async bulkUpsertEmployees(rows, onProgress) {
+    // [Security M-A3] DoS protection
+    if (Array.isArray(rows) && rows.length > 5000) {
+      throw new Error('Import ได้สูงสุด 5,000 row ต่อครั้ง (รับมาตอนนี้ ' + rows.length + ')');
+    }
     const CHUNK_SIZE = 100;
     const result = { inserted: 0, failed: 0, errors: [] };
     for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
@@ -2701,12 +2732,20 @@ const DB = {
   // ⚠️ Security note: เพื่อนร่วมงานที่อ่าน RLS scope ของ employees ในสาขาเดียวกัน
   //    เห็นเลข ปชช ของกัน → สามารถ login เป็นกันได้ — แนะนำให้พนักงานเปลี่ยนรหัสผ่าน
   //    ผ่านปุ่ม 🔒 มุมล่างซ้ายหลัง login ครั้งแรก
+  // [Security H-A1] random password ปลอดภัยกว่า NID (เพื่อนร่วมงานเดารู้)
+  // 8 chars จาก 36-char alphabet → ~5.2 × 10^12 combinations
+  // HR แจ้งให้พนักงานผ่านช่องทางส่วนตัว (Line, SMS, สลิป)
+  // พนักงานต้องเปลี่ยนตอน first login (force_password_change=true)
   _computeInitialPassword(emp) {
-    const nat = String(emp.nationalId || '').replace(/\D/g, '');
-    if (nat.length >= 6) return { password: nat, source: 'เลขประชาชน' };
-    const pp = String(emp.passportNumber || '').trim();
-    if (pp.length >= 6) return { password: pp, source: 'passport' };
-    return { password: `kacha${emp.id}`, source: 'kacha+รหัส' };
+    // ใช้ Web Crypto API — secure random
+    const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789abcdefghjkmnpqrstuvwxyz';  // ตัด O/0/I/l/1 กันสับสน
+    const bytes = new Uint8Array(8);
+    crypto.getRandomValues(bytes);
+    let pwd = '';
+    for (let i = 0; i < bytes.length; i++) {
+      pwd += ALPHABET[bytes[i] % ALPHABET.length];
+    }
+    return { password: pwd, source: 'random' };
   },
 
   // [Security H5] สร้างบัญชีพนักงานผ่าน SECURITY DEFINER RPC แทน public signUp
@@ -2750,6 +2789,10 @@ const DB = {
     const profiles = await this.refetchUserProfiles();
     const linked = new Set((profiles || []).filter(p => p.employee_id).map(p => p.employee_id));
     const todo = this.data.employees.filter(e => this.empStatus(e) !== 'resigned' && !linked.has(e.id));
+    // [Security M-A3] DoS protection — สร้างได้สูงสุด 5,000 บัญชี/ครั้ง
+    if (todo.length > 5000) {
+      throw new Error('สร้างบัญชีได้สูงสุด 5,000 ครั้งต่อรอบ (พบ ' + todo.length + ' พนักงานยังไม่มีบัญชี — ขอแบ่งทำหลายรอบ)');
+    }
     const results = [];
     for (const emp of todo) {
       try {
