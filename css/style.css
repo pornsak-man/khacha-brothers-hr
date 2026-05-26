@@ -4744,18 +4744,46 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 
 .monthly-shift {
   display: inline-block;
-  min-width: 54px;
-  padding: 6px 6px;
+  min-width: 50px;
+  padding: 5px 6px;
   border-radius: 5px;
   font-size: 11px;
   font-weight: 800;
-  line-height: 1.2;
+  line-height: 1.15;
   letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
   filter: saturate(1.5) contrast(1.1);
   color: #111827;
   border: 1px solid rgba(0,0,0,0.1);
   box-shadow: 0 1px 1px rgba(0,0,0,0.04);
+  text-align: center;
+}
+/* 2-line format: เวลาเข้าบน / เวลาออกล่าง */
+.monthly-shift-time2 {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 6px;
+  line-height: 1.15;
+}
+.monthly-time-in {
+  font-size: 11.5px;
+  font-weight: 900;
+}
+.monthly-time-out {
+  font-size: 11.5px;
+  font-weight: 700;
+  opacity: 0.82;
+  border-top: 1px solid rgba(0,0,0,0.15);
+  margin-top: 1px;
+  padding-top: 1px;
+  width: 100%;
+  text-align: center;
+}
+.monthly-shift-off {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
 }
 [data-theme="dark"] .monthly-shift {
   color: #1f2937;

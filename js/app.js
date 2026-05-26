@@ -14887,11 +14887,11 @@ router.register('schedule-monthly', () => {
     if (!ent) {
       return `<td class="${cellCls.join(' ')}"></td>`;
     }
-    // helper: format เวลา — ตัด :00 ออก ประหยัดที่
+    // helper: format เวลา HH:MM (เก็บนาทีเสมอ ให้ตรงคอลัมน์)
     const fmtT = (t) => {
       if (!t) return '';
       const [h, m] = t.split(':');
-      return m === '00' ? h : `${h}:${m}`;
+      return `${h}:${m}`;  // 10:00, 10:30 — เก็บ format เดียวกัน
     };
     // กะปกติ
     if (ent.shiftId) {
@@ -14900,22 +14900,34 @@ router.register('schedule-monthly', () => {
         const bg = sh.color || '#dbeafe';
         const isOff = sh.isOffDay;
         // OFF → แสดง "OFF" (ไม่มีเวลา)
-        // ปกติ → แสดงเวลาเข้า-ออก ไม่มีชื่อกะ
-        const label = isOff
-          ? 'OFF'
-          : (sh.startTime && sh.endTime
-              ? `${fmtT(sh.startTime)}-${fmtT(sh.endTime)}`
-              : (sh.code || sh.shortName || '?'));
-        return `<td class="${cellCls.join(' ')}" title="${escapeHtml(sh.name || '')} ${sh.startTime || ''}-${sh.endTime || ''}">
-          <span class="monthly-shift" style="background:${bg};${isOff ? 'opacity:0.7' : ''}">${escapeHtml(label)}</span>
+        // ปกติ → 2 บรรทัด: เวลาเข้า / เวลาออก
+        if (isOff) {
+          return `<td class="${cellCls.join(' ')}" title="${escapeHtml(sh.name || 'OFF')}">
+            <span class="monthly-shift monthly-shift-off" style="background:${bg};opacity:0.75">OFF</span>
+          </td>`;
+        }
+        if (sh.startTime && sh.endTime) {
+          return `<td class="${cellCls.join(' ')}" title="${escapeHtml(sh.name || '')} ${sh.startTime}-${sh.endTime}">
+            <span class="monthly-shift monthly-shift-time2" style="background:${bg}">
+              <span class="monthly-time-in">${escapeHtml(fmtT(sh.startTime))}</span>
+              <span class="monthly-time-out">${escapeHtml(fmtT(sh.endTime))}</span>
+            </span>
+          </td>`;
+        }
+        // fallback: code
+        const code = sh.code || sh.shortName || '?';
+        return `<td class="${cellCls.join(' ')}" title="${escapeHtml(sh.name || code)}">
+          <span class="monthly-shift" style="background:${bg}">${escapeHtml(code)}</span>
         </td>`;
       }
     }
     // custom shift (พาร์ทไทม์ที่กำหนดเวลาเอง)
     if (ent.customStartTime && ent.customEndTime) {
-      const timeStr = `${fmtT(ent.customStartTime)}-${fmtT(ent.customEndTime)}`;
       return `<td class="${cellCls.join(' ')}" title="กะกำหนดเอง ${ent.customStartTime}-${ent.customEndTime}">
-        <span class="monthly-shift" style="background:#fef3c7">${escapeHtml(timeStr)}</span>
+        <span class="monthly-shift monthly-shift-time2" style="background:#fef3c7">
+          <span class="monthly-time-in">${escapeHtml(fmtT(ent.customStartTime))}</span>
+          <span class="monthly-time-out">${escapeHtml(fmtT(ent.customEndTime))}</span>
+        </span>
       </td>`;
     }
     return `<td class="${cellCls.join(' ')}"></td>`;
