@@ -14894,16 +14894,37 @@ router.register('schedule-monthly', () => {
         const code = sh.code || sh.shortName || sh.name?.substring(0, 4) || '?';
         const bg = sh.color || '#dbeafe';
         const isOff = sh.isOffDay;
+        // แสดงเวลา HH:MM-HH:MM (ตัด :00 ออกถ้าเป็น :00 เพื่อประหยัดที่)
+        const fmtT = (t) => {
+          if (!t) return '';
+          const [h, m] = t.split(':');
+          return m === '00' ? h : `${h}:${m}`;  // 10:00 → 10, 10:30 → 10:30
+        };
+        const timeStr = !isOff && sh.startTime && sh.endTime
+          ? `${fmtT(sh.startTime)}-${fmtT(sh.endTime)}`
+          : '';
         return `<td class="${cellCls.join(' ')}" title="${escapeHtml(sh.name || code)} ${sh.startTime || ''}-${sh.endTime || ''}">
-          <span class="monthly-shift" style="background:${bg};${isOff ? 'opacity:0.7' : ''}">${escapeHtml(code)}</span>
+          <span class="monthly-shift" style="background:${bg};${isOff ? 'opacity:0.7' : ''}">
+            <span class="monthly-shift-code">${escapeHtml(code)}</span>
+            ${timeStr ? `<span class="monthly-shift-time">${escapeHtml(timeStr)}</span>` : ''}
+          </span>
         </td>`;
       }
     }
-    // custom shift
+    // custom shift (พาร์ทไทม์ที่กำหนดเวลาเอง — สำคัญที่เห็นเวลา)
     if (ent.customStartTime && ent.customEndTime) {
+      const fmtT = (t) => {
+        if (!t) return '';
+        const [h, m] = t.split(':');
+        return m === '00' ? h : `${h}:${m}`;
+      };
       const code = ent.customStartTime.replace(':', '').slice(0, 4);
-      return `<td class="${cellCls.join(' ')}" title="${ent.customStartTime}-${ent.customEndTime}">
-        <span class="monthly-shift" style="background:#fef3c7">${code}</span>
+      const timeStr = `${fmtT(ent.customStartTime)}-${fmtT(ent.customEndTime)}`;
+      return `<td class="${cellCls.join(' ')}" title="กะกำหนดเอง ${ent.customStartTime}-${ent.customEndTime}">
+        <span class="monthly-shift" style="background:#fef3c7">
+          <span class="monthly-shift-code">${code}</span>
+          <span class="monthly-shift-time">${escapeHtml(timeStr)}</span>
+        </span>
       </td>`;
     }
     return `<td class="${cellCls.join(' ')}"></td>`;

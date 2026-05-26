@@ -4681,7 +4681,7 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 }
 .monthly-emp-pos { font-size: 11px; margin-top: 3px; opacity: 0.75; }
 .monthly-date-head {
-  min-width: 46px; max-width: 50px;
+  min-width: 62px; max-width: 68px;
   background: var(--card-bg, #f9fafb);
   position: sticky; top: 0; z-index: 1;
   padding: 8px 4px !important;
@@ -4697,7 +4697,7 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 }
 .monthly-daynum { font-size: 15px; font-weight: 800; margin-top: 1px; }
 .monthly-cell {
-  min-width: 46px; max-width: 50px; height: 40px;
+  min-width: 62px; max-width: 68px; height: 46px;
   padding: 3px !important;
   vertical-align: middle;
 }
@@ -4707,18 +4707,25 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 /* weekend column tint via :nth-child needs JS — ใช้ pure-CSS แบบอื่นไม่ได้ — keep header แค่ */
 
 .monthly-shift {
-  display: inline-block;
-  min-width: 38px;
-  padding: 5px 6px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 54px;
+  padding: 3px 4px;
   border-radius: 5px;
-  font-size: 12px;          /* ★ จาก 10px → 12px อ่านชัดขึ้น */
-  font-weight: 900;         /* ★ font ดำมาก */
-  line-height: 1.1;
+  line-height: 1.05;
   letter-spacing: 0.02em;
-  filter: saturate(1.5) contrast(1.1);  /* ★ สี vivid + contrast สูง */
-  color: #111827;           /* ★ ดำเข้มกว่าเดิม (#1f2937 → #111827) */
-  border: 1px solid rgba(0,0,0,0.1);    /* ★ ขอบบาง — แยก badge ออกจากพื้น */
+  filter: saturate(1.5) contrast(1.1);
+  color: #111827;
+  border: 1px solid rgba(0,0,0,0.1);
   box-shadow: 0 1px 1px rgba(0,0,0,0.04);
+}
+.monthly-shift-code { font-size: 11px; font-weight: 900; }
+.monthly-shift-time {
+  font-size: 9px; font-weight: 700;
+  opacity: 0.78; margin-top: 1px;
+  font-variant-numeric: tabular-nums;
 }
 [data-theme="dark"] .monthly-shift {
   color: #1f2937;
