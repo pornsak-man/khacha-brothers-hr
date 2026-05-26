@@ -22,11 +22,11 @@
   --primary-text:  var(--navy-700);
 
   /* ─── Premium accent — Champagne Gold (luxe hotel/banking feel) ─── */
-  --gold:        #c4a574;    /* champagne gold — warm metallic */
-  --gold-soft:   #f6efdf;
-  --gold-text:   #6b4f23;
-  --gold-dark:   #a88652;
-  --gold-light:  #e3d2a8;
+  --gold:        #d97aa6;    /* rose pink — เปลี่ยนจาก champagne gold */
+  --gold-soft:   #fce4ec;
+  --gold-text:   #9d174d;
+  --gold-dark:   #be4d80;
+  --gold-light:  #fbcfe8;
   /* Backward-compat aliases (.badge-sage / sage usage still maps to gold accent) */
   --sage:        var(--gold);
   --sage-soft:   var(--gold-soft);
@@ -66,7 +66,7 @@
   --sidebar-bg-2:  #0e1019;
   --sidebar-text:  #d4d1c4;
   --sidebar-text-2: #8d8a7e;
-  --sidebar-hover: rgba(196, 165, 116, 0.10);   /* champagne hint */
+  --sidebar-hover: rgba(217, 122, 166, 0.10);   /* rose pink hint */
 
   /* ─── Status — Harmonized with champagne palette ─── */
   --success:        #166534;   /* deep emerald */
@@ -123,7 +123,7 @@
   --sidebar-text: #d0d0c4;
   --sidebar-text-2: #8e8e83;
   --primary-soft: rgba(78, 112, 176, 0.12);
-  --gold-soft:    rgba(196, 165, 116, 0.12);   /* champagne gold tint (dark) */
+  --gold-soft:    rgba(217, 122, 166, 0.14);   /* rose pink tint (dark) */
   --sage-soft:    var(--gold-soft);             /* backward-compat alias */
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.30);
@@ -172,7 +172,7 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   position: fixed; inset: 0;
   background:
     radial-gradient(ellipse 80% 60% at 15% 20%, rgba(78, 112, 176, 0.35), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 85% 80%, rgba(196, 165, 116, 0.22), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 85% 80%, rgba(217, 122, 166, 0.22), transparent 55%),
     radial-gradient(ellipse 100% 80% at 50% 100%, rgba(30, 58, 138, 0.25), transparent 60%),
     linear-gradient(135deg, #0a0e1a 0%, #141a2e 40%, #0d1424 100%);
   display: flex; align-items: center; justify-content: center;
@@ -185,7 +185,7 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   content: ''; position: absolute; inset: -15%;
   background:
     radial-gradient(circle at 30% 40%, rgba(78, 112, 176, 0.18), transparent 38%),
-    radial-gradient(circle at 70% 60%, rgba(196, 165, 116, 0.12), transparent 38%);
+    radial-gradient(circle at 70% 60%, rgba(217, 122, 166, 0.12), transparent 38%);
   animation: meshDrift 25s ease-in-out infinite alternate;
   pointer-events: none;
   filter: blur(40px);
@@ -206,7 +206,7 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 [data-theme="dark"] .login-screen {
   background:
     radial-gradient(ellipse 80% 60% at 15% 20%, rgba(78, 112, 176, 0.40), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 85% 80%, rgba(196, 165, 116, 0.25), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 85% 80%, rgba(217, 122, 166, 0.25), transparent 55%),
     #03060e;
 }
 
@@ -248,7 +248,7 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .login-card::after {
   content: ''; position: absolute; top: 0; left: 28%; right: 28%;
   height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(78, 112, 176, 0.6), rgba(196, 165, 116, 0.6), transparent);
+  background: linear-gradient(90deg, transparent, rgba(78, 112, 176, 0.6), rgba(217, 122, 166, 0.6), transparent);
   border-radius: 0 0 99px 99px;
 }
 
@@ -711,7 +711,7 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   background: var(--sidebar-bg);
   background-image:
     radial-gradient(ellipse at 50% 0%, rgba(78, 112, 176, 0.10), transparent 55%),
-    radial-gradient(ellipse at 0% 100%, rgba(196, 165, 116, 0.05), transparent 50%),
+    radial-gradient(ellipse at 0% 100%, rgba(217, 122, 166, 0.05), transparent 50%),
     linear-gradient(180deg, var(--sidebar-bg-2) 0%, var(--sidebar-bg) 100%);
   color: var(--sidebar-text);
   display: flex; flex-direction: column;
@@ -900,9 +900,9 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   outline: none;
 }
 .sidebar-footer .btn-icon:hover {
-  background: rgba(196, 165, 116, 0.10);             /* champagne tint */
-  border-color: rgba(196, 165, 116, 0.22);
-  color: var(--gold-light, #e3d2a8);
+  background: rgba(217, 122, 166, 0.10);             /* champagne tint */
+  border-color: rgba(217, 122, 166, 0.22);
+  color: var(--gold-light, #fbcfe8);
   box-shadow:
     0 6px 18px rgba(0, 0, 0, 0.25),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -918,7 +918,7 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .sidebar-footer .btn-icon:focus-visible {
   box-shadow:
     0 0 0 2px var(--sidebar-bg),
-    0 0 0 4px rgba(196, 165, 116, 0.5);
+    0 0 0 4px rgba(217, 122, 166, 0.5);
 }
 /* Logout — refined wine red (premium destructive feel) */
 .sidebar-footer #logoutBtn:hover {
@@ -1046,7 +1046,7 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   background: var(--gold-soft); color: var(--gold-text);
   border-radius: var(--radius-full);
   font-size: 11px; font-weight: 700;
-  border: 1px solid rgba(196, 165, 116, 0.3);
+  border: 1px solid rgba(217, 122, 166, 0.3);
 }
 .notif-panel-actions { display: flex; gap: 4px; }
 .notif-action-btn {
@@ -1892,14 +1892,14 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .badge-danger  { background: var(--danger-soft);  color: var(--danger-text);  border-color: rgba(215, 38, 38, 0.22); }
 .badge-info    { background: var(--info-soft);    color: var(--info-text);    border-color: rgba(30, 127, 196, 0.22); }
 .badge-neutral { background: var(--surface-2);    color: var(--text-2);       border-color: var(--border); }
-.badge-sage    { background: var(--gold-soft);    color: var(--gold-text);    border-color: rgba(196, 165, 116, 0.32); }
-.badge-gold    { background: var(--gold-soft);    color: var(--gold-text);    border-color: rgba(196, 165, 116, 0.32); }
+.badge-sage    { background: var(--gold-soft);    color: var(--gold-text);    border-color: rgba(217, 122, 166, 0.32); }
+.badge-gold    { background: var(--gold-soft);    color: var(--gold-text);    border-color: rgba(217, 122, 166, 0.32); }
 [data-theme="dark"] .badge-success { background: rgba(21, 146, 63, 0.16); color: #86efac; border-color: rgba(21, 146, 63, 0.30); }
 [data-theme="dark"] .badge-warning { background: rgba(201, 119, 6, 0.16); color: #fcd34d; border-color: rgba(201, 119, 6, 0.30); }
 [data-theme="dark"] .badge-danger  { background: rgba(215, 38, 38, 0.16); color: #fca5a5; border-color: rgba(215, 38, 38, 0.30); }
 [data-theme="dark"] .badge-info    { background: rgba(30, 127, 196, 0.16); color: #93c5fd; border-color: rgba(30, 127, 196, 0.30); }
-[data-theme="dark"] .badge-sage    { background: rgba(196, 165, 116, 0.16); color: #e3d2a8; border-color: rgba(196, 165, 116, 0.32); }
-[data-theme="dark"] .badge-gold    { background: rgba(196, 165, 116, 0.16); color: #e3d2a8; border-color: rgba(196, 165, 116, 0.32); }
+[data-theme="dark"] .badge-sage    { background: rgba(217, 122, 166, 0.16); color: #fbcfe8; border-color: rgba(217, 122, 166, 0.32); }
+[data-theme="dark"] .badge-gold    { background: rgba(217, 122, 166, 0.16); color: #fbcfe8; border-color: rgba(217, 122, 166, 0.32); }
 
 /* ═════════════ FORMS ═════════════ */
 .form-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
@@ -2538,13 +2538,13 @@ html { scroll-behavior: smooth; }
 body {
   background-image:
     radial-gradient(ellipse 70% 50% at 50% -8%, rgba(29, 63, 143, 0.030), transparent 65%),
-    radial-gradient(ellipse 90% 70% at 50% 110%, rgba(196, 165, 116, 0.030), transparent 55%);
+    radial-gradient(ellipse 90% 70% at 50% 110%, rgba(217, 122, 166, 0.030), transparent 55%);
   background-attachment: fixed;
 }
 [data-theme="dark"] body {
   background-image:
     radial-gradient(ellipse 75% 55% at 50% -10%, rgba(78, 112, 176, 0.14), transparent 60%),
-    radial-gradient(ellipse 90% 70% at 50% 110%, rgba(196, 165, 116, 0.05), transparent 55%);
+    radial-gradient(ellipse 90% 70% at 50% 110%, rgba(217, 122, 166, 0.05), transparent 55%);
 }
 
 /* Refined card surfaces — subtle warmth via faint inner-top highlight */
@@ -3206,7 +3206,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   border-color: var(--border-strong);
 }
 .sw-ann-card.is-pinned {
-  background: linear-gradient(135deg, rgba(196, 165, 116, 0.05), transparent 55%), var(--surface);
+  background: linear-gradient(135deg, rgba(217, 122, 166, 0.05), transparent 55%), var(--surface);
 }
 .sw-ann-card.is-pinned::before {
   opacity: 1;
@@ -3214,7 +3214,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   background: linear-gradient(180deg, var(--gold), var(--gold-dark));
 }
 [data-theme="dark"] .sw-ann-card.is-pinned {
-  background: linear-gradient(135deg, rgba(196, 165, 116, 0.07), transparent 55%), var(--surface);
+  background: linear-gradient(135deg, rgba(217, 122, 166, 0.07), transparent 55%), var(--surface);
 }
 /* Unread indicator overrides accent rail in danger red */
 .sw-ann-card.is-unread::before {
@@ -3285,7 +3285,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .sw-ann-type-order {
   background: var(--gold-soft);
   color: var(--gold-text);
-  border-color: rgba(196, 165, 116, 0.32);
+  border-color: rgba(217, 122, 166, 0.32);
 }
 [data-theme="dark"] .sw-ann-type-announcement {
   background: rgba(124, 156, 196, 0.14);
@@ -3293,9 +3293,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   border-color: rgba(124, 156, 196, 0.24);
 }
 [data-theme="dark"] .sw-ann-type-order {
-  background: rgba(196, 165, 116, 0.14);
-  color: #e3d2a8;
-  border-color: rgba(196, 165, 116, 0.30);
+  background: rgba(217, 122, 166, 0.14);
+  color: #fbcfe8;
+  border-color: rgba(217, 122, 166, 0.30);
 }
 
 .sw-ann-pri {
@@ -3865,14 +3865,14 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
   border-radius: var(--radius-full);
   background: var(--gold-soft);
   color: var(--gold-text);
-  border: 1px solid rgba(196, 165, 116, 0.32);
+  border: 1px solid rgba(217, 122, 166, 0.32);
   font-weight: 600;
   letter-spacing: 0.01em;
 }
 [data-theme="dark"] .branch-picker-count {
-  background: rgba(196, 165, 116, 0.14);
-  color: #e3d2a8;
-  border-color: rgba(196, 165, 116, 0.32);
+  background: rgba(217, 122, 166, 0.14);
+  color: #fbcfe8;
+  border-color: rgba(217, 122, 166, 0.32);
 }
 
 .branch-picker-actions {
@@ -3998,9 +3998,9 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 
 /* Selected state — champagne gold luxe accent */
 .branch-chip:has(input:checked) {
-  background: linear-gradient(135deg, var(--gold-soft) 0%, rgba(196, 165, 116, 0.04) 100%);
+  background: linear-gradient(135deg, var(--gold-soft) 0%, rgba(217, 122, 166, 0.04) 100%);
   border-color: var(--gold);
-  box-shadow: 0 2px 8px rgba(196, 165, 116, 0.18);
+  box-shadow: 0 2px 8px rgba(217, 122, 166, 0.18);
 }
 .branch-chip:has(input:checked) .branch-chip-name::before {
   color: var(--gold);
@@ -4020,13 +4020,13 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
   color: var(--gold-dark);
 }
 [data-theme="dark"] .branch-chip:has(input:checked) {
-  background: linear-gradient(135deg, rgba(196, 165, 116, 0.16) 0%, rgba(196, 165, 116, 0.04) 100%);
+  background: linear-gradient(135deg, rgba(217, 122, 166, 0.16) 0%, rgba(217, 122, 166, 0.04) 100%);
 }
 [data-theme="dark"] .branch-chip:has(input:checked) .branch-chip-code {
-  color: #e3d2a8;
+  color: #fbcfe8;
 }
 [data-theme="dark"] .branch-chip:has(input:checked) .branch-chip-name {
-  color: #c4a574;
+  color: #d97aa6;
 }
 
 /* Focus state for keyboard users */
@@ -4107,13 +4107,13 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 .pm-stat-changed {
   padding: 4px 10px;
   background: var(--gold-soft); color: var(--gold-text);
-  border: 1px solid rgba(196, 165, 116, 0.32);
+  border: 1px solid rgba(217, 122, 166, 0.32);
   border-radius: var(--radius-full); font-weight: 600;
   animation: pmPulse 1.8s ease-in-out infinite;
 }
 @keyframes pmPulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(196, 165, 116, 0.4); }
-  50%      { box-shadow: 0 0 0 5px rgba(196, 165, 116, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(217, 122, 166, 0.4); }
+  50%      { box-shadow: 0 0 0 5px rgba(217, 122, 166, 0); }
 }
 
 .pm-actions { display: flex; gap: 8px; }
@@ -4239,7 +4239,7 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
   border-radius: var(--radius-xs);
   text-transform: uppercase;
 }
-.pm-tag-critical { background: rgba(196, 165, 116, 0.18); color: var(--gold-text); border: 1px solid rgba(196, 165, 116, 0.4); }
+.pm-tag-critical { background: rgba(217, 122, 166, 0.18); color: var(--gold-text); border: 1px solid rgba(217, 122, 166, 0.4); }
 .pm-tag-dangerous { background: rgba(196, 36, 63, 0.10); color: var(--danger-text); border: 1px solid rgba(196, 36, 63, 0.3); }
 
 .pm-cell {
@@ -4342,7 +4342,7 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
   display: inline-block;
   padding: 8px 14px; font-size: 12px;
   background: var(--gold-soft); color: var(--gold-text);
-  border: 1px solid rgba(196, 165, 116, 0.3);
+  border: 1px solid rgba(217, 122, 166, 0.3);
   border-radius: var(--radius-full);
 }
 
@@ -4590,13 +4590,13 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 }
 
 /* === SCHEDULE: AWAY badge (ไปช่วยสาขาอื่น) === */
-.schedule-cell-away { cursor: not-allowed; background: rgba(196, 165, 116, 0.10); }
-.schedule-cell-away:hover { background: rgba(196, 165, 116, 0.18); }
+.schedule-cell-away { cursor: not-allowed; background: rgba(217, 122, 166, 0.10); }
+.schedule-cell-away:hover { background: rgba(217, 122, 166, 0.18); }
 .schedule-away-badge {
   display: inline-block; padding: 3px 8px;
   background: var(--gold-soft, #fff8e6);
   color: var(--gold-text, #8a6a30);
-  border: 1px dashed var(--gold, #c4a574);
+  border: 1px dashed var(--gold, #d97aa6);
   border-radius: 4px; font-size: 11px; font-weight: 600;
   white-space: nowrap;
 }
@@ -5026,15 +5026,15 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 
 /* Away badge (⇄ ไปช่วย) */
 [data-theme="dark"] .schedule-away-badge {
-  background: rgba(196, 165, 116, 0.18);
+  background: rgba(217, 122, 166, 0.18);
   color: #f0d18a;
-  border-color: rgba(196, 165, 116, 0.5);
+  border-color: rgba(217, 122, 166, 0.5);
 }
 [data-theme="dark"] .schedule-cell-away {
-  background: rgba(196, 165, 116, 0.06);
+  background: rgba(217, 122, 166, 0.06);
 }
 [data-theme="dark"] .schedule-cell-away:hover {
-  background: rgba(196, 165, 116, 0.12);
+  background: rgba(217, 122, 166, 0.12);
 }
 
 /* Leave badge — สีฟ้าบน text ขาว ก็เห็นใน dark อยู่แล้ว แต่ปรับให้สดขึ้น */
@@ -5089,10 +5089,10 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 /* Helper row (พนักงานข้ามสาขา) — gold-soft อ่อนๆ */
 [data-theme="dark"] .schedule-row-helper,
 [data-theme="dark"] .schedule-grid tbody .schedule-row-helper .schedule-emp-cell {
-  background: rgba(196, 165, 116, 0.08) !important;
+  background: rgba(217, 122, 166, 0.08) !important;
 }
 [data-theme="dark"] .schedule-row-helper:hover {
-  background: rgba(196, 165, 116, 0.15) !important;
+  background: rgba(217, 122, 166, 0.15) !important;
 }
 
 /* Shift picker — modal บน dark */
