@@ -795,7 +795,7 @@ const DB = {
           title: r.title || '',
           branch: r.branch || '',
           department: r.department || '',
-          position: r.position || '',
+          position: r.position_id || '',   // RPC ใช้ position_id (เพราะ "position" reserved)
           positionTitle: r.position_title || '',
           status: r.status || 'active',
           photoUrl: r.photo_url || '',

@@ -19,6 +19,9 @@
 -- รันใน Supabase SQL Editor (idempotent)
 -- ═══════════════════════════════════════════════════════════
 
+-- หมายเหตุ: "position" เป็น reserved word → ต้อง quote
+-- เลี่ยงโดยตั้ง column name เป็น position_id (ตามที่ใช้ในระบบเดิม get_cross_branch_roster_rpc)
+-- แล้ว frontend rename กลับเป็น position ใน mapper
 CREATE OR REPLACE FUNCTION public.get_org_chart_employees()
 RETURNS TABLE(
   id              TEXT,
@@ -28,7 +31,7 @@ RETURNS TABLE(
   title           TEXT,
   branch          TEXT,
   department      TEXT,
-  position        TEXT,
+  position_id     TEXT,
   position_title  TEXT,
   status          TEXT,
   photo_url       TEXT,
@@ -50,7 +53,7 @@ AS $$
     e.title,
     e.branch,
     e.department,
-    e.position,
+    e.position    AS position_id,
     e.position_title,
     e.status,
     e.photo_url,
