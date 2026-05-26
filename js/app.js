@@ -14973,6 +14973,13 @@ router.register('schedule', () => {
   let branchOptions;
   if (DB.isHR || DB.role === 'operation_manager') {
     branchOptions = (DB.data.branches || []).filter(b => b.active);
+  } else if (DB.role === 'branch_staff' || DB.role === 'viewer') {
+    // staff/viewer → scopedBranches() คืน [] โดย design (ดูได้เฉพาะตัวเอง)
+    // → ที่หน้า schedule ต้องให้เห็นสาขาตัวเองเพื่อดูตารางของตน
+    const myEmpId = DB.profile?.employee_id;
+    const myEmp = myEmpId ? DB.getEmployee(myEmpId) : null;
+    const myBranchId = myEmp?.branch || null;
+    branchOptions = myBranchId ? (DB.data.branches || []).filter(b => b.id === myBranchId && b.active) : [];
   } else {
     const scoped = DB.scopedBranches() || [];
     branchOptions = (DB.data.branches || []).filter(b => scoped.includes(b.id) && b.active);
