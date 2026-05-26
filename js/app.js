@@ -1573,6 +1573,11 @@ router.register('dashboard', () => {
   const reach119 = DB.getProbationDue(119);
   const probByBranch = DB.getProbationPassByBranch();
   const pendingUniform = DB.getUniformRequests({ status: 'pending' });
+  // ★ พนักงานพ้นสภาพในเดือนปัจจุบัน — เรียงจากใหม่สุด
+  const thisYM = new Date().toISOString().slice(0, 7);  // YYYY-MM
+  const resignedThisMonth = DB._filterByScope(DB.getEmployees(), scope)
+    .filter(e => e.terminationDate && String(e.terminationDate).startsWith(thisYM))
+    .sort((a, b) => String(b.terminationDate).localeCompare(String(a.terminationDate)));
 
   window.afterRender = () => {
     // animate KPI counters ก่อน — เห็นทันทีหลัง render เลข fade จาก 0
@@ -1693,6 +1698,41 @@ router.register('dashboard', () => {
           </div>`;
         }).join('')}
         ${pendingUniform.length > 8 ? `<div class="muted-2" style="text-align:center;padding:10px;font-size:12px">+ อีก ${pendingUniform.length - 8} รายการ</div>` : ''}
+      </div>
+    </div>
+    ` : ''}
+
+${resignedThisMonth.length ? `
+    <div class="sw-section-label">พ้นสภาพเดือนนี้</div>
+    <div class="sw-chart-card" style="border-left:3px solid var(--danger)">
+      <div class="sw-chart-title">รายชื่อพนักงานพ้นสภาพ — ${(() => {
+        const d = new Date();
+        const thMonths = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+        return `${thMonths[d.getMonth()]} ${d.getFullYear() + 543}`;
+      })()}
+        <span class="badge badge-danger" style="margin-left:10px;font-size:11px">${resignedThisMonth.length} คน</span>
+      </div>
+      <div class="sw-chart-sub">พนักงานที่ระบุวันพ้นสภาพในเดือนปัจจุบัน — เรียงจากวันล่าสุด</div>
+      <div style="max-height:340px;overflow-y:auto;margin-top:10px">
+        ${resignedThisMonth.map((e, i) => {
+          const reasonText = e.terminationReason || 'ไม่ระบุสาเหตุ';
+          return `<div class="sw-recent-item" onclick="viewEmployee('${escapeHtml(e.id)}')">
+            <div class="probation-rank red">${i + 1}</div>
+            <div class="sw-recent-info">
+              <div class="sw-recent-name">
+                ${escapeHtml((e.title || '') + e.firstName + ' ' + (e.lastName || ''))}
+                ${e.nickname ? ` <span class="muted-2">(${escapeHtml(e.nickname)})</span>` : ''}
+              </div>
+              <div class="sw-recent-sub">
+                ${escapeHtml(e.positionTitle || '-')} · ${escapeHtml(e.branch || '-')} · ${escapeHtml(reasonText)}
+              </div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:11px;color:var(--text-3)">พ้นสภาพ</div>
+              <div style="font-size:13px;font-weight:700;color:var(--danger)">${fmt.date(e.terminationDate)}</div>
+            </div>
+          </div>`;
+        }).join('')}
       </div>
     </div>
     ` : ''}
