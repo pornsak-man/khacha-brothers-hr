@@ -4492,21 +4492,30 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
 
 .shift-badge {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 8px; border-radius: 6px;
-  border: 1px solid; font-size: 12px; font-weight: 600;
+  padding: 5px 9px; border-radius: 6px;
+  border: 1.5px solid; font-size: 13px; font-weight: 700;
   white-space: nowrap;
-  /* [Visibility] เพิ่ม contrast — text-shadow บางๆ + filter ปรับ saturation
-     เผื่อ shift.color ที่ admin กรอกเป็นสีอ่อน — จะยังอ่านออก */
-  filter: saturate(1.15);
+  /* [Visibility v2] เพิ่ม contrast แรงขึ้น —
+     - saturate 1.4 ทำสี vivid ขึ้น (เดิม 1.15 ยังจาง)
+     - contrast 1.05 เพิ่มความเข้ม
+     - border 1.5px (เดิม 1px) เห็นขอบชัด
+     - font-size 13px (เดิม 12) ตัวใหญ่ขึ้น
+     - font-weight 700 (เดิม 600) อ่านง่าย */
+  filter: saturate(1.4) contrast(1.05);
 }
 .shift-badge strong {
-  font-weight: 800;     /* เดิม 700 — เพิ่มให้เด่นขึ้น */
-  letter-spacing: 0.02em;
+  font-weight: 900;     /* เดิม 800 — เพิ่ม weight ของเลขกะ (1030 1200) */
+  letter-spacing: 0.03em;
+  font-size: 14px;      /* เลขกะใหญ่กว่า text เวลา */
 }
 [data-theme="dark"] .shift-badge {
-  filter: saturate(1.2) brightness(1.15);   /* ใน dark mode สีต้องสว่างกว่า */
+  filter: saturate(1.5) brightness(1.2) contrast(1.1);
 }
-.shift-badge-time { font-size: 10px; opacity: 0.85; font-weight: 500; }
+.shift-badge-time {
+  font-size: 11px;     /* เดิม 10px */
+  opacity: 1;          /* เดิม 0.85 — opacity เต็มไม่จาง */
+  font-weight: 600;    /* เดิม 500 — bold ขึ้น */
+}
 
 .cross-branch-mark {
   margin-left: 4px; font-size: 11px; color: var(--gold-text, #8a6a30);
