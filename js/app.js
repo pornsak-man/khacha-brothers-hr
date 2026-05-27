@@ -8375,7 +8375,7 @@ const _monthlyReportState = { year: new Date().getFullYear(), month: new Date().
 
 function openUniformMonthlyReportModal() {
   if (!requireHR()) return;
-  modal.open('📊 รายงาน Stock รายเดือน', renderMonthlyReportContent(), () => { /* no submit */ });
+  modal.open('📊 รายงาน Stock รายเดือน', renderMonthlyReportContent());
 }
 
 function renderMonthlyReportContent() {
@@ -8718,19 +8718,18 @@ function openReceiveStockForm(presetItemId = null) {
         <button type="submit" class="btn btn-primary">รับเข้า</button>
       </div>
     </form>
-  `, () => {
-    document.getElementById('receiveStockForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const data = Object.fromEntries(new FormData(e.target));
-      try {
-        await DB.receiveUniformStock(data.itemId, Number(data.qty), data.reason, data.note);
-        toast(`✓ รับเข้า ${data.qty} ชิ้น — stock อัพเดทแล้ว`, 'success');
-        modal.close();
-        router.go('uniform');
-      } catch (ex) {
-        toast('รับเข้าไม่สำเร็จ: ' + (ex.message || ex), 'error');
-      }
-    });
+  `);
+  document.getElementById('receiveStockForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target));
+    try {
+      await DB.receiveUniformStock(data.itemId, Number(data.qty), data.reason, data.note);
+      toast(`✓ รับเข้า ${data.qty} ชิ้น — stock อัพเดทแล้ว`, 'success');
+      modal.close();
+      router.go('uniform');
+    } catch (ex) {
+      toast('รับเข้าไม่สำเร็จ: ' + (ex.message || ex), 'error');
+    }
   });
 }
 
@@ -8772,21 +8771,20 @@ function openAdjustStockForm(itemId) {
         <button type="submit" class="btn btn-primary">ปรับ Stock</button>
       </div>
     </form>
-  `, () => {
-    document.getElementById('adjustStockForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const data = Object.fromEntries(new FormData(e.target));
-      try {
-        const result = await DB.adjustUniformStockManual(itemId, Number(data.newQty), data.reason, data.note);
-        const delta = result?.delta || 0;
-        const sign = delta > 0 ? '+' : '';
-        toast(`✓ ปรับ stock แล้ว — เปลี่ยน ${sign}${delta} ชิ้น (เหลือ ${result?.balance_after || data.newQty})`, 'success');
-        modal.close();
-        router.go('uniform');
-      } catch (ex) {
-        toast('ปรับ stock ไม่สำเร็จ: ' + (ex.message || ex), 'error');
-      }
-    });
+  `);
+  document.getElementById('adjustStockForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target));
+    try {
+      const result = await DB.adjustUniformStockManual(itemId, Number(data.newQty), data.reason, data.note);
+      const delta = result?.delta || 0;
+      const sign = delta > 0 ? '+' : '';
+      toast(`✓ ปรับ stock แล้ว — เปลี่ยน ${sign}${delta} ชิ้น (เหลือ ${result?.balance_after || data.newQty})`, 'success');
+      modal.close();
+      router.go('uniform');
+    } catch (ex) {
+      toast('ปรับ stock ไม่สำเร็จ: ' + (ex.message || ex), 'error');
+    }
   });
 }
 
@@ -9590,7 +9588,7 @@ function openUniformBrandsManager() {
         </tbody>
       </table>
     </div>
-  `, () => { /* no submit */ });
+  `);
 }
 
 function openBrandForm(id = null) {
@@ -9629,21 +9627,20 @@ function openBrandForm(id = null) {
         <button type="submit" class="btn btn-primary">บันทึก</button>
       </div>
     </form>
-  `, () => {
-    document.getElementById('brandForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const data = Object.fromEntries(new FormData(e.target));
-      data.code = (data.code || '').toUpperCase();
-      data.sortOrder = Number(data.sortOrder || 0);
-      data.active = data.active === 'true';
-      if (id) data.id = id;
-      try {
-        await DB.saveUniformBrand(data);
-        toast(id ? 'บันทึกแล้ว' : 'เพิ่มแบรนด์แล้ว', 'success');
-        modal.close();
-        openUniformBrandsManager();
-      } catch (ex) { toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
-    });
+  `);
+  document.getElementById('brandForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target));
+    data.code = (data.code || '').toUpperCase();
+    data.sortOrder = Number(data.sortOrder || 0);
+    data.active = data.active === 'true';
+    if (id) data.id = id;
+    try {
+      await DB.saveUniformBrand(data);
+      toast(id ? 'บันทึกแล้ว' : 'เพิ่มแบรนด์แล้ว', 'success');
+      modal.close();
+      openUniformBrandsManager();
+    } catch (ex) { toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
   });
 }
 
