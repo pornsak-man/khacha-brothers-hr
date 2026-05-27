@@ -7659,7 +7659,15 @@ const UNIFORM_REQUEST_TYPES = {
   periodic: { label: 'ครบรอบเปลี่ยน', cls: 'badge-success', isFree: true,  hint: 'ฟรี (เช่น ครบ 1 ปี)' },
   extra:    { label: 'ขอเพิ่ม',       cls: 'badge-warning', isFree: false, hint: 'พนักงานจ่ายเอง' }
 };
-const _uniformState = { tab: 'requests', filter: '', stockAsOfDate: '', movDateFrom: '', movDateTo: '', movItemId: '', movType: '' };
+const _uniformState = {
+  tab: 'requests', filter: '',
+  // stock view
+  stockAsOfDate: '', stockBrand: '', stockCategory: '', stockLowOnly: false, stockView: 'card',  // 'card' or 'table'
+  // movements filter
+  movDateFrom: '', movDateTo: '', movItemId: '', movType: '',
+  // issues history filter
+  issDateFrom: '', issDateTo: '', issItemId: '', issBrand: '', issCategory: ''
+};
 const DAY_NAMES_TH = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
 const DAY_NAMES_SHORT = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
 
@@ -8096,8 +8104,15 @@ function renderUniformRequestsTable() {
 }
 
 function renderUniformItemsTable() {
-  const items = DB.getUniformItems();
-  if (!items.length) return `<div class="empty-state"><div class="title">ยังไม่มีรายการชุด</div><div class="hint">กดปุ่ม "+ เพิ่มรายการชุด" ด้านบน</div></div>`;
+  const allItems = DB.getUniformItems();
+  if (!allItems.length) return `<div class="empty-state"><div class="title">ยังไม่มีรายการชุด</div><div class="hint">กดปุ่ม "+ เพิ่มรายการชุด" ด้านบน</div></div>`;
+
+  // filters
+  const items = DB.getUniformItems({
+    brand: _uniformState.stockBrand || undefined,
+    category: _uniformState.stockCategory || undefined,
+    lowStock: _uniformState.stockLowOnly || undefined
+  });
 
   // ดู stock ย้อนหลัง — ถ้าเลือกวันที่ จะคำนวณจาก ledger
   const asOfDate = _uniformState.stockAsOfDate || '';
@@ -8108,58 +8123,229 @@ function renderUniformItemsTable() {
     ? items.map(i => ({ ...i, displayStock: DB.getUniformStockAtDate(i.id, asOfDate) }))
     : items.map(i => ({ ...i, displayStock: Number(i.stockQty || 0) }));
 
-  return `
+  const brands = DB.getUniformBrands({ activeOnly: true });
+  const categories = DB.getUniformDistinctCategories();
+  const brandMap = new Map(brands.map(b => [b.code, b]));
+  const view = _uniformState.stockView || 'card';
+
+  const filterBar = `
     <div class="sw-filter-bar" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--bg-soft, #f5f3ee);padding:10px 12px;border-radius:8px">
-      <strong>ดู Stock:</strong>
-      <button class="btn ${!isHistorical ? 'btn-primary' : 'btn-secondary'} btn-sm" onclick="setUniformStockDate('')">ปัจจุบัน</button>
-      <span class="muted-2">หรือ ณ วันที่:</span>
-      <input type="date" value="${escapeHtml(asOfDate)}" max="${today}" onchange="setUniformStockDate(this.value)" class="sw-filter-input" style="max-width:160px"/>
-      ${isHistorical ? `<span class="badge badge-info">📅 Stock ณ สิ้นวัน ${escapeHtml(asOfDate)}</span>` : ''}
+      <div style="display:flex;gap:6px">
+        <button class="btn ${view === 'card' ? 'btn-primary' : 'btn-secondary'} btn-sm" onclick="setStockView('card')" title="มุมมองการ์ด">🟦 การ์ด</button>
+        <button class="btn ${view === 'table' ? 'btn-primary' : 'btn-secondary'} btn-sm" onclick="setStockView('table')" title="มุมมองตาราง">📋 ตาราง</button>
+      </div>
+      <span style="border-left:1px solid var(--border);height:24px;margin:0 2px"></span>
+      <select class="sw-filter-select" onchange="setStockFilter('brand', this.value)" title="กรองแบรนด์">
+        <option value="">— ทุกแบรนด์ —</option>
+        ${brands.map(b => `<option value="${escapeHtml(b.code)}" ${b.code === _uniformState.stockBrand ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}
+      </select>
+      <select class="sw-filter-select" onchange="setStockFilter('category', this.value)" title="กรองหมวด">
+        <option value="">— ทุกหมวด —</option>
+        ${categories.map(c => `<option value="${escapeHtml(c)}" ${c === _uniformState.stockCategory ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+      </select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13.5px;cursor:pointer">
+        <input type="checkbox" ${_uniformState.stockLowOnly ? 'checked' : ''} onchange="setStockFilter('lowOnly', this.checked)"/>
+        <span>⚠ Stock ใกล้หมด</span>
+      </label>
+      <span style="border-left:1px solid var(--border);height:24px;margin:0 2px"></span>
+      <span class="muted-2">📅 ณ วันที่:</span>
+      <input type="date" value="${escapeHtml(asOfDate)}" max="${today}" onchange="setUniformStockDate(this.value)" class="sw-filter-input" style="max-width:150px"/>
+      ${isHistorical ? `<button class="btn btn-ghost btn-sm" onclick="setUniformStockDate('')">× ดูปัจจุบัน</button>` : ''}
       <div style="flex:1"></div>
       <button class="btn btn-secondary btn-sm" onclick="openUniformMonthlyReportModal()" title="รายงาน in/out รายเดือน">📊 รายงานรายเดือน</button>
+      ${DB.isHR ? `<button class="btn btn-secondary btn-sm" onclick="openUniformBrandsManager()" title="จัดการแบรนด์">🏷️ แบรนด์</button>` : ''}
     </div>
-    <div class="table-wrap"><table class="table table-compact">
-      <thead><tr>
-        <th>ชื่อชุด</th><th>ขนาด</th>
-        <th class="num">${isHistorical ? 'Stock ย้อนหลัง' : 'Stock'}</th>
-        ${isHistorical ? '<th class="num">ปัจจุบัน</th>' : ''}
-        <th class="num">ราคา/ชิ้น</th>
-        <th class="num">มูลค่า Stock</th><th>สถานะ</th><th>หมายเหตุ</th><th></th>
-      </tr></thead>
-      <tbody>
-        ${displayItems.map(i => {
-          const stockClass = Number(i.displayStock) < 5 ? 'style="color:var(--danger);font-weight:600"' : '';
-          const diffBadge = isHistorical
-            ? (() => {
-                const diff = Number(i.stockQty) - Number(i.displayStock);
-                if (diff === 0) return '';
-                const cls = diff > 0 ? 'badge-success' : 'badge-warning';
-                const sign = diff > 0 ? '+' : '';
-                return ` <span class="badge ${cls}" style="font-size:11px">${sign}${fmt.num(diff)}</span>`;
-              })()
-            : '';
-          return `<tr>
-            <td><strong>${escapeHtml(i.name)}</strong></td>
-            <td>${escapeHtml(i.size || '-')}</td>
-            <td class="num" ${stockClass}>${fmt.num(i.displayStock)}</td>
-            ${isHistorical ? `<td class="num"><span class="muted-2">${fmt.num(i.stockQty)}</span>${diffBadge}</td>` : ''}
-            <td class="num">${fmt.money(i.unitCost)}</td>
-            <td class="num">${fmt.money(Number(i.displayStock) * Number(i.unitCost))}</td>
-            <td>${i.active ? '<span class="badge badge-success">ใช้งาน</span>' : '<span class="badge">ปิด</span>'}</td>
-            <td>${escapeHtml(i.note || '-')}</td>
-            <td class="actions">
-              ${DB.isHR && !isHistorical ? `
-                <button class="btn btn-ghost btn-sm" onclick="openReceiveStockForm('${escapeHtml(i.id)}')" title="รับเข้า — สั่งผลิต/สั่งซื้อ">+ รับเข้า</button>
-                <button class="btn btn-ghost btn-sm" onclick="openAdjustStockForm('${escapeHtml(i.id)}')" title="ปรับ stock — นับสต๊อกจริง">ปรับ</button>
-                <button class="btn btn-ghost btn-sm" onclick="openUniformItemForm('${escapeHtml(i.id)}')">แก้ไข</button>
-                <button class="btn btn-ghost btn-sm" onclick="deleteUniformItem('${escapeHtml(i.id)}')">ลบ</button>` : ''}
-              ${isHistorical ? `<span class="muted-2" style="font-size:12px">(โหมดย้อนหลัง — ดูอย่างเดียว)</span>` : ''}
-            </td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table></div>
+    ${isHistorical ? `<div style="margin-bottom:10px"><span class="badge badge-info">📅 แสดง Stock ณ สิ้นวัน ${escapeHtml(asOfDate)} — โหมดดูอย่างเดียว</span></div>` : ''}
   `;
+
+  if (!displayItems.length) return filterBar + `<div class="empty-state">
+    <div class="title">ไม่พบรายการตามฟิลเตอร์</div>
+    <div class="hint">ลองเปลี่ยน/ล้างฟิลเตอร์</div>
+  </div>`;
+
+  // ── Group by brand ──
+  const grouped = new Map();
+  for (const i of displayItems) {
+    const key = i.brand || '(ไม่ระบุ)';
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(i);
+  }
+  const groupKeys = [...grouped.keys()].sort();
+
+  if (view === 'table') {
+    return filterBar + groupKeys.map(brandKey => {
+      const brand = brandMap.get(brandKey);
+      const groupItems = grouped.get(brandKey);
+      const totalStock = groupItems.reduce((s, i) => s + Number(i.displayStock), 0);
+      const totalValue = groupItems.reduce((s, i) => s + Number(i.displayStock) * Number(i.unitCost), 0);
+      return `
+        <div class="sw-brand-section" style="margin-bottom:18px">
+          <div class="sw-brand-header" style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg-soft);border-radius:8px 8px 0 0;border:1px solid var(--border);border-bottom:none">
+            <strong style="font-size:15px">🏷️ ${escapeHtml(brand ? brand.name : brandKey)}</strong>
+            <span class="badge">${groupItems.length} รายการ · stock รวม ${fmt.num(totalStock)} ชิ้น · มูลค่า ${fmt.money(totalValue)}</span>
+          </div>
+          <div class="table-wrap" style="border-radius:0 0 8px 8px"><table class="table table-compact">
+            <thead><tr>
+              <th style="width:60px"></th>
+              <th>ชื่อชุด</th><th>SKU</th><th>หมวด</th><th>สี</th><th>ขนาด</th>
+              <th class="num">${isHistorical ? 'Stock ย้อนหลัง' : 'Stock'}</th>
+              ${isHistorical ? '<th class="num">ปัจจุบัน</th>' : '<th class="num">จุดสั่ง</th>'}
+              <th class="num">ราคา/ชิ้น</th>
+              <th class="num">มูลค่า</th><th>สถานะ</th><th></th>
+            </tr></thead>
+            <tbody>
+              ${groupItems.map(i => renderItemTableRow(i, isHistorical)).join('')}
+            </tbody>
+          </table></div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ── Card view (default) ──
+  return filterBar + groupKeys.map(brandKey => {
+    const brand = brandMap.get(brandKey);
+    const groupItems = grouped.get(brandKey);
+    const totalStock = groupItems.reduce((s, i) => s + Number(i.displayStock), 0);
+    const totalValue = groupItems.reduce((s, i) => s + Number(i.displayStock) * Number(i.unitCost), 0);
+    return `
+      <div class="sw-brand-section" style="margin-bottom:24px">
+        <div class="sw-brand-header" style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg-soft);border-radius:10px;margin-bottom:12px;border-left:4px solid var(--accent, #c4a574)">
+          <strong style="font-size:16px">🏷️ ${escapeHtml(brand ? brand.name : brandKey)}</strong>
+          <span class="muted-2" style="font-size:13px">${groupItems.length} รายการ</span>
+          <div style="flex:1"></div>
+          <span class="muted-2" style="font-size:13px">รวม <strong>${fmt.num(totalStock)}</strong> ชิ้น · <strong>${fmt.money(totalValue)}</strong> บาท</span>
+        </div>
+        <div class="sw-stock-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px">
+          ${groupItems.map(i => renderItemCard(i, isHistorical)).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Render: item card ──
+function renderItemCard(i, isHistorical) {
+  const reorderPoint = Number(i.reorderPoint || 5);
+  const isLow = Number(i.displayStock) <= reorderPoint;
+  const isOut = Number(i.displayStock) <= 0;
+  const stockColor = isOut ? 'var(--danger)' : (isLow ? 'var(--warning, #d97706)' : 'var(--success)');
+  const stockBg    = isOut ? '#fee2e2' : (isLow ? '#fef3c7' : '#d1fae5');
+  const progress = Math.min(100, (Number(i.displayStock) / Math.max(reorderPoint * 3, 1)) * 100);
+
+  const diff = isHistorical ? Number(i.stockQty) - Number(i.displayStock) : 0;
+  const diffBadge = isHistorical && diff !== 0
+    ? `<span class="badge ${diff > 0 ? 'badge-success' : 'badge-warning'}" style="font-size:10.5px">ปัจจุบัน ${fmt.num(i.stockQty)} (${diff > 0 ? '+' : ''}${fmt.num(diff)})</span>`
+    : '';
+
+  const sizeBadge = i.size ? `<span class="badge" style="font-size:11px;background:#e5e7eb">📏 ${escapeHtml(i.size)}</span>` : '';
+  const colorBadge = i.color ? `<span class="badge" style="font-size:11px;background:#fef3c7">🎨 ${escapeHtml(i.color)}</span>` : '';
+  const genderBadge = i.gender ? `<span class="badge" style="font-size:11px;background:#dbeafe">${i.gender === 'male' ? '♂ ชาย' : (i.gender === 'female' ? '♀ หญิง' : '⚧ Unisex')}</span>` : '';
+
+  return `
+    <div class="sw-item-card" style="background:var(--bg-card,#fff);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px;${isOut ? 'opacity:0.85' : ''}">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:14.5px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(i.name)}">${escapeHtml(i.name)}</div>
+          <div class="muted-2" style="font-size:11px;font-family:monospace;margin-top:2px">${escapeHtml(i.sku || '(no SKU)')}</div>
+        </div>
+        ${!i.active ? '<span class="badge" style="font-size:10px">ปิด</span>' : ''}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px">
+        ${sizeBadge}${colorBadge}${genderBadge}
+        ${i.category ? `<span class="badge" style="font-size:11px;background:#ede9fe">${escapeHtml(i.category)}</span>` : ''}
+      </div>
+      <div style="background:${stockBg};border-radius:8px;padding:10px;text-align:center;margin-top:4px">
+        <div style="font-size:11.5px;color:${stockColor};font-weight:600;text-transform:uppercase;letter-spacing:0.5px">${isOut ? 'STOCK หมด' : (isLow ? 'STOCK ต่ำ' : 'STOCK')}</div>
+        <div style="font-size:28px;font-weight:800;color:${stockColor};line-height:1.1;margin:4px 0">${fmt.num(i.displayStock)}</div>
+        <div style="font-size:11px;color:#666">ชิ้น · จุดสั่ง ${fmt.num(reorderPoint)}</div>
+        <div style="margin-top:6px;height:4px;background:#fff;border-radius:99px;overflow:hidden">
+          <div style="width:${progress}%;height:100%;background:${stockColor};transition:width 0.3s"></div>
+        </div>
+      </div>
+      ${diffBadge ? `<div style="text-align:center">${diffBadge}</div>` : ''}
+      <div style="display:flex;justify-content:space-between;align-items:center;padding-top:4px;border-top:1px dashed var(--border);font-size:13px">
+        <span class="muted-2">${fmt.money(i.unitCost)} ฿/ชิ้น</span>
+        <strong>${fmt.money(Number(i.displayStock) * Number(i.unitCost))}</strong>
+      </div>
+      ${DB.isHR && !isHistorical ? `
+        <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" style="flex:1;min-width:90px;font-size:12px" onclick="openReceiveStockForm('${escapeHtml(i.id)}')" title="สั่งผลิต/สั่งซื้อ">+ รับเข้า</button>
+          <button class="btn btn-ghost btn-sm" style="flex:1;min-width:60px;font-size:12px" onclick="openAdjustStockForm('${escapeHtml(i.id)}')" title="ปรับ stock">ปรับ</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:12px" onclick="openUniformItemForm('${escapeHtml(i.id)}')" title="แก้ไข">✎</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:12px;color:var(--danger)" onclick="deleteUniformItem('${escapeHtml(i.id)}')" title="ลบ">🗑</button>
+        </div>
+      ` : (isHistorical ? `<div class="muted-2" style="text-align:center;font-size:11.5px;padding-top:4px">(โหมดดูย้อนหลัง)</div>` : '')}
+    </div>
+  `;
+}
+
+// ── Render: item table row ──
+function renderItemTableRow(i, isHistorical) {
+  const reorderPoint = Number(i.reorderPoint || 5);
+  const isLow = Number(i.displayStock) <= reorderPoint;
+  const stockColor = isLow ? 'color:var(--danger);font-weight:700' : '';
+  const diff = isHistorical ? Number(i.stockQty) - Number(i.displayStock) : 0;
+  const diffBadge = isHistorical && diff !== 0
+    ? ` <span class="badge ${diff > 0 ? 'badge-success' : 'badge-warning'}" style="font-size:10px">${diff > 0 ? '+' : ''}${fmt.num(diff)}</span>`
+    : '';
+  const colorSwatch = i.color ? `<span style="display:inline-block;width:10px;height:10px;border-radius:99px;background:${getColorHex(i.color)};margin-right:4px;border:1px solid #ccc;vertical-align:middle"></span>` : '';
+  return `<tr ${isLow ? 'style="background:#fff7ed"' : ''}>
+    <td>${i.imageUrl ? `<img src="${escapeHtml(i.imageUrl)}" style="width:40px;height:40px;border-radius:4px;object-fit:cover"/>` : '<span class="muted-2">—</span>'}</td>
+    <td><strong>${escapeHtml(i.name)}</strong>${!i.active ? ' <span class="badge" style="font-size:10px">ปิด</span>' : ''}</td>
+    <td style="font-family:monospace;font-size:11.5px">${escapeHtml(i.sku || '-')}</td>
+    <td>${escapeHtml(i.category || '-')}</td>
+    <td>${colorSwatch}${escapeHtml(i.color || '-')}</td>
+    <td>${escapeHtml(i.size || '-')}</td>
+    <td class="num" style="${stockColor}">${fmt.num(i.displayStock)}</td>
+    ${isHistorical
+      ? `<td class="num"><span class="muted-2">${fmt.num(i.stockQty)}</span>${diffBadge}</td>`
+      : `<td class="num"><span class="muted-2">${fmt.num(reorderPoint)}</span></td>`}
+    <td class="num">${fmt.money(i.unitCost)}</td>
+    <td class="num">${fmt.money(Number(i.displayStock) * Number(i.unitCost))}</td>
+    <td>${i.active ? '<span class="badge badge-success">ใช้งาน</span>' : '<span class="badge">ปิด</span>'}</td>
+    <td class="actions">
+      ${DB.isHR && !isHistorical ? `
+        <button class="btn btn-ghost btn-sm" onclick="openReceiveStockForm('${escapeHtml(i.id)}')" title="รับเข้า">+</button>
+        <button class="btn btn-ghost btn-sm" onclick="openAdjustStockForm('${escapeHtml(i.id)}')" title="ปรับ">⚖</button>
+        <button class="btn btn-ghost btn-sm" onclick="openUniformItemForm('${escapeHtml(i.id)}')" title="แก้ไข">✎</button>
+        <button class="btn btn-ghost btn-sm" onclick="deleteUniformItem('${escapeHtml(i.id)}')" title="ลบ">🗑</button>` : ''}
+    </td>
+  </tr>`;
+}
+
+// ── Helper: Color name → hex (basic mapping) ──
+function getColorHex(name) {
+  if (!name) return '#ccc';
+  const map = {
+    'ขาว': '#ffffff', 'white': '#ffffff',
+    'ดำ': '#1a1a1a', 'black': '#1a1a1a',
+    'น้ำเงิน': '#1e40af', 'blue': '#1e40af', 'กรมท่า': '#1e3a8a', 'navy': '#1e3a8a',
+    'แดง': '#dc2626', 'red': '#dc2626',
+    'เขียว': '#16a34a', 'green': '#16a34a',
+    'เหลือง': '#facc15', 'yellow': '#facc15',
+    'ส้ม': '#ea580c', 'orange': '#ea580c',
+    'ม่วง': '#7c3aed', 'purple': '#7c3aed',
+    'ชมพู': '#ec4899', 'pink': '#ec4899',
+    'น้ำตาล': '#92400e', 'brown': '#92400e',
+    'เทา': '#6b7280', 'gray': '#6b7280',
+    'ครีม': '#fef3c7', 'beige': '#fef3c7',
+    'ฟ้า': '#0ea5e9', 'sky': '#0ea5e9'
+  };
+  const key = name.toLowerCase().trim();
+  return map[key] || map[name.trim()] || '#94a3b8';
+}
+
+// ── Helper: filter Stock view ──
+function setStockView(view) {
+  _uniformState.stockView = view;
+  router.go('uniform');
+}
+function setStockFilter(key, value) {
+  if (key === 'brand') _uniformState.stockBrand = value || '';
+  else if (key === 'category') _uniformState.stockCategory = value || '';
+  else if (key === 'lowOnly') _uniformState.stockLowOnly = !!value;
+  router.go('uniform');
 }
 
 // ─── Helper: เปลี่ยนวันที่ดู stock ย้อนหลัง ───
@@ -8605,12 +8791,82 @@ function openAdjustStockForm(itemId) {
 }
 
 function renderUniformIssuesTable() {
-  const list = DB.getUniformIssues();
-  if (!list.length) return `<div class="empty-state"><div class="title">ยังไม่มีประวัติการจัดส่ง</div></div>`;
-  return `
+  const items = DB.getUniformItems();
+  const itemMap = new Map(items.map(i => [i.id, i]));
+  const brands = DB.getUniformBrands({ activeOnly: true });
+  const categories = DB.getUniformDistinctCategories();
+
+  const filterArgs = {
+    dateFrom: _uniformState.issDateFrom || undefined,
+    dateTo: _uniformState.issDateTo || undefined,
+    itemId: _uniformState.issItemId || undefined,
+    brand: _uniformState.issBrand || undefined,
+    category: _uniformState.issCategory || undefined
+  };
+  const list = DB.getUniformIssues(filterArgs);
+  const hasFilter = !!(filterArgs.dateFrom || filterArgs.dateTo || filterArgs.itemId || filterArgs.brand || filterArgs.category);
+
+  // summary
+  const totalQty  = list.reduce((s, i) => s + Number(i.qty || 0), 0);
+  const totalCost = list.reduce((s, i) => s + Number(i.totalCost || 0), 0);
+  const uniqueEmployees = new Set(list.map(i => i.employeeId).filter(Boolean)).size;
+
+  const filterBar = `
+    <div class="sw-filter-bar" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--bg-soft, #f5f3ee);padding:10px 12px;border-radius:8px">
+      <strong>กรอง:</strong>
+      <span class="muted-2">วันที่:</span>
+      <input type="date" value="${escapeHtml(_uniformState.issDateFrom || '')}" onchange="setIssueFilter('from', this.value)" class="sw-filter-input" style="max-width:150px"/>
+      <span>→</span>
+      <input type="date" value="${escapeHtml(_uniformState.issDateTo || '')}" onchange="setIssueFilter('to', this.value)" class="sw-filter-input" style="max-width:150px"/>
+      <select class="sw-filter-select" onchange="setIssueFilter('brand', this.value)">
+        <option value="">— ทุกแบรนด์ —</option>
+        ${brands.map(b => `<option value="${escapeHtml(b.code)}" ${b.code === _uniformState.issBrand ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}
+      </select>
+      <select class="sw-filter-select" onchange="setIssueFilter('category', this.value)">
+        <option value="">— ทุกหมวด —</option>
+        ${categories.map(c => `<option value="${escapeHtml(c)}" ${c === _uniformState.issCategory ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+      </select>
+      <select class="sw-filter-select" onchange="setIssueFilter('item', this.value)">
+        <option value="">— ทุกรายการ —</option>
+        ${items.map(i => `<option value="${escapeHtml(i.id)}" ${i.id === _uniformState.issItemId ? 'selected' : ''}>${escapeHtml(i.name)} · ${escapeHtml(i.size || '-')}</option>`).join('')}
+      </select>
+      ${hasFilter ? `<button class="btn btn-ghost btn-sm" onclick="clearIssueFilters()">× ล้าง</button>` : ''}
+      <div style="flex:1"></div>
+      ${DB.isHR ? `<button class="btn btn-secondary btn-sm" onclick="exportUniformIssuesXLSX()" title="ส่งออก Excel">${ICON.download}ส่งออก</button>` : ''}
+    </div>
+    <div class="sw-stat-row" style="margin-bottom:12px">
+      <div class="sw-stat-card" style="flex:1">
+        <div class="sw-stat-label">รายการที่จัดส่ง</div>
+        <div class="sw-stat-value">${fmt.num(list.length)}</div>
+        <div class="sw-stat-change">${hasFilter ? 'ตามฟิลเตอร์' : 'ทั้งหมด'}</div>
+      </div>
+      <div class="sw-stat-card" style="flex:1">
+        <div class="sw-stat-label">จำนวนชิ้นรวม</div>
+        <div class="sw-stat-value">${fmt.num(totalQty)}</div>
+        <div class="sw-stat-change">ชิ้น</div>
+      </div>
+      <div class="sw-stat-card" style="flex:1">
+        <div class="sw-stat-label">มูลค่ารวม</div>
+        <div class="sw-stat-value">${fmt.money(totalCost)}</div>
+        <div class="sw-stat-change">บาท</div>
+      </div>
+      <div class="sw-stat-card" style="flex:1">
+        <div class="sw-stat-label">พนักงานที่ได้รับ</div>
+        <div class="sw-stat-value">${fmt.num(uniqueEmployees)}</div>
+        <div class="sw-stat-change">คน</div>
+      </div>
+    </div>
+  `;
+
+  if (!list.length) return filterBar + `<div class="empty-state">
+    <div class="title">ไม่พบประวัติการจัดส่ง${hasFilter ? 'ตามฟิลเตอร์' : ''}</div>
+    <div class="hint">${hasFilter ? 'ลองล้างฟิลเตอร์หรือเปลี่ยนช่วงวันที่' : 'รายการจัดส่งจะปรากฏที่นี่หลังจาก HR จัดชุดให้พนักงาน'}</div>
+  </div>`;
+
+  return filterBar + `
     <div class="table-wrap"><table class="table table-compact">
       <thead><tr>
-        <th>วันที่จัดส่ง</th><th>พนักงาน</th><th>รายการ</th><th>ขนาด</th>
+        <th>วันที่จัดส่ง</th><th>พนักงาน</th><th>แบรนด์</th><th>รายการ</th><th>ขนาด</th>
         <th class="num">จำนวน</th><th class="num">ราคา/ชิ้น</th><th class="num">รวม</th>
         <th>HR ผู้จัด</th><th>หมายเหตุ</th><th></th>
       </tr></thead>
@@ -8634,9 +8890,12 @@ function renderUniformIssuesTable() {
               }
             }
           }
+          const itemObj = itemMap.get(i.itemId);
+          const brandCode = itemObj?.brand || '-';
           return `<tr>
             <td>${fmt.date(i.issuedDate)}</td>
             <td>${ownerCell}</td>
+            <td><span class="badge badge-info" style="font-size:11px">${escapeHtml(brandCode)}</span></td>
             <td>${escapeHtml(i.itemName || '-')}</td>
             <td>${escapeHtml(i.size || '-')}</td>
             <td class="num">${fmt.num(i.qty)}</td>
@@ -8650,6 +8909,24 @@ function renderUniformIssuesTable() {
       </tbody>
     </table></div>
   `;
+}
+
+// ─── Helper: filter issues history ───
+function setIssueFilter(key, value) {
+  if (key === 'from') _uniformState.issDateFrom = value || '';
+  else if (key === 'to')   _uniformState.issDateTo = value || '';
+  else if (key === 'item') _uniformState.issItemId = value || '';
+  else if (key === 'brand') _uniformState.issBrand = value || '';
+  else if (key === 'category') _uniformState.issCategory = value || '';
+  router.go('uniform');
+}
+function clearIssueFilters() {
+  _uniformState.issDateFrom = '';
+  _uniformState.issDateTo = '';
+  _uniformState.issItemId = '';
+  _uniformState.issBrand = '';
+  _uniformState.issCategory = '';
+  router.go('uniform');
 }
 
 // ─── คำขอจัดชุด ───
@@ -9060,25 +9337,115 @@ function openIssueItemsForm(requestId) {
 // ─── รายการชุด (master) ───
 function openUniformItemForm(id = null) {
   if (!requireHR()) return;
-  const i = id ? DB.getUniformItem(id) : { id: '', name: '', size: '', stockQty: 0, unitCost: 0, active: true, note: '' };
-  modal.open(id ? 'แก้ไขรายการชุด' : 'เพิ่มรายการชุด', `
+  const i = id ? DB.getUniformItem(id) : {
+    id: '', name: '', size: '', stockQty: 0, unitCost: 0, active: true, note: '',
+    brand: 'KB', category: '', color: '', sku: '', reorderPoint: 5,
+    supplier: '', gender: 'unisex', material: '', imageUrl: ''
+  };
+  const brands = DB.getUniformBrands({ activeOnly: true });
+  const categories = DB.getUniformDistinctCategories();
+  const colors = DB.getUniformDistinctColors();
+  const sizes = DB.getUniformDistinctSizes();
+
+  modal.open(id ? '✎ แก้ไขรายการชุด' : '+ เพิ่มรายการชุด', `
     <form id="uniItemForm">
-      <div class="form-grid">
-        <div class="form-group"><label>ชื่อชุด *</label>
-          <input name="name" list="dl-uni-names" value="${escapeHtml(i.name)}" required placeholder="เสื้อยูนิฟอร์ม, กางเกง, หมวก ฯลฯ"/>
-          <datalist id="dl-uni-names">${['เสื้อยูนิฟอร์ม','กางเกง','หมวก','รองเท้า','ผ้ากันเปื้อน','เสื้อแขนยาว','เสื้อแขนสั้น','เนคไท'].map(v => `<option value="${v}">`).join('')}</datalist>
-        </div>
-        <div class="form-group"><label>ขนาด</label>
-          <input name="size" list="dl-uni-sizes" value="${escapeHtml(i.size)}" placeholder="S, M, L, XL, 36 ฯลฯ"/>
-          <datalist id="dl-uni-sizes">${['S','M','L','XL','XXL','ฟรีไซส์','36','38','40','42'].map(v => `<option value="${v}">`).join('')}</datalist>
-        </div>
-        <div class="form-group"><label>จำนวนใน Stock</label><input name="stockQty" type="number" min="0" value="${i.stockQty}"/></div>
-        <div class="form-group"><label>ราคา/ชิ้น (บาท)</label><input name="unitCost" type="number" min="0" step="0.01" value="${i.unitCost}"/></div>
-        <div class="form-group span-2"><label>สถานะ</label>
-          <select name="active"><option value="true" ${i.active ? 'selected' : ''}>ใช้งาน</option><option value="false" ${!i.active ? 'selected' : ''}>ปิดใช้งาน</option></select>
-        </div>
-        <div class="form-group span-2"><label>หมายเหตุ</label><textarea name="note" rows="2">${escapeHtml(i.note)}</textarea></div>
+      <div style="background:#eff6ff;padding:8px 12px;border-radius:6px;margin-bottom:14px;font-size:13px;color:#1e40af">
+        💡 <strong>เคล็ดลับ:</strong> ตั้งค่าให้ครบ (แบรนด์, หมวด, สี, SKU) จะช่วยให้ค้นหา/กรอง stock ได้ง่าย รองรับการขยายแบรนด์ใหม่ในอนาคต
       </div>
+
+      <h4 style="margin:0 0 10px 0;color:var(--text);font-size:14px">📦 ข้อมูลหลัก</h4>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>แบรนด์ *</label>
+          <select name="brand" required>
+            ${brands.map(b => `<option value="${escapeHtml(b.code)}" ${b.code === i.brand ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>หมวด *</label>
+          <input name="category" list="dl-uni-cats" value="${escapeHtml(i.category)}" required placeholder="เช่น เสื้อ, กางเกง"/>
+          <datalist id="dl-uni-cats">${['เสื้อ','กางเกง','กระโปรง','หมวก','รองเท้า','ถุงเท้า','อุปกรณ์',...categories].filter((v,j,a)=>a.indexOf(v)===j).map(v => `<option value="${escapeHtml(v)}">`).join('')}</datalist>
+        </div>
+        <div class="form-group span-2">
+          <label>ชื่อชุด *</label>
+          <input name="name" list="dl-uni-names" value="${escapeHtml(i.name)}" required placeholder="เช่น เสื้อยูนิฟอร์มแขนสั้น"/>
+          <datalist id="dl-uni-names">${['เสื้อยูนิฟอร์ม','เสื้อแขนสั้น','เสื้อแขนยาว','เสื้อโปโล','กางเกงขายาว','กางเกงขาสั้น','กระโปรง','หมวก','รองเท้า','ผ้ากันเปื้อน','เนคไท','เข็มขัด'].map(v => `<option value="${v}">`).join('')}</datalist>
+        </div>
+
+        <div class="form-group">
+          <label>ขนาด</label>
+          <input name="size" list="dl-uni-sizes" value="${escapeHtml(i.size)}" placeholder="S, M, L, XL, 36"/>
+          <datalist id="dl-uni-sizes">${['S','M','L','XL','XXL','XXXL','ฟรีไซส์','36','38','40','42','44',...sizes].filter((v,j,a)=>a.indexOf(v)===j).map(v => `<option value="${escapeHtml(v)}">`).join('')}</datalist>
+        </div>
+        <div class="form-group">
+          <label>สี</label>
+          <input name="color" list="dl-uni-colors" value="${escapeHtml(i.color)}" placeholder="เช่น ขาว, น้ำเงิน"/>
+          <datalist id="dl-uni-colors">${['ขาว','ดำ','น้ำเงิน','กรมท่า','แดง','เขียว','เหลือง','ส้ม','ม่วง','ชมพู','น้ำตาล','เทา','ครีม','ฟ้า',...colors].filter((v,j,a)=>a.indexOf(v)===j).map(v => `<option value="${escapeHtml(v)}">`).join('')}</datalist>
+        </div>
+        <div class="form-group">
+          <label>เพศ</label>
+          <select name="gender">
+            <option value="unisex" ${i.gender === 'unisex' ? 'selected' : ''}>⚧ Unisex (ทุกเพศ)</option>
+            <option value="male" ${i.gender === 'male' ? 'selected' : ''}>♂ ชาย</option>
+            <option value="female" ${i.gender === 'female' ? 'selected' : ''}>♀ หญิง</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>เนื้อผ้า/วัสดุ</label>
+          <input name="material" value="${escapeHtml(i.material)}" placeholder="เช่น Cotton 100%, Poly-Cotton 65/35"/>
+        </div>
+
+        <div class="form-group span-2">
+          <label>SKU (รหัสสากล) <span class="muted-2" style="font-weight:normal;font-size:11px">— สร้างอัตโนมัติได้ ⤵</span></label>
+          <div style="display:flex;gap:6px">
+            <input name="sku" id="itemSkuInput" value="${escapeHtml(i.sku)}" placeholder="เช่น KB-SHRT-M-WH" style="flex:1;font-family:monospace"/>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="autoGenerateSKU()" title="สร้าง SKU จาก brand+หมวด+ขนาด+สี">↻ สร้างอัตโนมัติ</button>
+          </div>
+          <small class="muted-2" style="font-size:11px">Format: BRAND-CATEGORY-SIZE-COLOR (เช่น KB-SHRT-M-WHITE)</small>
+        </div>
+      </div>
+
+      <h4 style="margin:18px 0 10px 0;color:var(--text);font-size:14px">📊 Stock & ราคา</h4>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>จำนวนใน Stock</label>
+          <input name="stockQty" type="number" min="0" value="${i.stockQty}" ${id ? 'readonly title="แก้ไขผ่านปุ่ม รับเข้า/ปรับ เพื่อบันทึก ledger"' : ''}/>
+          ${id ? '<small class="muted-2" style="font-size:11px">⚠ แก้ stock direct จะไม่ลง ledger — ใช้ปุ่ม "+ รับเข้า" หรือ "ปรับ" แทน</small>' : ''}
+        </div>
+        <div class="form-group">
+          <label>จุดสั่งซื้อ (Reorder Point)</label>
+          <input name="reorderPoint" type="number" min="0" value="${i.reorderPoint}" placeholder="5"/>
+          <small class="muted-2" style="font-size:11px">เตือนเมื่อ stock ต่ำกว่าค่านี้</small>
+        </div>
+        <div class="form-group">
+          <label>ราคา/ชิ้น (บาท)</label>
+          <input name="unitCost" type="number" min="0" step="0.01" value="${i.unitCost}"/>
+        </div>
+        <div class="form-group">
+          <label>สถานะ</label>
+          <select name="active">
+            <option value="true" ${i.active ? 'selected' : ''}>✓ ใช้งาน</option>
+            <option value="false" ${!i.active ? 'selected' : ''}>⊘ ปิดใช้งาน</option>
+          </select>
+        </div>
+      </div>
+
+      <h4 style="margin:18px 0 10px 0;color:var(--text);font-size:14px">🏭 Supplier & รูป</h4>
+      <div class="form-grid">
+        <div class="form-group span-2">
+          <label>ผู้ผลิต/Supplier</label>
+          <input name="supplier" value="${escapeHtml(i.supplier)}" placeholder="ชื่อโรงงาน/บริษัทผู้ผลิต"/>
+        </div>
+        <div class="form-group span-2">
+          <label>URL รูปภาพ <span class="muted-2" style="font-weight:normal;font-size:11px">(optional)</span></label>
+          <input name="imageUrl" type="url" value="${escapeHtml(i.imageUrl)}" placeholder="https://..."/>
+        </div>
+        <div class="form-group span-2">
+          <label>หมายเหตุ</label>
+          <textarea name="note" rows="2" placeholder="ข้อมูลเพิ่มเติม">${escapeHtml(i.note)}</textarea>
+        </div>
+      </div>
+
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" data-close>ยกเลิก</button>
         <button type="submit" class="btn btn-primary">บันทึก</button>
@@ -9091,8 +9458,14 @@ function openUniformItemForm(id = null) {
       const data = Object.fromEntries(new FormData(e.target).entries());
       data.stockQty = Number(data.stockQty || 0);
       data.unitCost = Number(data.unitCost || 0);
+      data.reorderPoint = Number(data.reorderPoint || 5);
       data.active = data.active === 'true';
-      if (id) data.id = id;
+      if (id) {
+        data.id = id;
+        // ป้องกัน stockQty override (readonly) — เก็บค่าเดิมจาก DB
+        const orig = DB.getUniformItem(id);
+        if (orig) data.stockQty = orig.stockQty;
+      }
       await DB.saveUniformItem(data);
       modal.close();
       toast(id ? 'บันทึกแล้ว' : 'เพิ่มรายการชุดแล้ว', 'success');
@@ -9100,6 +9473,120 @@ function openUniformItemForm(id = null) {
       router.go('uniform');
     } catch (ex) { toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
   });
+}
+
+// ── Helper: Auto-generate SKU ──
+function autoGenerateSKU() {
+  const form = document.getElementById('uniItemForm');
+  if (!form) return;
+  const brand = (form.brand?.value || 'KB').toUpperCase();
+  const cat = form.category?.value || '';
+  const catCode = ({
+    'เสื้อ': 'SHRT', 'กางเกง': 'PANT', 'กระโปรง': 'SKRT',
+    'หมวก': 'CAP', 'รองเท้า': 'SHOE', 'ถุงเท้า': 'SOCK',
+    'อุปกรณ์': 'ACC'
+  })[cat] || (cat.slice(0, 4).toUpperCase() || 'ITEM');
+  const size = (form.size?.value || 'FREE').toUpperCase().replace(/\s+/g, '');
+  const color = (form.color?.value || '').toUpperCase().replace(/\s+/g, '').slice(0, 5);
+  const sku = [brand, catCode, size, color].filter(Boolean).join('-');
+  const skuInput = document.getElementById('itemSkuInput');
+  if (skuInput) skuInput.value = sku;
+}
+
+// ─── Modal: จัดการ Brands ───
+function openUniformBrandsManager() {
+  if (!requireHR()) return;
+  const brands = DB.getUniformBrands();
+  modal.open('🏷️ จัดการแบรนด์ Uniform', `
+    <div style="background:#eff6ff;padding:8px 12px;border-radius:6px;margin-bottom:14px;font-size:13px;color:#1e40af">
+      💡 แบรนด์ใช้แยกหมวดหมู่ uniform — เปิดแบรนด์ใหม่ได้เมื่อขยายธุรกิจ เช่น สาขา-แบรนด์ใหม่
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="openBrandForm()" style="margin-bottom:12px">+ เพิ่มแบรนด์</button>
+    <div class="table-wrap" style="max-height:55vh;overflow:auto">
+      <table class="table table-compact">
+        <thead><tr><th>Code</th><th>ชื่อแบรนด์</th><th>คำอธิบาย</th><th>สถานะ</th><th class="num">รายการ</th><th></th></tr></thead>
+        <tbody id="brandsListBody">
+          ${brands.map(b => {
+            const itemCount = DB.getUniformItems({ brand: b.code }).length;
+            return `<tr>
+              <td><strong style="font-family:monospace">${escapeHtml(b.code)}</strong></td>
+              <td>${escapeHtml(b.name)}</td>
+              <td><span class="muted-2" style="font-size:13px">${escapeHtml(b.description || '-')}</span></td>
+              <td>${b.active ? '<span class="badge badge-success">ใช้งาน</span>' : '<span class="badge">ปิด</span>'}</td>
+              <td class="num">${fmt.num(itemCount)}</td>
+              <td class="actions">
+                <button class="btn btn-ghost btn-sm" onclick="openBrandForm('${escapeHtml(b.id)}')">แก้ไข</button>
+                ${itemCount === 0 ? `<button class="btn btn-ghost btn-sm" onclick="deleteBrand('${escapeHtml(b.id)}')">ลบ</button>` : '<span class="muted-2" style="font-size:11px">มี items</span>'}
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `, () => { /* no submit */ });
+}
+
+function openBrandForm(id = null) {
+  const b = id ? DB.getUniformBrand(id) : { id: '', code: '', name: '', description: '', active: true, sortOrder: 0 };
+  if (!b) return;
+  modal.open(id ? 'แก้ไขแบรนด์' : 'เพิ่มแบรนด์', `
+    <form id="brandForm">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Code *</label>
+          <input name="code" value="${escapeHtml(b.code)}" required placeholder="KB, SW, NEW" maxlength="20" style="text-transform:uppercase;font-family:monospace" ${id ? 'readonly' : ''}/>
+          <small class="muted-2" style="font-size:11px">รหัสสั้นใช้ใน SKU (แก้ไม่ได้หลังสร้าง)</small>
+        </div>
+        <div class="form-group">
+          <label>ลำดับแสดง</label>
+          <input name="sortOrder" type="number" value="${b.sortOrder}"/>
+        </div>
+        <div class="form-group span-2">
+          <label>ชื่อแบรนด์ *</label>
+          <input name="name" value="${escapeHtml(b.name)}" required placeholder="เช่น Kacha Brothers, Safari World"/>
+        </div>
+        <div class="form-group span-2">
+          <label>คำอธิบาย</label>
+          <textarea name="description" rows="2">${escapeHtml(b.description || '')}</textarea>
+        </div>
+        <div class="form-group span-2">
+          <label>สถานะ</label>
+          <select name="active">
+            <option value="true" ${b.active ? 'selected' : ''}>ใช้งาน</option>
+            <option value="false" ${!b.active ? 'selected' : ''}>ปิด</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" data-close>ยกเลิก</button>
+        <button type="submit" class="btn btn-primary">บันทึก</button>
+      </div>
+    </form>
+  `, () => {
+    document.getElementById('brandForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target));
+      data.code = (data.code || '').toUpperCase();
+      data.sortOrder = Number(data.sortOrder || 0);
+      data.active = data.active === 'true';
+      if (id) data.id = id;
+      try {
+        await DB.saveUniformBrand(data);
+        toast(id ? 'บันทึกแล้ว' : 'เพิ่มแบรนด์แล้ว', 'success');
+        modal.close();
+        openUniformBrandsManager();
+      } catch (ex) { toast('บันทึกไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
+    });
+  });
+}
+
+async function deleteBrand(id) {
+  if (!await modal.confirm('ลบแบรนด์', 'ลบแบรนด์นี้ใช่หรือไม่?')) return;
+  try {
+    await DB.deleteUniformBrand(id);
+    toast('ลบแล้ว', 'success');
+    openUniformBrandsManager();
+  } catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
 }
 
 async function deleteUniformItem(id) {
@@ -9118,23 +9605,37 @@ async function deleteUniformIssue(id) {
   catch (ex) { toast('ลบไม่สำเร็จ: ' + (ex.message || ex), 'error'); }
 }
 
-// ─── EXCEL: export ประวัติการจัดชุด ───
+// ─── EXCEL: export ประวัติการจัดชุด — ใช้ filter ปัจจุบัน ───
 async function exportUniformIssuesXLSX() {
   if (!requireHR()) return; // 🔒 ประวัติการจัดชุด — รายชื่อพนักงานทั้งบริษัท
   if (typeof XLSX === 'undefined') {
     toast('กำลังโหลด XLSX library...', 'info');
     try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; }
   }
-  const list = DB.getUniformIssues();
+  // ใช้ filter จาก state ปัจจุบัน (ผู้ใช้ filter ในแท็บ → export ตรงนั้น)
+  const list = DB.getUniformIssues({
+    dateFrom: _uniformState.issDateFrom || undefined,
+    dateTo: _uniformState.issDateTo || undefined,
+    itemId: _uniformState.issItemId || undefined,
+    brand: _uniformState.issBrand || undefined,
+    category: _uniformState.issCategory || undefined
+  });
   if (!list.length) { toast('ยังไม่มีข้อมูล', 'warning'); return; }
   const cs = csvSafe;
+  const itemMap = new Map(DB.getUniformItems().map(it => [it.id, it]));
   const rows = list.map(i => {
     const e = DB.getEmployee(i.employeeId) || {};
+    const itemObj = itemMap.get(i.itemId) || {};
     return {
       'วันที่จัดส่ง': excelDate(i.issuedDate),
       'รหัสพนักงาน': excelNum(i.employeeId),
       'ชื่อ-นามสกุล': cs((e.firstName || '') + ' ' + (e.lastName || '')),
+      'สาขา': cs(e.branch || ''),
+      'แบรนด์': cs(itemObj.brand || ''),
+      'หมวด': cs(itemObj.category || ''),
       'รายการชุด': cs(i.itemName),
+      'SKU': cs(itemObj.sku || ''),
+      'สี': cs(itemObj.color || ''),
       'ขนาด': cs(i.size),
       'จำนวน': Number(i.qty || 0),
       'ราคา/ชิ้น': Number(i.unitCost || 0),

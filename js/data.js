@@ -25,6 +25,7 @@ const DB = {
     evaluations: [],
     calendar: [],
     applicants: [],
+    uniformBrands: [],      // master แบรนด์
     uniformItems: [],
     uniformRequests: [],
     uniformIssues: [],
@@ -869,6 +870,7 @@ const DB = {
       timed('evaluations',             this._fetchAllPages('evaluations', 'date', false).catch(() => [])),
       timed('salary_history',          this._fetchAllPages('salary_history', 'date', false).catch(() => [])),
       timed('applicants',              this._fetchAllPages('applicants', 'applied_date', false).catch(() => [])),
+      timed('uniform_brands',          this._fetchAllPages('uniform_brands', 'sort_order', true).catch(() => [])),
       timed('uniform_items',           this._fetchAllPages('uniform_items', 'name', true).catch(() => [])),
       timed('uniform_requests',        this._fetchAllPages('uniform_requests', 'requested_date', false).catch(() => [])),
       timed('uniform_issues',          this._fetchAllPages('uniform_issues', 'issued_date', false).catch(() => [])),
@@ -882,7 +884,7 @@ const DB = {
       timed('employees_archive',       fetchEmployeesArchive().catch(() => []))
     ]).then(([cal, comp, leaves, lvTypes, swapReqs,
               loans, advs, allow, evals, sal, appls,
-              uniItems, uniReqs, uniIssues, uniMoves, uniSched,
+              uniBrands, uniItems, uniReqs, uniIssues, uniMoves, uniSched,
               shifts, schedWeeks, schedEntries, borrowReqs,
               oldEmps]) => {
       // ใหม่: ตาราง critical-but-not-dashboard ที่ย้ายมา
@@ -898,6 +900,7 @@ const DB = {
       this.data.evaluations = evals.map(this._evalFromDB);
       this.data.salaryHistory = sal.map(this._salFromDB);
       this.data.applicants = appls.map(this._applFromDB);
+      this.data.uniformBrands = (uniBrands || []).map(this._uniBrandFromDB);
       this.data.uniformItems = uniItems.map(this._uniItemFromDB);
       this.data.uniformRequests = uniReqs.map(this._uniReqFromDB);
       this.data.uniformIssues = uniIssues.map(this._uniIssueFromDB);
@@ -1002,6 +1005,7 @@ const DB = {
       salary_history: { list: 'salaryHistory', from: this._salFromDB },
       calendar_items: { list: 'calendar', from: this._calFromDB },
       applicants: { list: 'applicants', from: this._applFromDB },
+      uniform_brands: { list: 'uniformBrands', from: this._uniBrandFromDB },
       uniform_items: { list: 'uniformItems', from: this._uniItemFromDB },
       uniform_requests: { list: 'uniformRequests', from: this._uniReqFromDB },
       uniform_issues: { list: 'uniformIssues', from: this._uniIssueFromDB },
@@ -1322,7 +1326,19 @@ const DB = {
     stockQty: Number(r.stock_qty || 0),
     unitCost: Number(r.unit_cost || 0),
     active: r.active !== false,
-    note: r.note || ''
+    note: r.note || '',
+    // [Modern Inventory] field ใหม่
+    brand: r.brand || '',                       // "KB", "SW", ...
+    category: r.category || '',                 // "เสื้อ", "กางเกง", "หมวก"
+    subcategory: r.subcategory || '',
+    color: r.color || '',
+    sku: r.sku || '',
+    reorderPoint: Number(r.reorder_point || 5),
+    supplier: r.supplier || '',
+    gender: r.gender || '',                     // 'male' / 'female' / 'unisex'
+    material: r.material || '',
+    imageUrl: r.image_url || '',
+    sortOrder: Number(r.sort_order || 0)
   }),
   _uniItemToDB: (i) => ({
     name: i.name,
@@ -1330,7 +1346,35 @@ const DB = {
     stock_qty: Number(i.stockQty || 0),
     unit_cost: Number(i.unitCost || 0),
     active: i.active !== false,
-    note: i.note || null
+    note: i.note || null,
+    brand: i.brand || null,
+    category: i.category || null,
+    subcategory: i.subcategory || null,
+    color: i.color || null,
+    sku: i.sku || null,
+    reorder_point: i.reorderPoint != null ? Number(i.reorderPoint) : 5,
+    supplier: i.supplier || null,
+    gender: i.gender || null,
+    material: i.material || null,
+    image_url: i.imageUrl || null,
+    sort_order: Number(i.sortOrder || 0)
+  }),
+  _uniBrandFromDB: (r) => ({
+    id: r.id,
+    code: r.code || '',
+    name: r.name || '',
+    description: r.description || '',
+    logoUrl: r.logo_url || '',
+    active: r.active !== false,
+    sortOrder: Number(r.sort_order || 0)
+  }),
+  _uniBrandToDB: (b) => ({
+    code: b.code,
+    name: b.name,
+    description: b.description || null,
+    logo_url: b.logoUrl || null,
+    active: b.active !== false,
+    sort_order: Number(b.sortOrder || 0)
   }),
   _uniReqFromDB: (r) => ({
     id: r.id,
@@ -2514,13 +2558,65 @@ const DB = {
     };
   },
 
+  // ─── UNIFORM BRANDS (master) ───
+  getUniformBrands({ activeOnly = false } = {}) {
+    let list = (this.data.uniformBrands || []).slice();
+    if (activeOnly) list = list.filter(b => b.active);
+    return list.sort((a, b) => (a.sortOrder - b.sortOrder) || (a.code || '').localeCompare(b.code || ''));
+  },
+  getUniformBrand(idOrCode) {
+    return (this.data.uniformBrands || []).find(b => b.id === idOrCode || b.code === idOrCode);
+  },
+  async saveUniformBrand(brand) {
+    const row = this._uniBrandToDB(brand);
+    if (brand.id) row.id = brand.id;
+    const { data, error } = await this.client.from('uniform_brands').upsert(row).select().single();
+    if (error) throw error;
+    const mapped = this._uniBrandFromDB(data);
+    const idx = (this.data.uniformBrands || []).findIndex(b => b.id === mapped.id);
+    if (idx >= 0) this.data.uniformBrands[idx] = mapped;
+    else this.data.uniformBrands.push(mapped);
+    return mapped;
+  },
+  async deleteUniformBrand(id) {
+    const { error } = await this.client.from('uniform_brands').delete().eq('id', id);
+    if (error) throw error;
+    this.data.uniformBrands = (this.data.uniformBrands || []).filter(b => b.id !== id);
+  },
+
   // ─── UNIFORM ITEMS (master) ───
-  getUniformItems({ activeOnly = false } = {}) {
+  getUniformItems({ activeOnly = false, brand, category, lowStock } = {}) {
     let list = this.data.uniformItems.slice();
     if (activeOnly) list = list.filter(i => i.active);
-    return list.sort((a, b) => (a.name || '').localeCompare(b.name || '') || (a.size || '').localeCompare(b.size || ''));
+    if (brand) list = list.filter(i => i.brand === brand);
+    if (category) list = list.filter(i => i.category === category);
+    if (lowStock) list = list.filter(i => Number(i.stockQty) <= Number(i.reorderPoint || 5));
+    return list.sort((a, b) =>
+      (a.sortOrder - b.sortOrder) ||
+      (a.brand || '').localeCompare(b.brand || '') ||
+      (a.category || '').localeCompare(b.category || '') ||
+      (a.name || '').localeCompare(b.name || '') ||
+      (a.size || '').localeCompare(b.size || '')
+    );
   },
   getUniformItem(id) { return this.data.uniformItems.find(i => i.id === id); },
+
+  // ─── Helper: Distinct values สำหรับ filter dropdowns + datalists ───
+  getUniformDistinctCategories() {
+    const set = new Set();
+    for (const i of this.data.uniformItems) if (i.category) set.add(i.category);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  },
+  getUniformDistinctColors() {
+    const set = new Set();
+    for (const i of this.data.uniformItems) if (i.color) set.add(i.color);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  },
+  getUniformDistinctSizes() {
+    const set = new Set();
+    for (const i of this.data.uniformItems) if (i.size) set.add(i.size);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  },
   async saveUniformItem(item) {
     const row = this._uniItemToDB(item);
     if (item.id) row.id = item.id;
@@ -2762,10 +2858,24 @@ const DB = {
   },
 
   // ─── UNIFORM ISSUES (line items) ───
-  getUniformIssues({ requestId, employeeId } = {}) {
+  getUniformIssues({ requestId, employeeId, itemId, dateFrom, dateTo, brand, category } = {}) {
     let list = this.data.uniformIssues.slice();
     if (requestId) list = list.filter(i => i.requestId === requestId);
     if (employeeId) list = list.filter(i => i.employeeId === employeeId);
+    if (itemId) list = list.filter(i => i.itemId === itemId);
+    if (dateFrom) list = list.filter(i => (i.issuedDate || '') >= dateFrom);
+    if (dateTo)   list = list.filter(i => (i.issuedDate || '') <= dateTo);
+    if (brand || category) {
+      // filter by brand/category via uniform_items lookup
+      const itemMap = new Map(this.data.uniformItems.map(it => [it.id, it]));
+      list = list.filter(i => {
+        const item = itemMap.get(i.itemId);
+        if (!item) return false;
+        if (brand && item.brand !== brand) return false;
+        if (category && item.category !== category) return false;
+        return true;
+      });
+    }
     return list.sort((a, b) => (b.issuedDate || '').localeCompare(a.issuedDate || ''));
   },
   // Save issue + recalc request.total_cost
