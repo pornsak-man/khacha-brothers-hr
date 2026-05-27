@@ -7063,8 +7063,11 @@ const APPL_STATUS_TO_EN = {
   'รับเข้าทำงาน': 'hired', 'รับเข้า': 'hired', 'hired': 'hired'
 };
 
-function downloadApplicantTemplate() {
-  if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(downloadApplicantTemplate, 800); return; }
+async function downloadApplicantTemplate() {
+  if (typeof XLSX === 'undefined') {
+    toast('กำลังโหลด XLSX library...', 'info');
+    try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; }
+  }
 
   // ตัวอย่าง 2 แถว — ครอบคลุมหลายสถานะ
   const sample = [
@@ -7139,9 +7142,12 @@ function downloadApplicantTemplate() {
   toast('ดาวน์โหลด template แล้ว', 'success');
 }
 
-function exportApplicantsXLSX() {
+async function exportApplicantsXLSX() {
   if (!requireHR()) return; // 🔒 ข้อมูลผู้สมัคร — ส่วนตัว + เงินเดือนที่ขอ
-  if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(exportApplicantsXLSX, 800); return; }
+  if (typeof XLSX === 'undefined') {
+    toast('กำลังโหลด XLSX library...', 'info');
+    try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; }
+  }
   const list = DB.getApplicants();
   if (!list.length) { toast('ยังไม่มีข้อมูลผู้สมัคร', 'warning'); return; }
   const cs = csvSafe;
@@ -8626,9 +8632,12 @@ async function deleteUniformIssue(id) {
 }
 
 // ─── EXCEL: export ประวัติการจัดชุด ───
-function exportUniformIssuesXLSX() {
+async function exportUniformIssuesXLSX() {
   if (!requireHR()) return; // 🔒 ประวัติการจัดชุด — รายชื่อพนักงานทั้งบริษัท
-  if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(exportUniformIssuesXLSX, 800); return; }
+  if (typeof XLSX === 'undefined') {
+    toast('กำลังโหลด XLSX library...', 'info');
+    try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; }
+  }
   const list = DB.getUniformIssues();
   if (!list.length) { toast('ยังไม่มีข้อมูล', 'warning'); return; }
   const cs = csvSafe;
@@ -8973,8 +8982,11 @@ const CHANGE_IMPORT_COLUMNS = [
   'สาขาใหม่', 'รหัสฝ่ายใหม่', 'เหตุผล'
 ];
 
-function downloadEmployeeChangesTemplate() {
-  if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(downloadEmployeeChangesTemplate, 800); return; }
+async function downloadEmployeeChangesTemplate() {
+  if (typeof XLSX === 'undefined') {
+    toast('กำลังโหลด XLSX library...', 'info');
+    try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; }
+  }
 
   const sample = [
     {
@@ -9052,9 +9064,12 @@ function downloadEmployeeChangesTemplate() {
   toast('ดาวน์โหลด template แล้ว', 'success');
 }
 
-function exportEmployeeChangesXLSX() {
+async function exportEmployeeChangesXLSX() {
   if (!requireHR()) return; // 🔒 ประวัติการปรับเงินเดือน — sensitive สูง
-  if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(exportEmployeeChangesXLSX, 800); return; }
+  if (typeof XLSX === 'undefined') {
+    toast('กำลังโหลด XLSX library...', 'info');
+    try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; }
+  }
   const list = DB.getSalaryHistory();
   if (!list.length) { toast('ยังไม่มีประวัติการปรับ', 'warning'); return; }
   const cs = csvSafe;
@@ -9887,9 +9902,12 @@ router.register('reports', () => {
     </div>`;
 });
 
-function exportPayrollXLSX() {
+async function exportPayrollXLSX() {
   if (!requireHR()) return; // 🔒 เฉพาะ admin/HR — บัญชีเงินเดือนทั้งบริษัท
-  if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(exportPayrollXLSX, 800); return; }
+  if (typeof XLSX === 'undefined') {
+    toast('กำลังโหลด XLSX library...', 'info');
+    try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; }
+  }
   const cs = csvSafe;
   const month = tz.thisMonth();
   const rows = DB.getEmployees({ status: 'active' }).map(e => {
@@ -9942,9 +9960,12 @@ function exportPayrollXLSX() {
   toast('ส่งออกบัญชีเงินเดือนแล้ว', 'success');
 }
 
-function exportLoansXLSX() {
+async function exportLoansXLSX() {
   if (!requireHR()) return; // 🔒 เฉพาะ admin/HR — รายการกู้ทั้งบริษัท
-  if (typeof XLSX === 'undefined') { toast('กำลังโหลด...', 'warning'); setTimeout(exportLoansXLSX, 800); return; }
+  if (typeof XLSX === 'undefined') {
+    toast('กำลังโหลด XLSX library...', 'info');
+    try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; }
+  }
   const cs = csvSafe;
   const rows = DB.getLoans().map(l => {
     const e = DB.getEmployee(l.employeeId) || {};
