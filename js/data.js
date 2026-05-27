@@ -2607,6 +2607,77 @@ const DB = {
     return list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   },
 
+  // [Stock Ledger] คำนวณ stock ณ สิ้นวันที่ระบุ
+  // หลักการ: stock_at_date = current_stock − sum(delta of all movements after date)
+  // asOfDate format: 'YYYY-MM-DD' (สิ้นวัน 23:59:59)
+  getUniformStockAtDate(itemId, asOfDate) {
+    const item = this.getUniformItem(itemId);
+    if (!item) return 0;
+    if (!asOfDate) return Number(item.stockQty || 0);
+
+    const currentStock = Number(item.stockQty || 0);
+    // movements ที่เกิดหลังสิ้นวัน asOfDate
+    const cutoff = asOfDate + 'T23:59:59.999Z';
+    const futureMoves = (this.data.uniformMovements || []).filter(m =>
+      m.itemId === itemId && (m.createdAt || '') > cutoff
+    );
+    const sumFutureDelta = futureMoves.reduce((s, m) => s + Number(m.delta || 0), 0);
+    return currentStock - sumFutureDelta;
+  },
+
+  // [Stock Ledger] snapshot ของทุก items ณ วันที่
+  getUniformStockSnapshotAtDate(asOfDate) {
+    return this.getUniformItems().map(item => ({
+      ...item,
+      stockQtyAtDate: this.getUniformStockAtDate(item.id, asOfDate)
+    }));
+  },
+
+  // [Stock Ledger] รายงานรายเดือน — stock ต้นเดือน, in, out, ปรับ, สิ้นเดือน
+  // year: ค.ศ., month: 1-12
+  getUniformStockMonthlyReport(year, month) {
+    const mm = String(month).padStart(2, '0');
+    const lastDay = new Date(year, month, 0).getDate();
+    const startDate = `${year}-${mm}-01`;
+    const endDate = `${year}-${mm}-${String(lastDay).padStart(2, '0')}`;
+    // สิ้นวันสุดท้ายของเดือนก่อนหน้า (สำหรับ stock ต้นเดือน)
+    const prevMonthEnd = (() => {
+      const d = new Date(year, month - 1, 0);  // วันสุดท้ายของเดือนก่อนหน้า
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    })();
+
+    return this.getUniformItems().map(item => {
+      const stockStart = this.getUniformStockAtDate(item.id, prevMonthEnd);
+      const stockEnd   = this.getUniformStockAtDate(item.id, endDate);
+
+      const movesInMonth = (this.data.uniformMovements || []).filter(m => {
+        const d = (m.createdAt || '').slice(0, 10);
+        return m.itemId === item.id && d >= startDate && d <= endDate;
+      });
+
+      const received = movesInMonth.filter(m => m.movementType === 'receive').reduce((s, m) => s + Number(m.delta || 0), 0);
+      const issued   = movesInMonth.filter(m => m.movementType === 'issue').reduce((s, m) => s + Math.abs(Number(m.delta || 0)), 0);
+      const returned = movesInMonth.filter(m => m.movementType === 'return').reduce((s, m) => s + Number(m.delta || 0), 0);
+      const adjusted = movesInMonth.filter(m => m.movementType === 'adjust').reduce((s, m) => s + Number(m.delta || 0), 0);
+
+      return {
+        itemId: item.id,
+        itemName: item.name,
+        itemSize: item.size || '-',
+        unitCost: Number(item.unitCost || 0),
+        stockStart,
+        received,    // + รับเข้า
+        issued,      // − จัดให้พนักงาน (positive number = ออก)
+        returned,    // + คืน (จากลบ issue)
+        adjusted,    // +/- ปรับ manual
+        stockEnd,
+        movementCount: movesInMonth.length,
+        valueStart: stockStart * Number(item.unitCost || 0),
+        valueEnd: stockEnd * Number(item.unitCost || 0)
+      };
+    });
+  },
+
   // ─── UNIFORM REQUESTS (header) ───
   getUniformRequests({ status, employeeId, _noScope = false } = {}) {
     let list = this.data.uniformRequests.slice();

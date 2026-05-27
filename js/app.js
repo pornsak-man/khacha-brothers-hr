@@ -7659,7 +7659,7 @@ const UNIFORM_REQUEST_TYPES = {
   periodic: { label: 'ครบรอบเปลี่ยน', cls: 'badge-success', isFree: true,  hint: 'ฟรี (เช่น ครบ 1 ปี)' },
   extra:    { label: 'ขอเพิ่ม',       cls: 'badge-warning', isFree: false, hint: 'พนักงานจ่ายเอง' }
 };
-const _uniformState = { tab: 'requests', filter: '' };
+const _uniformState = { tab: 'requests', filter: '', stockAsOfDate: '', movDateFrom: '', movDateTo: '', movItemId: '', movType: '' };
 const DAY_NAMES_TH = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
 const DAY_NAMES_SHORT = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
 
@@ -8098,29 +8098,62 @@ function renderUniformRequestsTable() {
 function renderUniformItemsTable() {
   const items = DB.getUniformItems();
   if (!items.length) return `<div class="empty-state"><div class="title">ยังไม่มีรายการชุด</div><div class="hint">กดปุ่ม "+ เพิ่มรายการชุด" ด้านบน</div></div>`;
+
+  // ดู stock ย้อนหลัง — ถ้าเลือกวันที่ จะคำนวณจาก ledger
+  const asOfDate = _uniformState.stockAsOfDate || '';
+  const isHistorical = !!asOfDate;
+  const today = tz.today();
+
+  const displayItems = isHistorical
+    ? items.map(i => ({ ...i, displayStock: DB.getUniformStockAtDate(i.id, asOfDate) }))
+    : items.map(i => ({ ...i, displayStock: Number(i.stockQty || 0) }));
+
   return `
+    <div class="sw-filter-bar" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--bg-soft, #f5f3ee);padding:10px 12px;border-radius:8px">
+      <strong>ดู Stock:</strong>
+      <button class="btn ${!isHistorical ? 'btn-primary' : 'btn-secondary'} btn-sm" onclick="setUniformStockDate('')">ปัจจุบัน</button>
+      <span class="muted-2">หรือ ณ วันที่:</span>
+      <input type="date" value="${escapeHtml(asOfDate)}" max="${today}" onchange="setUniformStockDate(this.value)" class="sw-filter-input" style="max-width:160px"/>
+      ${isHistorical ? `<span class="badge badge-info">📅 Stock ณ สิ้นวัน ${escapeHtml(asOfDate)}</span>` : ''}
+      <div style="flex:1"></div>
+      <button class="btn btn-secondary btn-sm" onclick="openUniformMonthlyReportModal()" title="รายงาน in/out รายเดือน">📊 รายงานรายเดือน</button>
+    </div>
     <div class="table-wrap"><table class="table table-compact">
       <thead><tr>
-        <th>ชื่อชุด</th><th>ขนาด</th><th class="num">Stock</th><th class="num">ราคา/ชิ้น</th>
+        <th>ชื่อชุด</th><th>ขนาด</th>
+        <th class="num">${isHistorical ? 'Stock ย้อนหลัง' : 'Stock'}</th>
+        ${isHistorical ? '<th class="num">ปัจจุบัน</th>' : ''}
+        <th class="num">ราคา/ชิ้น</th>
         <th class="num">มูลค่า Stock</th><th>สถานะ</th><th>หมายเหตุ</th><th></th>
       </tr></thead>
       <tbody>
-        ${items.map(i => {
-          const stockClass = Number(i.stockQty) < 5 ? 'style="color:var(--danger);font-weight:600"' : '';
+        ${displayItems.map(i => {
+          const stockClass = Number(i.displayStock) < 5 ? 'style="color:var(--danger);font-weight:600"' : '';
+          const diffBadge = isHistorical
+            ? (() => {
+                const diff = Number(i.stockQty) - Number(i.displayStock);
+                if (diff === 0) return '';
+                const cls = diff > 0 ? 'badge-success' : 'badge-warning';
+                const sign = diff > 0 ? '+' : '';
+                return ` <span class="badge ${cls}" style="font-size:11px">${sign}${fmt.num(diff)}</span>`;
+              })()
+            : '';
           return `<tr>
             <td><strong>${escapeHtml(i.name)}</strong></td>
             <td>${escapeHtml(i.size || '-')}</td>
-            <td class="num" ${stockClass}>${fmt.num(i.stockQty)}</td>
+            <td class="num" ${stockClass}>${fmt.num(i.displayStock)}</td>
+            ${isHistorical ? `<td class="num"><span class="muted-2">${fmt.num(i.stockQty)}</span>${diffBadge}</td>` : ''}
             <td class="num">${fmt.money(i.unitCost)}</td>
-            <td class="num">${fmt.money(Number(i.stockQty) * Number(i.unitCost))}</td>
+            <td class="num">${fmt.money(Number(i.displayStock) * Number(i.unitCost))}</td>
             <td>${i.active ? '<span class="badge badge-success">ใช้งาน</span>' : '<span class="badge">ปิด</span>'}</td>
             <td>${escapeHtml(i.note || '-')}</td>
             <td class="actions">
-              ${DB.isHR ? `
+              ${DB.isHR && !isHistorical ? `
                 <button class="btn btn-ghost btn-sm" onclick="openReceiveStockForm('${escapeHtml(i.id)}')" title="รับเข้า — สั่งผลิต/สั่งซื้อ">+ รับเข้า</button>
                 <button class="btn btn-ghost btn-sm" onclick="openAdjustStockForm('${escapeHtml(i.id)}')" title="ปรับ stock — นับสต๊อกจริง">ปรับ</button>
                 <button class="btn btn-ghost btn-sm" onclick="openUniformItemForm('${escapeHtml(i.id)}')">แก้ไข</button>
                 <button class="btn btn-ghost btn-sm" onclick="deleteUniformItem('${escapeHtml(i.id)}')">ลบ</button>` : ''}
+              ${isHistorical ? `<span class="muted-2" style="font-size:12px">(โหมดย้อนหลัง — ดูอย่างเดียว)</span>` : ''}
             </td>
           </tr>`;
         }).join('')}
@@ -8129,16 +8162,227 @@ function renderUniformItemsTable() {
   `;
 }
 
-// ─── ตาราง ความเคลื่อนไหว Stock (ledger immutable) ───
-function renderUniformMovementsTable() {
-  const moves = DB.getUniformStockMovements();
-  if (!moves.length) return `<div class="empty-state">
-    <div class="title">ยังไม่มีความเคลื่อนไหว Stock</div>
-    <div class="hint">เมื่อ HR รับเข้า/จัดให้พนักงาน/ปรับ stock — รายการจะแสดงที่นี่</div>
-  </div>`;
+// ─── Helper: เปลี่ยนวันที่ดู stock ย้อนหลัง ───
+function setUniformStockDate(ymd) {
+  _uniformState.stockAsOfDate = ymd || '';
+  router.go('uniform');
+}
+
+// ─── Helper: filter movements ───
+function setMovementFilter(key, value) {
+  if (key === 'item') _uniformState.movItemId = value || '';
+  else if (key === 'type') _uniformState.movType = value || '';
+  else if (key === 'from') _uniformState.movDateFrom = value || '';
+  else if (key === 'to')   _uniformState.movDateTo = value || '';
+  router.go('uniform');
+}
+function clearMovementFilters() {
+  _uniformState.movItemId = '';
+  _uniformState.movType = '';
+  _uniformState.movDateFrom = '';
+  _uniformState.movDateTo = '';
+  router.go('uniform');
+}
+
+// ─── Modal: รายงาน Stock รายเดือน ───
+const _monthlyReportState = { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
+
+function openUniformMonthlyReportModal() {
+  if (!requireHR()) return;
+  modal.open('📊 รายงาน Stock รายเดือน', renderMonthlyReportContent(), () => { /* no submit */ });
+}
+
+function renderMonthlyReportContent() {
+  const { year, month } = _monthlyReportState;
+  const report = DB.getUniformStockMonthlyReport(year, month);
+  const thaiMonths = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+
+  const monthsOpts = thaiMonths.map((m, i) =>
+    `<option value="${i + 1}" ${i + 1 === month ? 'selected' : ''}>${m}</option>`
+  ).join('');
+
+  // generate years ±3 จากปัจจุบัน
+  const currentYear = new Date().getFullYear();
+  const yearsOpts = [];
+  for (let y = currentYear - 3; y <= currentYear + 1; y++) {
+    yearsOpts.push(`<option value="${y}" ${y === year ? 'selected' : ''}>${y + 543}</option>`);  // ปี พ.ศ.
+  }
+
+  // sum totals
+  const totalStartValue = report.reduce((s, r) => s + r.valueStart, 0);
+  const totalEndValue   = report.reduce((s, r) => s + r.valueEnd, 0);
+  const totalReceived   = report.reduce((s, r) => s + r.received, 0);
+  const totalIssued     = report.reduce((s, r) => s + r.issued, 0);
+
+  return `
+    <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
+      <strong>เลือกเดือน:</strong>
+      <select onchange="setMonthlyReportFilter('month', this.value)" class="sw-filter-select">${monthsOpts}</select>
+      <select onchange="setMonthlyReportFilter('year', this.value)" class="sw-filter-select">${yearsOpts}</select>
+      <div style="flex:1"></div>
+      <button class="btn btn-secondary btn-sm" onclick="exportMonthlyReportXLSX()">${ICON.download}ส่งออก Excel</button>
+    </div>
+
+    <div class="sw-stat-row" style="margin-bottom:12px">
+      <div class="sw-stat-card" style="flex:1">
+        <div class="sw-stat-label">รวมรับเข้าเดือนนี้</div>
+        <div class="sw-stat-value" style="color:var(--success)">+${fmt.num(totalReceived)}</div>
+        <div class="sw-stat-change">ชิ้น</div>
+      </div>
+      <div class="sw-stat-card" style="flex:1">
+        <div class="sw-stat-label">รวมจัดให้พนักงาน</div>
+        <div class="sw-stat-value" style="color:var(--danger)">−${fmt.num(totalIssued)}</div>
+        <div class="sw-stat-change">ชิ้น</div>
+      </div>
+      <div class="sw-stat-card" style="flex:1">
+        <div class="sw-stat-label">มูลค่า Stock สิ้นเดือน</div>
+        <div class="sw-stat-value">${fmt.money(totalEndValue)}</div>
+        <div class="sw-stat-change">บาท (ต้นเดือน ${fmt.money(totalStartValue)})</div>
+      </div>
+    </div>
+
+    <div class="table-wrap" style="max-height:55vh;overflow:auto">
+      <table class="table table-compact">
+        <thead style="position:sticky;top:0;background:var(--bg-card, #fff);z-index:1">
+          <tr>
+            <th>ชื่อชุด</th><th>ขนาด</th>
+            <th class="num">ต้นเดือน</th>
+            <th class="num" style="color:var(--success)">+ รับเข้า</th>
+            <th class="num" style="color:var(--danger)">− จัดออก</th>
+            <th class="num">↩ คืน</th>
+            <th class="num">✎ ปรับ</th>
+            <th class="num"><strong>สิ้นเดือน</strong></th>
+            <th class="num">มูลค่าสิ้นเดือน</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${report.map(r => `<tr>
+            <td><strong>${escapeHtml(r.itemName)}</strong></td>
+            <td>${escapeHtml(r.itemSize)}</td>
+            <td class="num">${fmt.num(r.stockStart)}</td>
+            <td class="num" ${r.received > 0 ? 'style="color:var(--success);font-weight:600"' : ''}>${r.received > 0 ? '+' + fmt.num(r.received) : '-'}</td>
+            <td class="num" ${r.issued > 0 ? 'style="color:var(--danger);font-weight:600"' : ''}>${r.issued > 0 ? '−' + fmt.num(r.issued) : '-'}</td>
+            <td class="num">${r.returned > 0 ? '+' + fmt.num(r.returned) : '-'}</td>
+            <td class="num">${r.adjusted !== 0 ? (r.adjusted > 0 ? '+' : '') + fmt.num(r.adjusted) : '-'}</td>
+            <td class="num"><strong>${fmt.num(r.stockEnd)}</strong></td>
+            <td class="num">${fmt.money(r.valueEnd)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="muted-2" style="margin-top:8px;font-size:13px">
+      💡 ต้นเดือน = stock ณ สิ้นวันสุดท้ายของเดือนก่อน · สิ้นเดือน = stock ณ สิ้นวันสุดท้ายของเดือน
+    </div>
+  `;
+}
+
+function setMonthlyReportFilter(key, value) {
+  _monthlyReportState[key] = Number(value);
+  // re-render modal content เฉพาะส่วน inner
+  const body = document.querySelector('.modal-body');
+  if (body) body.innerHTML = renderMonthlyReportContent();
+}
+
+// ─── Excel: รายงาน Stock รายเดือน ───
+async function exportMonthlyReportXLSX() {
+  if (!requireHR()) return;
+  if (typeof XLSX === 'undefined') {
+    toast('กำลังโหลด XLSX library...', 'info');
+    try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; }
+  }
+  const { year, month } = _monthlyReportState;
+  const report = DB.getUniformStockMonthlyReport(year, month);
+  if (!report.length) { toast('ไม่มีข้อมูลในเดือนนี้', 'warning'); return; }
+
+  const cs = csvSafe;
+  const rows = report.map(r => ({
+    'ชื่อชุด': cs(r.itemName),
+    'ขนาด': cs(r.itemSize),
+    'Stock ต้นเดือน': Number(r.stockStart),
+    'รับเข้า (+)': Number(r.received),
+    'จัดให้พนักงาน (−)': Number(r.issued),
+    'คืน (+)': Number(r.returned),
+    'ปรับ (±)': Number(r.adjusted),
+    'Stock สิ้นเดือน': Number(r.stockEnd),
+    'ราคา/ชิ้น': Number(r.unitCost),
+    'มูลค่าต้นเดือน': Number(r.valueStart),
+    'มูลค่าสิ้นเดือน': Number(r.valueEnd)
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const headerKeys = Object.keys(rows[0] || {});
+  for (const col of ['ราคา/ชิ้น', 'มูลค่าต้นเดือน', 'มูลค่าสิ้นเดือน']) {
+    const idx = headerKeys.indexOf(col);
+    if (idx >= 0) setColumnFormat(ws, idx, '#,##0.00');
+  }
+  ws['!cols'] = headerKeys.map(k => k.includes('ชื่อ') ? { wch: 22 } : { wch: 15 });
+  const wb = XLSX.utils.book_new();
+  const sheetName = `Stock ${year + 543}-${String(month).padStart(2, '0')}`;
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  XLSX.writeFile(wb, `คชา-รายงาน-stock-${year + 543}-${String(month).padStart(2, '0')}.xlsx`);
+  toast('ส่งออกรายงานแล้ว', 'success');
+}
+
+// ─── Excel: ส่งออก stock movements ตามฟิลเตอร์ ───
+async function exportUniformMovementsXLSX() {
+  if (!requireHR()) return;
+  if (typeof XLSX === 'undefined') {
+    toast('กำลังโหลด XLSX library...', 'info');
+    try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; }
+  }
+  const moves = DB.getUniformStockMovements({
+    itemId: _uniformState.movItemId || undefined,
+    movementType: _uniformState.movType || undefined,
+    dateFrom: _uniformState.movDateFrom || undefined,
+    dateTo: _uniformState.movDateTo || undefined
+  });
+  if (!moves.length) { toast('ไม่มีข้อมูลที่จะส่งออก', 'warning'); return; }
 
   const items = DB.getUniformItems();
   const itemMap = new Map(items.map(i => [i.id, i]));
+  const typeLabel = { receive: 'รับเข้า', issue: 'จัดออก', return: 'คืน', adjust: 'ปรับ' };
+  const cs = csvSafe;
+
+  const rows = moves.map(m => {
+    const item = itemMap.get(m.itemId);
+    return {
+      'วันที่/เวลา': m.createdAt ? new Date(m.createdAt) : '',
+      'รายการชุด': cs(item ? item.name : '(ลบแล้ว)'),
+      'ขนาด': cs(item ? (item.size || '-') : '-'),
+      'ประเภท': cs(typeLabel[m.movementType] || m.movementType),
+      'จำนวน': Number(m.delta),
+      'คงเหลือ': Number(m.balanceAfter),
+      'เหตุผล': cs(m.reason),
+      'หมายเหตุ': cs(m.note),
+      'ผู้ทำรายการ': cs(m.createdBy)
+    };
+  });
+  const ws = XLSX.utils.json_to_sheet(rows, { cellDates: true, dateNF: 'dd mmm yyyy hh:mm' });
+  const headerKeys = Object.keys(rows[0] || {});
+  ws['!cols'] = headerKeys.map(k => {
+    if (k === 'วันที่/เวลา') return { wch: 18 };
+    if (k === 'รายการชุด' || k === 'เหตุผล' || k === 'หมายเหตุ') return { wch: 22 };
+    return { wch: 12 };
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Stock Movements');
+  XLSX.writeFile(wb, `คชา-stock-movements-${tz.today()}.xlsx`);
+  toast('ส่งออกแล้ว', 'success');
+}
+
+// ─── ตาราง ความเคลื่อนไหว Stock (ledger immutable) ───
+function renderUniformMovementsTable() {
+  const items = DB.getUniformItems();
+  const itemMap = new Map(items.map(i => [i.id, i]));
+
+  // apply filters
+  const filterArgs = {
+    itemId: _uniformState.movItemId || undefined,
+    movementType: _uniformState.movType || undefined,
+    dateFrom: _uniformState.movDateFrom || undefined,
+    dateTo: _uniformState.movDateTo || undefined
+  };
+  const moves = DB.getUniformStockMovements(filterArgs);
+  const hasFilter = !!(filterArgs.itemId || filterArgs.movementType || filterArgs.dateFrom || filterArgs.dateTo);
 
   const typeBadge = {
     receive: { label: '⬆ รับเข้า',  cls: 'badge-success' },
@@ -8147,6 +8391,35 @@ function renderUniformMovementsTable() {
     adjust:  { label: '✎ ปรับ',     cls: 'badge' }
   };
 
+  const filterBar = `
+    <div class="sw-filter-bar" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--bg-soft, #f5f3ee);padding:10px 12px;border-radius:8px">
+      <strong>กรอง:</strong>
+      <select class="sw-filter-select" onchange="setMovementFilter('item', this.value)">
+        <option value="">— ทุกรายการ —</option>
+        ${items.map(i => `<option value="${escapeHtml(i.id)}" ${i.id === _uniformState.movItemId ? 'selected' : ''}>${escapeHtml(i.name)} · ${escapeHtml(i.size || '-')}</option>`).join('')}
+      </select>
+      <select class="sw-filter-select" onchange="setMovementFilter('type', this.value)">
+        <option value="">— ทุกประเภท —</option>
+        <option value="receive" ${_uniformState.movType === 'receive' ? 'selected' : ''}>⬆ รับเข้า</option>
+        <option value="issue"   ${_uniformState.movType === 'issue'   ? 'selected' : ''}>⬇ จัดออก</option>
+        <option value="return"  ${_uniformState.movType === 'return'  ? 'selected' : ''}>↩ คืน</option>
+        <option value="adjust"  ${_uniformState.movType === 'adjust'  ? 'selected' : ''}>✎ ปรับ</option>
+      </select>
+      <span class="muted-2">ช่วงวันที่:</span>
+      <input type="date" value="${escapeHtml(_uniformState.movDateFrom || '')}" onchange="setMovementFilter('from', this.value)" class="sw-filter-input" style="max-width:150px"/>
+      <span>→</span>
+      <input type="date" value="${escapeHtml(_uniformState.movDateTo || '')}" onchange="setMovementFilter('to', this.value)" class="sw-filter-input" style="max-width:150px"/>
+      ${hasFilter ? `<button class="btn btn-ghost btn-sm" onclick="clearMovementFilters()">× ล้างฟิลเตอร์</button>` : ''}
+      <div style="flex:1"></div>
+      ${DB.isHR ? `<button class="btn btn-secondary btn-sm" onclick="exportUniformMovementsXLSX()" title="ส่งออกตามฟิลเตอร์ปัจจุบัน">${ICON.download}ส่งออก Excel</button>` : ''}
+    </div>
+  `;
+
+  if (!moves.length) return filterBar + `<div class="empty-state">
+    <div class="title">ไม่พบความเคลื่อนไหว${hasFilter ? 'ตามฟิลเตอร์' : ''}</div>
+    <div class="hint">${hasFilter ? 'ลองล้างฟิลเตอร์หรือเปลี่ยนช่วงวันที่' : 'เมื่อ HR รับเข้า/จัดให้พนักงาน/ปรับ stock — รายการจะแสดงที่นี่'}</div>
+  </div>`;
+
   // group by date for header
   const byDate = new Map();
   for (const m of moves) {
@@ -8154,24 +8427,23 @@ function renderUniformMovementsTable() {
     if (!byDate.has(d)) byDate.set(d, []);
     byDate.get(d).push(m);
   }
-
   const sortedDates = [...byDate.keys()].sort((a, b) => b.localeCompare(a));
 
   // summary stats (top)
   const totalIn  = moves.filter(m => m.delta > 0).reduce((s, m) => s + m.delta, 0);
   const totalOut = moves.filter(m => m.delta < 0).reduce((s, m) => s + Math.abs(m.delta), 0);
 
-  return `
+  return filterBar + `
     <div class="sw-stat-row" style="margin-bottom:14px">
       <div class="sw-stat-card" style="flex:1">
         <div class="sw-stat-label">รวมรับเข้า</div>
         <div class="sw-stat-value" style="color:var(--success)">+${fmt.num(totalIn)}</div>
-        <div class="sw-stat-change">ชิ้น · ทุกประเภท</div>
+        <div class="sw-stat-change">ชิ้น${hasFilter ? ' (ตามฟิลเตอร์)' : ' · ทุกประเภท'}</div>
       </div>
       <div class="sw-stat-card" style="flex:1">
         <div class="sw-stat-label">รวมจ่ายออก</div>
         <div class="sw-stat-value" style="color:var(--danger)">−${fmt.num(totalOut)}</div>
-        <div class="sw-stat-change">ชิ้น · ทุกประเภท</div>
+        <div class="sw-stat-change">ชิ้น${hasFilter ? ' (ตามฟิลเตอร์)' : ' · ทุกประเภท'}</div>
       </div>
       <div class="sw-stat-card" style="flex:1">
         <div class="sw-stat-label">จำนวนรายการ</div>
