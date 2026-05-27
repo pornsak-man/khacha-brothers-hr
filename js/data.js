@@ -28,6 +28,7 @@ const DB = {
     uniformItems: [],
     uniformRequests: [],
     uniformIssues: [],
+    uniformMovements: [],   // ledger ของ stock in/out
     uniformSchedule: [],
     branches: [],
     leaveRequests: [],
@@ -871,6 +872,7 @@ const DB = {
       timed('uniform_items',           this._fetchAllPages('uniform_items', 'name', true).catch(() => [])),
       timed('uniform_requests',        this._fetchAllPages('uniform_requests', 'requested_date', false).catch(() => [])),
       timed('uniform_issues',          this._fetchAllPages('uniform_issues', 'issued_date', false).catch(() => [])),
+      timed('uniform_stock_movements', this._fetchAllPages('uniform_stock_movements', 'created_at', false).catch(() => [])),
       timed('uniform_delivery_sched',  this._fetchAllPages('uniform_delivery_schedule', 'branch_code', true).catch(() => [])),
       // ─── Work Schedule (ตารางงาน) ───
       timed('shifts',                  this._fetchAllPages('shifts', 'sort_order', true).catch(() => [])),
@@ -880,7 +882,7 @@ const DB = {
       timed('employees_archive',       fetchEmployeesArchive().catch(() => []))
     ]).then(([cal, comp, leaves, lvTypes, swapReqs,
               loans, advs, allow, evals, sal, appls,
-              uniItems, uniReqs, uniIssues, uniSched,
+              uniItems, uniReqs, uniIssues, uniMoves, uniSched,
               shifts, schedWeeks, schedEntries, borrowReqs,
               oldEmps]) => {
       // ใหม่: ตาราง critical-but-not-dashboard ที่ย้ายมา
@@ -899,6 +901,7 @@ const DB = {
       this.data.uniformItems = uniItems.map(this._uniItemFromDB);
       this.data.uniformRequests = uniReqs.map(this._uniReqFromDB);
       this.data.uniformIssues = uniIssues.map(this._uniIssueFromDB);
+      this.data.uniformMovements = (uniMoves || []).map(this._uniMovementFromDB);
       this.data.uniformSchedule = uniSched.map(this._uniSchedFromDB);
       this.data.shifts = (shifts || []).map(this._shiftFromDB);
       this.data.scheduleWeeks = (schedWeeks || []).map(this._schedWeekFromDB);
@@ -1002,6 +1005,7 @@ const DB = {
       uniform_items: { list: 'uniformItems', from: this._uniItemFromDB },
       uniform_requests: { list: 'uniformRequests', from: this._uniReqFromDB },
       uniform_issues: { list: 'uniformIssues', from: this._uniIssueFromDB },
+      uniform_stock_movements: { list: 'uniformMovements', from: this._uniMovementFromDB },
       uniform_delivery_schedule: { list: 'uniformSchedule', from: this._uniSchedFromDB },
       branches: { list: 'branches', from: this._branchFromDB },
       leave_requests: { list: 'leaveRequests', from: this._leaveFromDB },
@@ -1379,6 +1383,19 @@ const DB = {
     issued_date: i.issuedDate || null,
     issued_by: i.issuedBy || null,
     note: i.note || null
+  }),
+  // [Stock Ledger] movement record — immutable (ห้าม edit)
+  _uniMovementFromDB: (r) => ({
+    id: r.id,
+    itemId: r.item_id || '',
+    movementType: r.movement_type || '',  // 'receive' | 'issue' | 'return' | 'adjust'
+    delta: Number(r.delta || 0),
+    balanceAfter: Number(r.balance_after || 0),
+    refIssueId: r.ref_issue_id || '',
+    reason: r.reason || '',
+    note: r.note || '',
+    createdBy: r.created_by || '',
+    createdAt: r.created_at || ''
   }),
   _uniSchedFromDB: (r) => ({
     id: r.id,
@@ -2520,7 +2537,8 @@ const DB = {
     if (error) throw error;
     this.data.uniformItems = this.data.uniformItems.filter(i => i.id !== id);
   },
-  // Adjust stock — positive to add, negative to deduct
+  // [Legacy] Adjust stock — positive to add, negative to deduct (no audit)
+  // ⚠️ ใช้สำหรับ migration เก่า — แนะนำใช้ receiveUniformStock / adjustUniformStockManual แทน
   async adjustUniformStock(itemId, delta) {
     const item = this.getUniformItem(itemId);
     if (!item) return;
@@ -2533,6 +2551,60 @@ const DB = {
     const mapped = this._uniItemFromDB(data);
     const idx = this.data.uniformItems.findIndex(i => i.id === mapped.id);
     if (idx >= 0) this.data.uniformItems[idx] = mapped;
+  },
+
+  // [Stock Ledger] รับเข้า stock + log movement (HR/admin)
+  // เหตุผล: สั่งผลิต, สั่งซื้อ, รับบริจาค, รับคืนจากพนักงาน, ฯลฯ
+  async receiveUniformStock(itemId, qty, reason = 'รับเข้า stock', note = '') {
+    const { data, error } = await this.client.rpc('receive_uniform_stock', {
+      p_item_id: itemId,
+      p_qty: Number(qty),
+      p_reason: reason || 'รับเข้า stock',
+      p_note: note || null
+    });
+    if (error) throw error;
+    // refetch item เพื่อ sync local state (realtime จะ propagate ด้วย)
+    try {
+      const { data: itemData } = await this.client.from('uniform_items')
+        .select('*').eq('id', itemId).single();
+      if (itemData) {
+        const mapped = this._uniItemFromDB(itemData);
+        const idx = this.data.uniformItems.findIndex(i => i.id === mapped.id);
+        if (idx >= 0) this.data.uniformItems[idx] = mapped;
+      }
+    } catch (e) { /* realtime จะ sync */ }
+    return data;
+  },
+
+  // [Stock Ledger] ปรับ stock manual — HR นับ stock จริง แล้วใส่ค่าใหม่
+  async adjustUniformStockManual(itemId, newQty, reason = 'ปรับ stock manual', note = '') {
+    const { data, error } = await this.client.rpc('adjust_uniform_stock_manual', {
+      p_item_id: itemId,
+      p_new_qty: Number(newQty),
+      p_reason: reason || 'ปรับ stock manual',
+      p_note: note || null
+    });
+    if (error) throw error;
+    try {
+      const { data: itemData } = await this.client.from('uniform_items')
+        .select('*').eq('id', itemId).single();
+      if (itemData) {
+        const mapped = this._uniItemFromDB(itemData);
+        const idx = this.data.uniformItems.findIndex(i => i.id === mapped.id);
+        if (idx >= 0) this.data.uniformItems[idx] = mapped;
+      }
+    } catch (e) {}
+    return data;
+  },
+
+  // [Stock Ledger] อ่าน stock movements — filter ตาม item/type/date range
+  getUniformStockMovements({ itemId, movementType, dateFrom, dateTo } = {}) {
+    let list = (this.data.uniformMovements || []).slice();
+    if (itemId) list = list.filter(m => m.itemId === itemId);
+    if (movementType) list = list.filter(m => m.movementType === movementType);
+    if (dateFrom) list = list.filter(m => (m.createdAt || '').slice(0, 10) >= dateFrom);
+    if (dateTo)   list = list.filter(m => (m.createdAt || '').slice(0, 10) <= dateTo);
+    return list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   },
 
   // ─── UNIFORM REQUESTS (header) ───

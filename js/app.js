@@ -7674,6 +7674,7 @@ router.register('uniform', () => {
       </div>
       <div class="sw-page-actions">
         ${DB.isHR ? `
+          <button class="btn btn-secondary" onclick="openReceiveStockForm()" title="สั่งผลิต / สั่งซื้อ / รับบริจาค">${ICON.plus}รับเข้า Stock</button>
           <button class="btn btn-secondary" onclick="openUniformItemForm()">${ICON.plus}เพิ่มรายการชุด</button>
           <button class="btn btn-secondary" onclick="exportUniformIssuesXLSX()">${ICON.download}ส่งออกประวัติ</button>
           <button class="btn btn-primary" onclick="openUniformRequestForm()">+ คำขอใหม่</button>
@@ -7711,6 +7712,7 @@ router.register('uniform', () => {
     <div class="sw-tabs" role="tablist" style="margin-top:24px">
       <button class="sw-tab ${tab === 'requests' ? 'active' : ''}" onclick="switchUniformTab('requests')">คำขอจัดชุด</button>
       <button class="sw-tab ${tab === 'items'    ? 'active' : ''}" onclick="switchUniformTab('items')">รายการชุด · Stock</button>
+      <button class="sw-tab ${tab === 'movements'? 'active' : ''}" onclick="switchUniformTab('movements')">ความเคลื่อนไหว Stock</button>
       <button class="sw-tab ${tab === 'issues'   ? 'active' : ''}" onclick="switchUniformTab('issues')">ประวัติการจัดส่ง</button>
       <button class="sw-tab ${tab === 'schedule' ? 'active' : ''}" onclick="switchUniformTab('schedule')">รอบการจัดส่ง</button>
     </div>
@@ -7888,6 +7890,7 @@ async function openMyUniformRequestForm() {
 function renderUniformTab() {
   const tab = _uniformState.tab;
   if (tab === 'items') return renderUniformItemsTable();
+  if (tab === 'movements') return renderUniformMovementsTable();
   if (tab === 'issues') return renderUniformIssuesTable();
   if (tab === 'schedule') return renderUniformScheduleTable();
   return renderUniformRequestsTable();
@@ -8113,14 +8116,220 @@ function renderUniformItemsTable() {
             <td>${i.active ? '<span class="badge badge-success">ใช้งาน</span>' : '<span class="badge">ปิด</span>'}</td>
             <td>${escapeHtml(i.note || '-')}</td>
             <td class="actions">
-              ${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="openUniformItemForm('${escapeHtml(i.id)}')">แก้ไข</button>
-              <button class="btn btn-ghost btn-sm" onclick="deleteUniformItem('${escapeHtml(i.id)}')">ลบ</button>` : ''}
+              ${DB.isHR ? `
+                <button class="btn btn-ghost btn-sm" onclick="openReceiveStockForm('${escapeHtml(i.id)}')" title="รับเข้า — สั่งผลิต/สั่งซื้อ">+ รับเข้า</button>
+                <button class="btn btn-ghost btn-sm" onclick="openAdjustStockForm('${escapeHtml(i.id)}')" title="ปรับ stock — นับสต๊อกจริง">ปรับ</button>
+                <button class="btn btn-ghost btn-sm" onclick="openUniformItemForm('${escapeHtml(i.id)}')">แก้ไข</button>
+                <button class="btn btn-ghost btn-sm" onclick="deleteUniformItem('${escapeHtml(i.id)}')">ลบ</button>` : ''}
             </td>
           </tr>`;
         }).join('')}
       </tbody>
     </table></div>
   `;
+}
+
+// ─── ตาราง ความเคลื่อนไหว Stock (ledger immutable) ───
+function renderUniformMovementsTable() {
+  const moves = DB.getUniformStockMovements();
+  if (!moves.length) return `<div class="empty-state">
+    <div class="title">ยังไม่มีความเคลื่อนไหว Stock</div>
+    <div class="hint">เมื่อ HR รับเข้า/จัดให้พนักงาน/ปรับ stock — รายการจะแสดงที่นี่</div>
+  </div>`;
+
+  const items = DB.getUniformItems();
+  const itemMap = new Map(items.map(i => [i.id, i]));
+
+  const typeBadge = {
+    receive: { label: '⬆ รับเข้า',  cls: 'badge-success' },
+    issue:   { label: '⬇ จัดออก',   cls: 'badge-info' },
+    return:  { label: '↩ คืน',      cls: 'badge-warning' },
+    adjust:  { label: '✎ ปรับ',     cls: 'badge' }
+  };
+
+  // group by date for header
+  const byDate = new Map();
+  for (const m of moves) {
+    const d = (m.createdAt || '').slice(0, 10);
+    if (!byDate.has(d)) byDate.set(d, []);
+    byDate.get(d).push(m);
+  }
+
+  const sortedDates = [...byDate.keys()].sort((a, b) => b.localeCompare(a));
+
+  // summary stats (top)
+  const totalIn  = moves.filter(m => m.delta > 0).reduce((s, m) => s + m.delta, 0);
+  const totalOut = moves.filter(m => m.delta < 0).reduce((s, m) => s + Math.abs(m.delta), 0);
+
+  return `
+    <div class="sw-stat-row" style="margin-bottom:14px">
+      <div class="sw-stat-card" style="flex:1">
+        <div class="sw-stat-label">รวมรับเข้า</div>
+        <div class="sw-stat-value" style="color:var(--success)">+${fmt.num(totalIn)}</div>
+        <div class="sw-stat-change">ชิ้น · ทุกประเภท</div>
+      </div>
+      <div class="sw-stat-card" style="flex:1">
+        <div class="sw-stat-label">รวมจ่ายออก</div>
+        <div class="sw-stat-value" style="color:var(--danger)">−${fmt.num(totalOut)}</div>
+        <div class="sw-stat-change">ชิ้น · ทุกประเภท</div>
+      </div>
+      <div class="sw-stat-card" style="flex:1">
+        <div class="sw-stat-label">จำนวนรายการ</div>
+        <div class="sw-stat-value">${fmt.num(moves.length)}</div>
+        <div class="sw-stat-change">movement records</div>
+      </div>
+    </div>
+
+    <div class="table-wrap"><table class="table table-compact">
+      <thead><tr>
+        <th style="width:115px">วันที่/เวลา</th>
+        <th>รายการชุด</th>
+        <th style="width:100px">ประเภท</th>
+        <th class="num" style="width:80px">จำนวน</th>
+        <th class="num" style="width:90px">คงเหลือ</th>
+        <th>เหตุผล</th>
+        <th>หมายเหตุ</th>
+        <th style="width:140px">ผู้ทำรายการ</th>
+      </tr></thead>
+      <tbody>
+        ${sortedDates.map(d => {
+          const dayMoves = byDate.get(d);
+          return dayMoves.map(m => {
+            const item = itemMap.get(m.itemId);
+            const itemName = item ? `${item.name} ${item.size ? '· ' + item.size : ''}` : '(ลบแล้ว)';
+            const tb = typeBadge[m.movementType] || { label: m.movementType, cls: 'badge' };
+            const deltaCol = m.delta > 0 ? 'color:var(--success);font-weight:600' : 'color:var(--danger);font-weight:600';
+            const deltaSign = m.delta > 0 ? '+' : '';
+            const time = m.createdAt ? new Date(m.createdAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-';
+            return `<tr>
+              <td>${escapeHtml(time)}</td>
+              <td><strong>${escapeHtml(itemName)}</strong></td>
+              <td><span class="badge ${tb.cls}">${escapeHtml(tb.label)}</span></td>
+              <td class="num" style="${deltaCol}">${deltaSign}${fmt.num(m.delta)}</td>
+              <td class="num">${fmt.num(m.balanceAfter)}</td>
+              <td>${escapeHtml(m.reason || '-')}</td>
+              <td>${escapeHtml(m.note || '-')}</td>
+              <td><span class="muted-2">${escapeHtml(m.createdBy || 'system')}</span></td>
+            </tr>`;
+          }).join('');
+        }).join('')}
+      </tbody>
+    </table></div>
+  `;
+}
+
+// ─── Modal: รับเข้า Stock (สั่งผลิต/สั่งซื้อ) ───
+function openReceiveStockForm(presetItemId = null) {
+  if (!requireHR()) return;
+  const items = DB.getUniformItems({ activeOnly: false }).filter(i => i.active);
+  if (!items.length) {
+    toast('ยังไม่มีรายการชุดในระบบ — เพิ่มรายการก่อน', 'warning');
+    return;
+  }
+  modal.open('+ รับเข้า Stock', `
+    <form id="receiveStockForm">
+      <div class="form-group">
+        <label>รายการชุด *</label>
+        <select name="itemId" required>
+          <option value="">— เลือกรายการ —</option>
+          ${items.map(i => `<option value="${escapeHtml(i.id)}" ${i.id === presetItemId ? 'selected' : ''}>${escapeHtml(i.name)} · ${escapeHtml(i.size || '-')} · stock ${fmt.num(i.stockQty)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>จำนวนที่รับเข้า *</label>
+          <input name="qty" type="number" min="1" max="100000" required placeholder="เช่น 50"/>
+        </div>
+        <div class="form-group">
+          <label>เหตุผล *</label>
+          <select name="reason" required>
+            <option value="สั่งผลิต">สั่งผลิต</option>
+            <option value="สั่งซื้อ">สั่งซื้อ</option>
+            <option value="รับบริจาค">รับบริจาค</option>
+            <option value="คืนจากพนักงาน">คืนจากพนักงาน</option>
+            <option value="อื่นๆ">อื่นๆ</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>หมายเหตุ (เลขที่ใบสั่งผลิต / supplier / ฯลฯ)</label>
+        <textarea name="note" rows="2" placeholder="เช่น PO-2569-001, ผู้ผลิต ABC Tailor"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn" onclick="modal.close()">ยกเลิก</button>
+        <button type="submit" class="btn btn-primary">รับเข้า</button>
+      </div>
+    </form>
+  `, () => {
+    document.getElementById('receiveStockForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target));
+      try {
+        await DB.receiveUniformStock(data.itemId, Number(data.qty), data.reason, data.note);
+        toast(`✓ รับเข้า ${data.qty} ชิ้น — stock อัพเดทแล้ว`, 'success');
+        modal.close();
+        router.go('uniform');
+      } catch (ex) {
+        toast('รับเข้าไม่สำเร็จ: ' + (ex.message || ex), 'error');
+      }
+    });
+  });
+}
+
+// ─── Modal: ปรับ Stock manual (นับสต๊อกจริง) ───
+function openAdjustStockForm(itemId) {
+  if (!requireHR()) return;
+  const item = DB.getUniformItem(itemId);
+  if (!item) { toast('ไม่พบรายการชุด', 'error'); return; }
+
+  modal.open('ปรับ Stock — ' + (item.name + ' ' + (item.size || '')), `
+    <form id="adjustStockForm">
+      <div class="form-info-box" style="background:#fff3cd;padding:10px;border-radius:6px;margin-bottom:14px">
+        <strong>Stock ปัจจุบัน:</strong> ${fmt.num(item.stockQty)} ชิ้น<br>
+        <span class="muted-2" style="font-size:13px">ใช้เมื่อนับสต๊อกจริงแล้วต่างจากระบบ — ระบบจะบันทึก movement ลง ledger</span>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>จำนวน Stock ใหม่ *</label>
+          <input name="newQty" type="number" min="0" max="100000" required value="${item.stockQty}"/>
+        </div>
+        <div class="form-group">
+          <label>เหตุผล *</label>
+          <select name="reason" required>
+            <option value="นับ stock จริง">นับ stock จริง</option>
+            <option value="ของชำรุด">ของชำรุด</option>
+            <option value="ของหาย">ของหาย</option>
+            <option value="ของเสียจากการผลิต">ของเสียจากการผลิต</option>
+            <option value="ปรับยอดเริ่มต้น">ปรับยอดเริ่มต้น</option>
+            <option value="อื่นๆ">อื่นๆ</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>หมายเหตุ</label>
+        <textarea name="note" rows="2" placeholder="เช่น พบของชำรุด 3 ชิ้น"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn" onclick="modal.close()">ยกเลิก</button>
+        <button type="submit" class="btn btn-primary">ปรับ Stock</button>
+      </div>
+    </form>
+  `, () => {
+    document.getElementById('adjustStockForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target));
+      try {
+        const result = await DB.adjustUniformStockManual(itemId, Number(data.newQty), data.reason, data.note);
+        const delta = result?.delta || 0;
+        const sign = delta > 0 ? '+' : '';
+        toast(`✓ ปรับ stock แล้ว — เปลี่ยน ${sign}${delta} ชิ้น (เหลือ ${result?.balance_after || data.newQty})`, 'success');
+        modal.close();
+        router.go('uniform');
+      } catch (ex) {
+        toast('ปรับ stock ไม่สำเร็จ: ' + (ex.message || ex), 'error');
+      }
+    });
+  });
 }
 
 function renderUniformIssuesTable() {
