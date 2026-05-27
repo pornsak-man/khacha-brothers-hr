@@ -9177,15 +9177,11 @@ function matchUniformItemFromStock(parsed, masterItems) {
   );
   if (candidates.length === 0) return null;
   if (candidates.length === 1) return candidates[0];
-  // หลายตัว match → เลือกที่ stock พอ และ stock มากสุด (default แบรนด์หลัก KB ก่อน)
+  // หลายตัว match → เลือกที่ stock พอ และ stock มากสุด
+  // (ไม่ prefer brand ใดเป็นพิเศษ — recruit ควรระบุ brandPreference ถ้ามีหลายแบรนด์)
   const sufficient = candidates.filter(c => Number(c.stockQty) >= Number(parsed.qty));
   const pool = sufficient.length ? sufficient : candidates;
-  pool.sort((a, b) => {
-    // prefer KB brand → then more stock
-    if (a.brand === 'KB' && b.brand !== 'KB') return -1;
-    if (a.brand !== 'KB' && b.brand === 'KB') return 1;
-    return Number(b.stockQty) - Number(a.stockQty);
-  });
+  pool.sort((a, b) => Number(b.stockQty) - Number(a.stockQty));
   return pool[0];
 }
 
@@ -9517,9 +9513,11 @@ function openIssueItemsForm(requestId) {
 // ─── รายการชุด (master) ───
 function openUniformItemForm(id = null) {
   if (!requireHR()) return;
+  // [Brand] Default ใช้ brand แรกใน list (ไม่ใช่ KB) — ลบ KB ที่เป็นชื่อบริษัทแล้ว
+  const _defaultBrandCode = (DB.getUniformBrands({ activeOnly: true })[0]?.code) || '';
   const i = id ? DB.getUniformItem(id) : {
     id: '', name: '', size: '', stockQty: 0, unitCost: 0, active: true, note: '',
-    brand: 'KB', category: '', color: '', sku: '', reorderPoint: 5,
+    brand: _defaultBrandCode, category: '', color: '', sku: '', reorderPoint: 5,
     supplier: '', gender: 'unisex', material: '', imageUrl: ''
   };
   const brands = DB.getUniformBrands({ activeOnly: true });
@@ -9536,10 +9534,16 @@ function openUniformItemForm(id = null) {
       <h4 style="margin:0 0 10px 0;color:var(--text);font-size:14px">📦 ข้อมูลหลัก</h4>
       <div class="form-grid">
         <div class="form-group">
-          <label>แบรนด์ *</label>
-          <select name="brand" required>
-            ${brands.map(b => `<option value="${escapeHtml(b.code)}" ${b.code === i.brand ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}
-          </select>
+          <label>แบรนด์ ${brands.length ? '*' : ''}</label>
+          ${brands.length ? `
+            <select name="brand" ${brands.length === 1 ? '' : 'required'}>
+              ${brands.length > 1 ? '<option value="">— ไม่ระบุแบรนด์ —</option>' : ''}
+              ${brands.map(b => `<option value="${escapeHtml(b.code)}" ${b.code === i.brand ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}
+            </select>
+          ` : `
+            <input name="brand" value="" readonly placeholder="ยังไม่มีแบรนด์ในระบบ"/>
+            <small class="muted-2" style="font-size:11px;color:var(--warning)">⚠ กรุณาเพิ่มแบรนด์ที่ "🏷️ แบรนด์" ก่อน — กดบันทึกได้ แต่ item จะไม่มีแบรนด์</small>
+          `}
         </div>
         <div class="form-group">
           <label>หมวด *</label>
@@ -9659,7 +9663,11 @@ function openUniformItemForm(id = null) {
 function autoGenerateSKU() {
   const form = document.getElementById('uniItemForm');
   if (!form) return;
-  const brand = (form.brand?.value || 'KB').toUpperCase();
+  const brand = (form.brand?.value || '').toUpperCase();
+  if (!brand) {
+    toast('กรุณาเลือกแบรนด์ก่อน — SKU ต้องมีแบรนด์', 'warning');
+    return;
+  }
   const cat = form.category?.value || '';
   const catCode = ({
     'เสื้อ': 'SHRT', 'กางเกง': 'PANT', 'กระโปรง': 'SKRT',

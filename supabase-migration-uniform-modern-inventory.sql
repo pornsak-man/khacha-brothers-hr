@@ -47,10 +47,10 @@ BEGIN
 END $$;
 
 -- ─── Backfill ข้อมูลเดิม ───
--- ตั้ง default brand = 'KB' (Kacha Brothers) สำหรับ row เก่าทั้งหมด
-UPDATE public.uniform_items
-SET brand = 'KB'
-WHERE brand IS NULL OR brand = '';
+-- [DEPRECATED] Backfill brand='KB' (Kacha Brothers) — ลบออกแล้วเพราะ KB เป็นชื่อบริษัท
+-- ดู supabase-migration-remove-kb-brand.sql สำหรับการลบ
+-- รายการเก่าที่ไม่มี brand → คงเป็น NULL → HR ตั้งแบรนด์ใหม่ภายหลัง
+-- UPDATE public.uniform_items SET brand = 'KB' WHERE brand IS NULL OR brand = '';
 
 -- Auto-detect category จาก name (เผื่อสำหรับ row เก่า)
 UPDATE public.uniform_items
@@ -74,11 +74,11 @@ SET reorder_point = 5
 WHERE reorder_point IS NULL;
 
 -- Auto-generate SKU สำหรับ row เก่าที่ยังไม่มี
--- Format: <BRAND>-<CAT_CODE>-<SIZE>-<COLOR_CODE>
--- ตัวอย่าง: KB-SHIRT-M-WHITE
+-- Format: <BRAND>-<CAT_CODE>-<SIZE>-<UUID4>
+-- ตัวอย่าง: ITEM-SHRT-M-a1b2 (ถ้า brand ว่าง ใช้ 'ITEM')
 UPDATE public.uniform_items
 SET sku = UPPER(
-  COALESCE(brand, 'KB') || '-' ||
+  COALESCE(NULLIF(brand, ''), 'ITEM') || '-' ||
   CASE
     WHEN category = 'เสื้อ' THEN 'SHRT'
     WHEN category = 'กางเกง' THEN 'PANT'
@@ -107,9 +107,12 @@ CREATE TABLE IF NOT EXISTS public.uniform_brands (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-INSERT INTO public.uniform_brands (code, name, description, sort_order) VALUES
-  ('KB', 'Kacha Brothers', 'แบรนด์หลัก คชา บราเธอร์ส', 1)
-ON CONFLICT (code) DO NOTHING;
+-- [DEPRECATED] Default insert "KB / Kacha Brothers" — ลบออกแล้ว
+-- เหตุผล: "Kacha Brothers" เป็นชื่อบริษัท ไม่ใช่ชื่อแบรนด์สินค้า
+-- HR สร้างแบรนด์ใหม่ที่หน้า "🏷️ แบรนด์" → เพิ่มแบรนด์
+-- INSERT INTO public.uniform_brands (code, name, description, sort_order) VALUES
+--   ('KB', 'Kacha Brothers', 'แบรนด์หลัก คชา บราเธอร์ส', 1)
+-- ON CONFLICT (code) DO NOTHING;
 
 -- RLS
 ALTER TABLE public.uniform_brands ENABLE ROW LEVEL SECURITY;
