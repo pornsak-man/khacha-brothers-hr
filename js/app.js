@@ -6965,7 +6965,11 @@ function openApplicantForm(id = null) {
             neededBy: uniformNeededBy,
             status: existingUniReq?.status || 'pending',
             totalCost: existingUniReq?.totalCost || 0,
-            note: uniformNote
+            note: uniformNote,
+            // [Fix] ตั้งประเภทคำขอเป็น "พนักงานใหม่" (ฟรี) ตาม flow recruit
+            // — ช่วยให้ filter/report แยกคำขอจาก recruit vs self-service ได้
+            requestType: existingUniReq?.requestType || 'new_hire',
+            requestReason: existingUniReq?.requestReason || ''
           };
           if (existingUniReq) reqData.id = existingUniReq.id;
           await DB.saveUniformRequest(reqData);
@@ -9125,6 +9129,7 @@ async function issueAllFromRecruit(requestId) {
   const issuedBy = DB.profile?.name || DB.user?.email || '';
   const issuedDate = document.getElementById('recruitIssueDate')?.value || tz.today();
   let okCount = 0, failCount = 0;
+  const failures = [];  // {item, qty, reason}
   for (const m of matched) {
     try {
       await DB.saveUniformIssue({
@@ -9148,10 +9153,31 @@ async function issueAllFromRecruit(requestId) {
     } catch (ex) {
       console.warn('Issue fail:', m.parsed.raw, ex);
       failCount++;
+      failures.push({
+        item: `${m.item.name} ${m.item.size || ''}`.trim(),
+        qty: m.parsed.qty,
+        reason: ex.message || String(ex)
+      });
     }
   }
-  if (failCount === 0) toast(`✓ บันทึก ${okCount} รายการสำเร็จ`, 'success');
-  else toast(`บันทึก ${okCount}/${matched.length} (ล้มเหลว ${failCount})`, 'warning');
+  if (failCount === 0) {
+    toast(`✓ บันทึก ${okCount} รายการสำเร็จ — stock ถูกตัดอัตโนมัติ`, 'success');
+  } else {
+    // [Fix] แสดง modal รายงาน fail ละเอียด แทน toast เงียบ
+    const failHtml = failures.map(f =>
+      `<li><strong>${escapeHtml(f.item)}</strong> × ${f.qty} ชิ้น<br><span class="muted-2" style="font-size:12px;color:var(--danger)">${escapeHtml(f.reason)}</span></li>`
+    ).join('');
+    modal.open(`⚠️ จัดบางรายการไม่สำเร็จ (${okCount}/${matched.length})`, `
+      <div style="background:#fef3c7;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13.5px">
+        <strong>${okCount} รายการสำเร็จ</strong> · <strong style="color:var(--danger)">${failCount} รายการล้มเหลว</strong><br>
+        <span class="muted-2" style="font-size:12.5px">รายการที่สำเร็จได้บันทึก + ตัด stock แล้ว · ส่วนที่ fail ให้ตรวจดูเหตุผลด้านล่าง</span>
+      </div>
+      <ul style="margin:0;padding-left:20px;line-height:1.7">${failHtml}</ul>
+      <div class="form-actions" style="margin-top:14px">
+        <button type="button" class="btn btn-primary" data-close>ปิด</button>
+      </div>
+    `);
+  }
   openIssueItemsForm(requestId); // refresh modal
 }
 
