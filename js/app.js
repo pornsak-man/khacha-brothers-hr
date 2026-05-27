@@ -8891,13 +8891,15 @@ function renderUniformIssuesTable() {
             }
           }
           const itemObj = itemMap.get(i.itemId);
-          const brandCode = itemObj?.brand || '-';
+          // ใช้ snapshot ก่อน (ทนทานต่อ item ที่ถูกลบ/แก้) → fallback ที่ current item
+          const brandCode = i.brandSnapshot || itemObj?.brand || '-';
+          const colorVal  = i.colorSnapshot || itemObj?.color || '';
           return `<tr>
             <td>${fmt.date(i.issuedDate)}</td>
             <td>${ownerCell}</td>
             <td><span class="badge badge-info" style="font-size:11px">${escapeHtml(brandCode)}</span></td>
-            <td>${escapeHtml(i.itemName || '-')}</td>
-            <td>${escapeHtml(i.size || '-')}</td>
+            <td>${escapeHtml(i.itemName || '-')}${i.skuSnapshot ? `<br><span class="muted-2" style="font-family:monospace;font-size:10.5px">${escapeHtml(i.skuSnapshot)}</span>` : ''}</td>
+            <td>${escapeHtml(i.size || '-')}${colorVal ? ` · <span style="font-size:11.5px;color:#666">${escapeHtml(colorVal)}</span>` : ''}</td>
             <td class="num">${fmt.num(i.qty)}</td>
             <td class="num">${fmt.money(i.unitCost)}</td>
             <td class="num"><strong>${fmt.money(i.totalCost)}</strong></td>
@@ -9089,11 +9091,24 @@ function parseUniformNoteToItems(note) {
 // match กับ stock master โดย exact name + size (case-insensitive)
 function matchUniformItemFromStock(parsed, masterItems) {
   if (!parsed.parseable) return null;
-  return masterItems.find(m =>
+  // ลำดับความเข้มของการ match — เลือก stock ที่มีของเหลือมากสุดเมื่อ tie
+  const candidates = masterItems.filter(m =>
     m.active &&
     m.name === parsed.name &&
     (m.size || '').toLowerCase() === (parsed.size || '').toLowerCase()
-  ) || null;
+  );
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+  // หลายตัว match → เลือกที่ stock พอ และ stock มากสุด (default แบรนด์หลัก KB ก่อน)
+  const sufficient = candidates.filter(c => Number(c.stockQty) >= Number(parsed.qty));
+  const pool = sufficient.length ? sufficient : candidates;
+  pool.sort((a, b) => {
+    // prefer KB brand → then more stock
+    if (a.brand === 'KB' && b.brand !== 'KB') return -1;
+    if (a.brand !== 'KB' && b.brand === 'KB') return 1;
+    return Number(b.stockQty) - Number(a.stockQty);
+  });
+  return pool[0];
 }
 
 // กดทีเดียวสร้าง issue ทุกรายการตามที่ recruit แจ้ง
@@ -9124,7 +9139,12 @@ async function issueAllFromRecruit(requestId) {
         issuedDate,
         issuedBy,
         employeeId: req.employeeId || '',
-        note: ''
+        note: '',
+        // [Snapshot] เก็บ brand/color/sku context
+        brandSnapshot: m.item.brand || '',
+        categorySnapshot: m.item.category || '',
+        colorSnapshot: m.item.color || '',
+        skuSnapshot: m.item.sku || ''
       });
       okCount++;
     } catch (ex) {
@@ -9238,17 +9258,24 @@ function openIssueItemsForm(requestId) {
     <div class="form-section">
       <h3>รายการที่จัดให้แล้ว <span class="muted-2" style="font-weight:normal;font-size:12px">(${existing.length} รายการ · รวม ${fmt.money(req.totalCost)} บาท)</span></h3>
       ${existing.length ? `<div class="table-wrap"><table class="table table-compact" style="font-size:13px">
-        <thead><tr><th>วันที่</th><th>รายการ</th><th>ขนาด</th><th class="num">จำนวน</th><th class="num">ราคา</th><th class="num">รวม</th><th></th></tr></thead>
+        <thead><tr><th>วันที่</th><th>แบรนด์</th><th>รายการ</th><th>สี</th><th>ขนาด</th><th class="num">จำนวน</th><th class="num">ราคา</th><th class="num">รวม</th><th></th></tr></thead>
         <tbody>
-          ${existing.map(i => `<tr>
-            <td>${fmt.date(i.issuedDate)}</td>
-            <td>${escapeHtml(i.itemName)}</td>
-            <td>${escapeHtml(i.size || '-')}</td>
-            <td class="num">${i.qty}</td>
-            <td class="num">${fmt.money(i.unitCost)}</td>
-            <td class="num">${fmt.money(i.totalCost)}</td>
-            <td><button class="btn btn-ghost btn-sm" onclick="(async () => { if (await modal.confirm('ลบรายการ','คืน stock + ลบรายการ?')) { await DB.deleteUniformIssue('${escapeHtml(i.id)}'); toast('ลบแล้ว','success'); openIssueItemsForm('${escapeHtml(requestId)}'); } })()">ลบ</button></td>
-          </tr>`).join('')}
+          ${existing.map(i => {
+            const item = DB.getUniformItem(i.itemId);
+            const brand = i.brandSnapshot || item?.brand || '-';
+            const color = i.colorSnapshot || item?.color || '';
+            return `<tr>
+              <td>${fmt.date(i.issuedDate)}</td>
+              <td><span class="badge badge-info" style="font-size:11px">${escapeHtml(brand)}</span></td>
+              <td>${escapeHtml(i.itemName)}${i.skuSnapshot ? `<br><span class="muted-2" style="font-family:monospace;font-size:10.5px">${escapeHtml(i.skuSnapshot)}</span>` : ''}</td>
+              <td>${color ? `<span style="display:inline-block;width:10px;height:10px;border-radius:99px;background:${getColorHex(color)};margin-right:4px;border:1px solid #ccc;vertical-align:middle"></span>${escapeHtml(color)}` : '-'}</td>
+              <td>${escapeHtml(i.size || '-')}</td>
+              <td class="num">${i.qty}</td>
+              <td class="num">${fmt.money(i.unitCost)}</td>
+              <td class="num">${fmt.money(i.totalCost)}</td>
+              <td><button class="btn btn-ghost btn-sm" onclick="(async () => { if (await modal.confirm('ลบรายการ','คืน stock + ลบรายการ?')) { await DB.deleteUniformIssue('${escapeHtml(i.id)}'); toast('ลบแล้ว','success'); openIssueItemsForm('${escapeHtml(requestId)}'); } })()">ลบ</button></td>
+            </tr>`;
+          }).join('')}
         </tbody>
       </table></div>` : '<div class="muted-2" style="padding:12px 0">— ยังไม่มี —</div>'}
     </div>
@@ -9257,10 +9284,45 @@ function openIssueItemsForm(requestId) {
       <h3>เพิ่มรายการ</h3>
       <form id="issueForm">
         <div class="form-grid">
-          <div class="form-group"><label>เลือกชุด *</label>
+          <div class="form-group span-2"><label>เลือกชุด * <span class="muted-2" style="font-weight:normal;font-size:11px">(แสดงเฉพาะ stock > 0 และ active)</span></label>
             <select name="itemId" id="issueItem" required>
               <option value="">— เลือกรายการ —</option>
-              ${items.map(i => `<option value="${i.id}" data-name="${escapeHtml(i.name)}" data-size="${escapeHtml(i.size || '')}" data-cost="${i.unitCost}" data-stock="${i.stockQty}">${escapeHtml(i.name)} · ${escapeHtml(i.size || '-')} · เหลือ ${i.stockQty} ชิ้น · ${fmt.money(i.unitCost)} บาท</option>`).join('')}
+              ${(() => {
+                // group by brand → optgroup
+                const byBrand = new Map();
+                for (const i of items) {
+                  if (Number(i.stockQty) <= 0) continue;  // ซ่อน stock หมด
+                  const key = i.brand || '(ไม่ระบุ)';
+                  if (!byBrand.has(key)) byBrand.set(key, []);
+                  byBrand.get(key).push(i);
+                }
+                const brandNames = new Map(DB.getUniformBrands().map(b => [b.code, b.name]));
+                return [...byBrand.keys()].sort().map(brandKey => {
+                  const brandLabel = brandNames.get(brandKey) || brandKey;
+                  const itemsInBrand = byBrand.get(brandKey);
+                  return `<optgroup label="🏷️ ${escapeHtml(brandLabel)}">${
+                    itemsInBrand.map(i => {
+                      const desc = [
+                        i.name,
+                        i.color ? `(${i.color})` : '',
+                        i.size ? `· ${i.size}` : '',
+                        `· เหลือ ${i.stockQty} ชิ้น`,
+                        `· ${fmt.money(i.unitCost)} ฿`
+                      ].filter(Boolean).join(' ');
+                      return `<option value="${i.id}"
+                        data-name="${escapeHtml(i.name)}"
+                        data-size="${escapeHtml(i.size || '')}"
+                        data-cost="${i.unitCost}"
+                        data-stock="${i.stockQty}"
+                        data-brand="${escapeHtml(i.brand || '')}"
+                        data-category="${escapeHtml(i.category || '')}"
+                        data-color="${escapeHtml(i.color || '')}"
+                        data-sku="${escapeHtml(i.sku || '')}"
+                      >${escapeHtml(desc)}</option>`;
+                    }).join('')
+                  }</optgroup>`;
+                }).join('');
+              })()}
             </select>
           </div>
           <div class="form-group"><label>จำนวน *</label><input name="qty" id="issueQty" type="number" min="1" value="1" required/></div>
@@ -9312,6 +9374,11 @@ function openIssueItemsForm(requestId) {
       const opt = sel.options[sel.selectedIndex];
       data.itemName = opt?.dataset.name || '';
       data.size = opt?.dataset.size || '';
+      // [Snapshot] เก็บ brand/color/sku context ลง row นี้ — กันข้อมูลหายตอน item ถูกแก้/ลบ
+      data.brandSnapshot    = opt?.dataset.brand || '';
+      data.categorySnapshot = opt?.dataset.category || '';
+      data.colorSnapshot    = opt?.dataset.color || '';
+      data.skuSnapshot      = opt?.dataset.sku || '';
       data.requestId = requestId;
       // employee_id อาจยังว่าง ถ้า applicant ยังไม่รับเข้า — issue จะ link ผ่าน request_id ก่อน
       data.employeeId = req.employeeId || '';

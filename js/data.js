@@ -1413,7 +1413,12 @@ const DB = {
     totalCost: Number(r.total_cost || 0),
     issuedDate: r.issued_date || '',
     issuedBy: r.issued_by || '',
-    note: r.note || ''
+    note: r.note || '',
+    // [Modern] Snapshot fields — ป้องกัน data loss ถ้า item ถูกลบ
+    brandSnapshot: r.brand_snapshot || '',
+    categorySnapshot: r.category_snapshot || '',
+    colorSnapshot: r.color_snapshot || '',
+    skuSnapshot: r.sku_snapshot || ''
   }),
   _uniIssueToDB: (i) => ({
     request_id: i.requestId || null,
@@ -1426,7 +1431,12 @@ const DB = {
     total_cost: Number(i.totalCost || 0),
     issued_date: i.issuedDate || null,
     issued_by: i.issuedBy || null,
-    note: i.note || null
+    note: i.note || null,
+    // Snapshot — trigger จะ fill ให้ถ้าไม่ระบุ (จาก item_id)
+    brand_snapshot: i.brandSnapshot || null,
+    category_snapshot: i.categorySnapshot || null,
+    color_snapshot: i.colorSnapshot || null,
+    sku_snapshot: i.skuSnapshot || null
   }),
   // [Stock Ledger] movement record — immutable (ห้าม edit)
   _uniMovementFromDB: (r) => ({
@@ -2866,13 +2876,13 @@ const DB = {
     if (dateFrom) list = list.filter(i => (i.issuedDate || '') >= dateFrom);
     if (dateTo)   list = list.filter(i => (i.issuedDate || '') <= dateTo);
     if (brand || category) {
-      // filter by brand/category via uniform_items lookup
+      // ใช้ snapshot ก่อน (สำหรับ row ที่มี snapshot) → fallback ไปดู uniform_items (สำหรับ row เก่า)
       const itemMap = new Map(this.data.uniformItems.map(it => [it.id, it]));
       list = list.filter(i => {
-        const item = itemMap.get(i.itemId);
-        if (!item) return false;
-        if (brand && item.brand !== brand) return false;
-        if (category && item.category !== category) return false;
+        const effBrand = i.brandSnapshot || itemMap.get(i.itemId)?.brand || '';
+        const effCat   = i.categorySnapshot || itemMap.get(i.itemId)?.category || '';
+        if (brand && effBrand !== brand) return false;
+        if (category && effCat !== category) return false;
         return true;
       });
     }
@@ -2883,9 +2893,21 @@ const DB = {
   //   - INSERT → atomic deduct + check sufficient (RAISE EXCEPTION ถ้าไม่พอ)
   //   - UPDATE qty/item_id → คืน OLD + ตัด NEW
   //   - DELETE → คืน stock
-  // (ก่อนหน้านี้เคยตัด stock ที่ frontend — มี race condition + bypass ได้)
+  // [Snapshot] DB trigger a_uniform_issues_fill_snapshot auto-fill brand/color/sku จาก item
+  //   - ถ้า frontend ไม่ส่ง brandSnapshot/colorSnapshot/skuSnapshot → trigger ดึงจาก item_id
+  //   - frontend สามารถ override ได้ (เช่น brand เปลี่ยนชื่อภายหลัง — เก็บ snapshot เก่าไว้)
   async saveUniformIssue(issue) {
     issue.totalCost = Number(issue.qty || 0) * Number(issue.unitCost || 0);
+    // [Snapshot] auto-fill จาก item ก่อนส่ง DB (defense in depth — trigger ก็ทำให้อีก)
+    if (issue.itemId && !issue.brandSnapshot) {
+      const item = this.getUniformItem(issue.itemId);
+      if (item) {
+        issue.brandSnapshot    = issue.brandSnapshot    || item.brand || '';
+        issue.categorySnapshot = issue.categorySnapshot || item.category || '';
+        issue.colorSnapshot    = issue.colorSnapshot    || item.color || '';
+        issue.skuSnapshot      = issue.skuSnapshot      || item.sku || '';
+      }
+    }
     const row = this._uniIssueToDB(issue);
     if (issue.id) row.id = issue.id;
     const { data, error } = await this.client.from('uniform_issues').upsert(row).select().single();
