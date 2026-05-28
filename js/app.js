@@ -14508,12 +14508,20 @@ async function renderPermMatrix() {
     }
     _permMatrixState.loading = false;
     _permMatrixState.error = null;
-    // ─── [Auto-detect] สแกน code หา permission ที่ขาด ───
+    // [PERF] render matrix ทันทีหลังได้ data (3 query เร็ว) — ไม่รอ diagnosis
+    //   เดิม: await diagnosePermissions() block ที่นี่ → ต้อง fetch app.js+data.js (ไฟล์ใหญ่)
+    //         + regex สแกน ก่อน render → หน่วงหลายวินาทีตอนเข้าหน้าครั้งแรก
+    //   ใหม่: render เลย + รัน diagnosis เป็น background → inject banner ทีหลัง (progressive)
+    box.innerHTML = `<div id="permDiagBanner"></div>` + _renderMatrixHtml();
+    _wireMatrixEvents();
+
+    // ─── [Auto-detect] background scan — ไม่ block การแสดง matrix ───
     const dbKeys = perms.map(p => p.key);
-    const diagnosis = await diagnosePermissions(dbKeys);
-    let diagBanner = '';
-    if (diagnosis.missing.length > 0) {
-      diagBanner = `
+    diagnosePermissions(dbKeys).then(diagnosis => {
+      if (!diagnosis || !diagnosis.missing.length) return;
+      const bannerBox = document.getElementById('permDiagBanner');
+      if (!bannerBox) return;  // user เปลี่ยนหน้าไปแล้ว
+      bannerBox.innerHTML = `
         <div class="card" style="border:2px solid var(--warning);background:rgba(217,119,6,0.04);margin-bottom:14px;padding:14px">
           <div style="display:flex;gap:10px;align-items:flex-start">
             <div style="font-size:24px;line-height:1">🔔</div>
@@ -14539,15 +14547,12 @@ async function renderPermMatrix() {
           </div>
         </div>
       `;
-    }
-    box.innerHTML = diagBanner + _renderMatrixHtml();
-    _wireMatrixEvents();
-    // wire up register buttons
-    document.querySelectorAll('[data-register-perm]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        openRegisterPermissionModal(btn.dataset.registerPerm);
+      bannerBox.querySelectorAll('[data-register-perm]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          openRegisterPermissionModal(btn.dataset.registerPerm);
+        });
       });
-    });
+    }).catch(() => { /* diagnosis ล้มเหลว → เงียบ ไม่กระทบ matrix */ });
   } catch (ex) {
     _permMatrixState.error = ex?.message || String(ex);
     box.innerHTML = `<div class="empty-state" style="padding:24px">
