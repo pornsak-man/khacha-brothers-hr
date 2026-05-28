@@ -323,6 +323,19 @@ const DB = {
     return this._permLoadErrorMsg;
   },
 
+  // canSeeMenu(key) — visibility ของเมนู sidebar (cosmetic, ไม่ใช่ security boundary)
+  //   ต่างจาก hasPermission():
+  //   - hasPermission = fail-closed (strict — สำหรับ action/write)
+  //   - canSeeMenu = graceful fallback (ไม่ fail-closed — กัน lockout เมนูตอน matrix โหลดช้า/fail)
+  //   เหตุผล: ซ่อนเมนูไม่ใช่ security boundary จริง — RLS + requirePermission ในปุ่มคือ boundary
+  //   admin เห็นทุกเมนูเสมอ (MEMORY: admin ทำทุกอย่างได้ ไม่มีข้อยกเว้น)
+  canSeeMenu(key) {
+    if (!key) return true;                          // ไม่ระบุ key → เมนูสาธารณะ
+    if (this.isAdmin) return true;                  // admin เห็นทุกเมนู
+    if (this._permCache instanceof Set) return this._permCache.has(key);
+    return this._legacyPermission(key);             // matrix ยังไม่โหลด → legacy (graceful)
+  },
+
   hasPermission(key) {
     if (!key) return false;
     // 1. ถ้า matrix โหลดแล้ว → ใช้ matrix (source of truth)

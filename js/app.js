@@ -800,15 +800,33 @@ const auth = {
 // ─── [F3] re-evaluate role-dependent UI ───
 // แชร์ระหว่าง showApp() (ตอน login) และ window.onProfileChange (ตอน realtime role change)
 function refreshRoleDependentUI() {
-  // sidebar visibility ตาม role
+  // [Legacy] class-based visibility — เผื่อมี element อื่นนอก nav (เช่น ปุ่มในหน้า)
   $$('.nav-admin-only').forEach(el => { el.style.display = DB.isAdmin ? '' : 'none'; });
   $$('.nav-hr-only').forEach(el => { el.style.display = DB.isHR ? '' : 'none'; });
   const isStaffOnly = (DB.role === 'branch_staff' || DB.role === 'viewer');
   $$('.nav-staff-hide').forEach(el => { el.style.display = isStaffOnly ? 'none' : ''; });
+
+  // [Phase B] Permission-based menu visibility (matrix-driven)
+  //   - ทุก nav-item ที่ควร gate มี data-perm="<key>"
+  //   - canSeeMenu: admin เห็นทุกเมนูเสมอ · role อื่นตาม matrix (fallback legacy ถ้ายังไม่โหลด)
+  //   - graceful (ไม่ fail-closed) → ไม่ lockout เมนูตอน matrix โหลดช้า/fail
+  //     (RLS + requirePermission ในปุ่มคือ security boundary จริง — เมนูเป็น cosmetic)
+  $$('[data-perm]').forEach(el => {
+    el.style.display = DB.canSeeMenu(el.dataset.perm) ? '' : 'none';
+  });
+
   // "ขอชุดของฉัน" — แสดงเฉพาะ user ที่ผูกกับพนักงาน (มี employee_id)
   // ทุก role ที่มี employee_id ก็ใช้ได้ (HR เห็นทั้ง 2 เมนู: "จัดชุดพนักงาน" + "ขอชุดของฉัน")
   const myUniEl = document.getElementById('navMyUniform');
   if (myUniEl) myUniEl.style.display = DB.profile?.employee_id ? '' : 'none';
+
+  // [Phase B] Auto-hide nav-group ที่ไม่มี item แสดงเลย (เช่น viewer ไม่เห็น "การเงิน")
+  //   ต้อง run หลัง set item visibility ครบ
+  $$('[data-nav-auto]').forEach(group => {
+    const anyVisible = [...group.querySelectorAll('.nav-item')]
+      .some(it => it.style.display !== 'none');
+    group.style.display = anyVisible ? '' : 'none';
+  });
   // user info (mini card บน sidebar)
   const displayName = DB.profile?.name || DB.user?.email?.split('@')[0] || 'User';
   const userNameEl = $('#userName');
