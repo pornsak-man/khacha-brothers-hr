@@ -5896,6 +5896,42 @@ router.register('departments', () => {
       </div>
       <div class="sw-page-actions">${DB.isHR ? '<button class="btn btn-primary" onclick="openDeptForm()">+ เพิ่มฝ่าย</button>' : ''}</div>
     </div>
+    ${(() => {
+      const deptWithEmps = allDepts.filter(d => (countByDept.get(d.id) || 0) > 0).length;
+      let topDept = null, topCount = 0;
+      for (const d of allDepts) {
+        const c = countByDept.get(d.id) || 0;
+        if (c > topCount) { topCount = c; topDept = d; }
+      }
+      const withMgr = allDepts.filter(d => d.manager).length;
+      return `
+    <div class="sw-stats-grid" style="margin-bottom:28px">
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(30,42,82,0.12);color:var(--primary)">📋</div>
+        <div class="sw-stat-label">ฝ่ายทั้งหมด</div>
+        <div class="sw-stat-value">${fmt.num(allDepts.length)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">${fmt.num(withMgr)} ฝ่ายมีหัวหน้า</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(22,101,52,0.12);color:var(--success)">👥</div>
+        <div class="sw-stat-label">ฝ่ายที่มีพนักงาน</div>
+        <div class="sw-stat-value" style="color:var(--success)">${fmt.num(deptWithEmps)}<span style="font-size:15px;color:var(--text-3)"> / ${fmt.num(allDepts.length)}</span></div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">${fmt.num(allDepts.length - deptWithEmps)} ฝ่ายยังว่าง</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(196,165,116,0.16);color:var(--gold-dark)">🏆</div>
+        <div class="sw-stat-label">ฝ่ายใหญ่สุด</div>
+        <div class="sw-stat-value" style="font-size:18px">${topDept ? escapeHtml(topDept.name) : '—'}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">${fmt.num(topCount)} คน</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(24,100,168,0.12);color:var(--info)">🧑‍💼</div>
+        <div class="sw-stat-label">พนักงานรวม</div>
+        <div class="sw-stat-value" style="color:var(--info)">${fmt.num(emps.length)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">คน · กำลังทำงาน</div>
+      </div>
+    </div>`;
+    })()}
     <div class="sw-chart-card">
       <div class="sw-chart-header">
         <div>
@@ -6094,6 +6130,40 @@ router.register('positions', () => {
       </div>
       <div class="sw-page-actions">${DB.isHR ? '<button class="btn btn-ghost" onclick="openScopeManager()" title="จัดการสายงาน (Operation, Office, SCM ...)">⚙️ จัดการสาย</button> <button class="btn btn-primary" onclick="openPositionForm()">+ เพิ่มตำแหน่ง</button>' : ''}</div>
     </div>
+    ${(() => {
+      const withEmps = allPs.filter(p => (empCount.get(p.id) || 0) > 0).length;
+      const sals = allPs.flatMap(p => [Number(p.minSalary || 0), Number(p.maxSalary || 0)]).filter(v => v > 0);
+      const minSal = sals.length ? Math.min(...sals) : 0;
+      const maxSal = sals.length ? Math.max(...sals) : 0;
+      const topPos = allPs[0];  // เรียง level desc แล้ว
+      return `
+    <div class="sw-stats-grid" style="margin-bottom:28px">
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(30,42,82,0.12);color:var(--primary)">🎖️</div>
+        <div class="sw-stat-label">ระดับตำแหน่งทั้งหมด</div>
+        <div class="sw-stat-value">${fmt.num(allPs.length)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">${fmt.num(DB.getScopes().length)} สายงาน</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(22,101,52,0.12);color:var(--success)">👥</div>
+        <div class="sw-stat-label">มีพนักงาน</div>
+        <div class="sw-stat-value" style="color:var(--success)">${fmt.num(withEmps)}<span style="font-size:15px;color:var(--text-3)"> / ${fmt.num(allPs.length)}</span></div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">ตำแหน่งที่มีคนอยู่</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(196,165,116,0.16);color:var(--gold-dark)">💰</div>
+        <div class="sw-stat-label">ช่วงเงินเดือน</div>
+        <div class="sw-stat-value" style="font-size:18px">${minSal ? fmt.money(minSal) : '—'} – ${maxSal ? fmt.money(maxSal) : '—'}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">บาท · ต่ำสุด – สูงสุด</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(24,100,168,0.12);color:var(--info)">⭐</div>
+        <div class="sw-stat-label">ระดับสูงสุด</div>
+        <div class="sw-stat-value" style="font-size:18px">${topPos ? escapeHtml(topPos.name) : '—'}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">Level ${topPos?.level || '—'}</div>
+      </div>
+    </div>`;
+    })()}
     <div class="sw-chart-card">
       <div class="sw-chart-header">
         <div>
@@ -7533,30 +7603,55 @@ router.register('sso', () => {
   const list = tab === 'enroll' ? enrollList : terminateList;
 
   const cutoff = ssoCutoff();
+  const totalOverdue = enrollOverdue + terminateOverdue;
+  const totalPending = enrollList.length + terminateList.length;
   return `
     <div class="sw-page-header">
       <div>
         <div class="sw-page-title">ประกันสังคม</div>
-        <div class="sw-page-subtitle">แจ้งเข้า สปส.1-03 (ภายใน 30 วันจากวันเริ่มงาน) · แจ้งออก สปส.6-09 (ภายในวันที่ 15 ของเดือนถัดไป)</div>
-        <div class="sw-page-subtitle" style="margin-top:6px">
-          <span class="badge badge-info">เริ่มใช้ตั้งแต่ ${fmt.date(cutoff)}</span>
-          ${DB.isHR ? `<button class="btn btn-ghost btn-sm" onclick="setSSOCutoff()" style="margin-left:8px">เปลี่ยน</button>` : ''}
-        </div>
+        <div class="sw-page-subtitle">แจ้งเข้า/ออก สปส. ตามกำหนดกฎหมาย — ติดตามรายการที่ต้องดำเนินการ</div>
+      </div>
+      <div class="sw-page-actions">
+        <span class="badge badge-info" title="นับเฉพาะพนักงานที่เริ่มงาน/พ้นสภาพตั้งแต่วันนี้">📅 เริ่มใช้ ${fmt.date(cutoff)}</span>
+        ${DB.isHR ? `<button class="btn btn-secondary" onclick="setSSOCutoff()">ตั้งวันเริ่มใช้</button>` : ''}
       </div>
     </div>
 
-    <div class="sw-stats-grid">
-      <div class="sw-stat-card sw-accent-amber">
-        <div class="sw-stat-icon">${ICON.users}</div>
-        <div class="sw-stat-label">รอแจ้งเข้า</div>
-        <div class="sw-stat-value">${fmt.num(enrollList.length)}</div>
-        <div class="sw-stat-change">${enrollOverdue ? `<span style="color:var(--danger);font-weight:600">เกินกำหนด ${enrollOverdue} คน</span>` : 'ทันกำหนดทุกคน'}</div>
+    ${totalOverdue > 0 ? `
+    <div class="sw-alert-banner" style="display:flex;align-items:center;gap:12px;padding:14px 18px;margin-bottom:20px;background:var(--danger-soft);border:1px solid var(--danger);border-left:4px solid var(--danger);border-radius:var(--radius)">
+      <div style="font-size:24px;line-height:1">⚠️</div>
+      <div style="flex:1">
+        <div style="font-weight:700;color:var(--danger-text);font-size:14.5px">เกินกำหนดตามกฎหมาย ${fmt.num(totalOverdue)} รายการ — ต้องรีบดำเนินการ</div>
+        <div class="muted-2" style="font-size:12.5px;margin-top:2px">
+          ${enrollOverdue ? `แจ้งเข้าเกินกำหนด ${enrollOverdue} คน (สปส.1-03 ภายใน 30 วัน)` : ''}${enrollOverdue && terminateOverdue ? ' · ' : ''}${terminateOverdue ? `แจ้งออกเกินกำหนด ${terminateOverdue} คน (สปส.6-09 ภายในวันที่ 15)` : ''}
+        </div>
       </div>
-      <div class="sw-stat-card sw-accent-red">
-        <div class="sw-stat-icon">${ICON.clipboard}</div>
-        <div class="sw-stat-label">รอแจ้งออก</div>
-        <div class="sw-stat-value">${fmt.num(terminateList.length)}</div>
-        <div class="sw-stat-change">${terminateOverdue ? `<span style="color:var(--danger);font-weight:600">เกินกำหนด ${terminateOverdue} คน</span>` : 'ทันกำหนดทุกคน'}</div>
+    </div>` : ''}
+
+    <div class="sw-stats-grid">
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(184,122,8,0.12);color:var(--warning)">${ICON.users}</div>
+        <div class="sw-stat-label">รอแจ้งเข้า (สปส.1-03)</div>
+        <div class="sw-stat-value" style="color:var(--warning)">${fmt.num(enrollList.length)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">${enrollOverdue ? `<span style="color:var(--danger);font-weight:600">⚠ เกินกำหนด ${enrollOverdue} คน</span>` : 'ทันกำหนดทุกคน ✓'}</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(24,100,168,0.12);color:var(--info)">${ICON.clipboard}</div>
+        <div class="sw-stat-label">รอแจ้งออก (สปส.6-09)</div>
+        <div class="sw-stat-value" style="color:var(--info)">${fmt.num(terminateList.length)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">${terminateOverdue ? `<span style="color:var(--danger);font-weight:600">⚠ เกินกำหนด ${terminateOverdue} คน</span>` : 'ทันกำหนดทุกคน ✓'}</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(196,36,63,0.12);color:var(--danger)">⏰</div>
+        <div class="sw-stat-label">เกินกำหนดรวม</div>
+        <div class="sw-stat-value" style="color:${totalOverdue ? 'var(--danger)' : 'var(--success)'}">${fmt.num(totalOverdue)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">รายการ · ต้องรีบทำ</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(30,42,82,0.12);color:var(--primary)">📋</div>
+        <div class="sw-stat-label">ต้องดำเนินการรวม</div>
+        <div class="sw-stat-value">${fmt.num(totalPending)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">เข้า + ออก ที่ค้างอยู่</div>
       </div>
     </div>
 
@@ -7567,7 +7662,7 @@ router.register('sso', () => {
       </div>
       ${list.length ? `
         <div class="table-wrap" style="margin-top:14px">
-          <table class="table table-compact">
+          <table class="table table-compact sw-emp-table">
             <thead>
               <tr>
                 <th>รหัส</th>
@@ -9928,6 +10023,17 @@ router.register('salary-adjust', () => {
     return parts.length ? parts.join('<br>') : '-';
   };
 
+  // ─── KPI summary (ให้ consistent กับหน้าการเงินอื่น) ───
+  const _now = new Date();
+  const _thisMonth = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}`;
+  const monthCount = history.filter(h => (h.date || '').slice(0, 7) === _thisMonth).length;
+  const raiseCount = history.filter(h => h.newSalary && Number(h.newSalary) > Number(h.oldSalary || 0)).length;
+  const totalRaise = history.reduce((s, h) => {
+    const d = Number(h.newSalary || 0) - Number(h.oldSalary || 0);
+    return s + (d > 0 ? d : 0);
+  }, 0);
+  const lastDate = history.reduce((mx, h) => ((h.date || '') > mx ? h.date : mx), '');
+
   return `
     <div class="sw-page-header">
       <div>
@@ -9942,12 +10048,38 @@ router.register('salary-adjust', () => {
         ` : ''}
       </div>
     </div>
+    <div class="sw-stats-grid" style="margin-bottom:28px">
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(30,42,82,0.12);color:var(--primary)">${ICON.chart}</div>
+        <div class="sw-stat-label">รายการปรับทั้งหมด</div>
+        <div class="sw-stat-value">${fmt.num(history.length)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">ทุกประเภท · สะสม</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(24,100,168,0.12);color:var(--info)">📅</div>
+        <div class="sw-stat-label">ปรับเดือนนี้</div>
+        <div class="sw-stat-value" style="color:var(--info)">${fmt.num(monthCount)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">รายการ · เดือนปัจจุบัน</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(22,101,52,0.12);color:var(--success)">📈</div>
+        <div class="sw-stat-label">ปรับขึ้นเงินเดือน</div>
+        <div class="sw-stat-value" style="color:var(--success)">${fmt.num(raiseCount)}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">รวม +${fmt.money(totalRaise)} บาท</div>
+      </div>
+      <div class="sw-stat-card">
+        <div class="sw-stat-icon" style="background:rgba(196,165,116,0.16);color:var(--gold-dark)">🕒</div>
+        <div class="sw-stat-label">ปรับล่าสุด</div>
+        <div class="sw-stat-value" style="font-size:20px">${lastDate ? fmt.date(lastDate) : '—'}</div>
+        <div class="sw-stat-change muted-2" style="font-size:12px;margin-top:6px">วันที่บันทึกล่าสุด</div>
+      </div>
+    </div>
     <div class="sw-chart-card">
       <div class="sw-chart-title">ประวัติการปรับ · ${fmt.num(history.length)} รายการ</div>
       <div class="sw-chart-sub">รวมทั้ง การปรับเงินเดือน, ปรับตำแหน่ง, ย้ายสาขา, ย้ายฝ่าย</div>
       ${history.length ? `
       <div class="table-wrap">
-        <table class="table">
+        <table class="table table-compact sw-emp-table">
           <thead><tr><th>วันที่</th><th>พนักงาน</th><th>ประเภท</th><th>รายการเปลี่ยนแปลง</th><th>เหตุผล</th></tr></thead>
           <tbody>
             ${history.map(h => {
@@ -15075,7 +15207,7 @@ router.register('settings', () => {
       <div class="sw-chart-header">
         <div>
           <div class="sw-chart-title">ข้อมูลและการสำรอง</div>
-          <div class="sw-chart-sub">ดาวน์โหลด snapshot ข้อมูลทั้งระบบ · Supabase มี backup อัตโนมัติอยู่แล้ว · sน sn snapshot นี้สำรองเพิ่มเติม</div>
+          <div class="sw-chart-sub">ดาวน์โหลด snapshot ข้อมูลทั้งระบบ · Supabase มี backup อัตโนมัติอยู่แล้ว · snapshot นี้ไว้สำรองเพิ่มเติม</div>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">
