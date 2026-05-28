@@ -879,40 +879,63 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 }
 .sidebar-footer-actions {
   display: flex;
-  gap: 8px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 .sidebar-footer .btn-icon {
   flex: 1;
-  height: 40px;
+  height: 42px;
   width: auto;
-  color: rgba(212, 209, 196, 0.7);  /* warm pearl */
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  position: relative;
+  overflow: hidden;
+  color: rgba(212, 209, 196, 0.78);  /* warm pearl */
+  border-radius: 11px;
+  /* glass gradient — top highlight → bottom shade ให้ดูมีมิติ ไม่แบน */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018));
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),   /* top glass highlight */
+    0 1px 2px rgba(0, 0, 0, 0.2);
   transition:
-    background 0.22s var(--ease-out),
-    color 0.22s var(--ease-out),
-    border-color 0.22s var(--ease-out),
-    box-shadow 0.22s var(--ease-out),
-    transform 0.12s var(--ease-out);
+    background 0.24s var(--ease-out),
+    color 0.24s var(--ease-out),
+    border-color 0.24s var(--ease-out),
+    box-shadow 0.24s var(--ease-out),
+    transform 0.14s var(--ease-out);
   outline: none;
 }
+.sidebar-footer .btn-icon svg {
+  width: 18px; height: 18px;
+  transition: transform 0.24s var(--ease-out);
+}
+/* sheen sweep ตอน hover — ความรู้สึกพรีเมียม */
+.sidebar-footer .btn-icon::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, 0.10) 50%, transparent 70%);
+  transform: translateX(-120%);
+  transition: transform 0.55s var(--ease-out);
+  pointer-events: none;
+}
+.sidebar-footer .btn-icon:hover::before { transform: translateX(120%); }
 .sidebar-footer .btn-icon:hover {
-  background: rgba(196, 165, 116, 0.10);             /* champagne tint */
-  border-color: rgba(196, 165, 116, 0.22);
+  background: linear-gradient(180deg, rgba(196, 165, 116, 0.18), rgba(196, 165, 116, 0.07));  /* champagne */
+  border-color: rgba(196, 165, 116, 0.30);
   color: var(--gold-light, #e3d2a8);
   box-shadow:
-    0 6px 18px rgba(0, 0, 0, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  transform: translateY(-1px);
+    0 8px 22px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(196, 165, 116, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transform: translateY(-2px);
 }
+.sidebar-footer .btn-icon:hover svg { transform: scale(1.12); }
 .sidebar-footer .btn-icon:active {
   transform: translateY(0);
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.3),
-    inset 0 1px 1px rgba(0, 0, 0, 0.15);
+    inset 0 1px 2px rgba(0, 0, 0, 0.18);
   transition-duration: 0.06s;
 }
 .sidebar-footer .btn-icon:focus-visible {
@@ -920,23 +943,40 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
     0 0 0 2px var(--sidebar-bg),
     0 0 0 4px rgba(196, 165, 116, 0.5);
 }
+/* เปลี่ยนรหัสผ่าน — champagne gold identity (security = หรูหรา) */
+.sidebar-footer #changePwdBtn { color: var(--gold-light, #e3d2a8); }
+.sidebar-footer #changePwdBtn svg { filter: drop-shadow(0 0 6px rgba(196, 165, 116, 0.25)); }
 /* Logout — refined wine red (premium destructive feel) */
 .sidebar-footer #logoutBtn:hover {
-  background: rgba(196, 36, 63, 0.10);               /* wine red soft */
-  border-color: rgba(196, 36, 63, 0.25);
+  background: linear-gradient(180deg, rgba(196, 36, 63, 0.20), rgba(196, 36, 63, 0.08));  /* wine red */
+  border-color: rgba(196, 36, 63, 0.32);
   color: #f0b8c0;                                     /* dusty rose */
   box-shadow:
-    0 6px 18px rgba(196, 36, 63, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    0 8px 22px rgba(196, 36, 63, 0.22),
+    0 0 0 1px rgba(196, 36, 63, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.sidebar-footer #logoutBtn:hover::before {
+  background: linear-gradient(120deg, transparent 30%, rgba(240, 184, 192, 0.12) 50%, transparent 70%);
 }
 .sidebar-footer #logoutBtn:active {
-  background: rgba(196, 36, 63, 0.18);
-  border-color: rgba(196, 36, 63, 0.35);
+  background: linear-gradient(180deg, rgba(196, 36, 63, 0.26), rgba(196, 36, 63, 0.14));
+  border-color: rgba(196, 36, 63, 0.40);
 }
 .sidebar-footer #logoutBtn:focus-visible {
   box-shadow:
     0 0 0 2px var(--sidebar-bg),
     0 0 0 4px rgba(196, 36, 63, 0.45);
+}
+/* ดูเสมือนพนักงาน — cool indigo identity (distinct จาก gold/red) */
+.sidebar-footer #impersonateBtn:hover {
+  background: linear-gradient(180deg, rgba(122, 134, 179, 0.20), rgba(122, 134, 179, 0.07));
+  border-color: rgba(122, 134, 179, 0.30);
+  color: #c3cbe6;
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.26),
+    0 0 0 1px rgba(122, 134, 179, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 /* ═════════════ MAIN ═════════════ */
