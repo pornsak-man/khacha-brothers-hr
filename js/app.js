@@ -15806,6 +15806,9 @@ function initScheduleStateIfNeeded() {
   if (!_scheduleState.weekStart) {
     _scheduleState.weekStart = getMondayOf(tz.today());
   }
+  // [Cleanup] '__all__' ถูกลบออกจาก dropdown แล้ว (ซ้ำกับปุ่ม "ภาพรวมทุกสาขา")
+  // — reset state ที่ค้างจาก session เก่า เพื่อไม่ให้ render summary ที่ไม่มีทางออก
+  if (_scheduleState.branchId === '__all__') _scheduleState.branchId = null;
   if (!_scheduleState.branchId) {
     if (DB.role === 'branch_manager' || DB.role === 'area_manager' || DB.role === 'branch_staff' || DB.role === 'viewer') {
       _scheduleState.branchId = DB._myBranch();
@@ -16206,7 +16209,6 @@ router.register('schedule', () => {
         <div class="schedule-controls-spacer"></div>
         <select class="sw-filter-select schedule-branch-select" onchange="setScheduleBranch(this.value)" ${(branchOptions.length === 1 && !DB.isHR) ? 'disabled' : ''} title="พิมพ์อักษรแรกของชื่อย่อเพื่อกระโดด เช่น K → KMB">
           ${branchOptions.length === 0 ? '<option value="">— ไม่มีสาขาในสิทธิ์ —</option>' : ''}
-          ${branchOptions.length >= 2 ? `<option value="__all__" ${branchId === '__all__' ? 'selected' : ''}>— รวมทุกสาขา (สรุป) —</option>` : ''}
           ${branchOptions.map(b => `<option value="${escapeHtml(b.id)}" ${branchId === b.id ? 'selected' : ''} title="${escapeHtml(b.name || '')}">${escapeHtml(b.id)}</option>`).join('')}
         </select>
       </div>
