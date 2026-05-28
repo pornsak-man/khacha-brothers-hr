@@ -949,50 +949,51 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
     0 0 0 2px var(--sidebar-bg),
     0 0 0 4px rgba(196, 165, 116, 0.5);
 }
-/* เปลี่ยนรหัสผ่าน — champagne gold identity (เด่นตั้งแต่ default — security หรูหรา) */
+/* เปลี่ยนรหัสผ่าน — ทองสดสว่าง สะอาด (clean radiant gold) */
 .sidebar-footer #changePwdBtn {
-  color: #f0dca8;                                    /* ทองสว่างชัด (เห็นง่ายบนพื้นดำ) */
-  background: linear-gradient(180deg, rgba(214, 180, 120, 0.30), rgba(196, 165, 116, 0.10));
-  border-color: rgba(214, 180, 120, 0.45);
+  color: #f7dd8f;                                    /* ทองสว่างสด — ไม่ออกเขียว */
+  background: linear-gradient(180deg, rgba(232, 191, 92, 0.18), rgba(232, 191, 92, 0.045));
+  border-color: rgba(232, 191, 92, 0.42);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 1px 0 rgba(255, 248, 225, 0.14),
     0 1px 3px rgba(0, 0, 0, 0.22);
 }
-.sidebar-footer #changePwdBtn svg { filter: drop-shadow(0 0 6px rgba(214, 180, 120, 0.5)); }
+.sidebar-footer #changePwdBtn svg { filter: drop-shadow(0 0 7px rgba(232, 191, 92, 0.55)); }
 .sidebar-footer #changePwdBtn:hover {
-  background: linear-gradient(180deg, rgba(214, 180, 120, 0.42), rgba(196, 165, 116, 0.18));
-  border-color: rgba(214, 180, 120, 0.6);
+  background: linear-gradient(180deg, rgba(232, 191, 92, 0.30), rgba(232, 191, 92, 0.10));
+  border-color: rgba(232, 191, 92, 0.62);
+  color: #ffe8a3;
 }
-/* ออกจากระบบ — wine red identity (เด่นตั้งแต่ default) */
+/* ออกจากระบบ — rose สด สะอาด (clean rose — ไม่ใช่เลือดหมูทึม) */
 .sidebar-footer #logoutBtn {
-  color: #e8a9b3;                                     /* dusty rose */
-  background: linear-gradient(180deg, rgba(196, 36, 63, 0.14), rgba(196, 36, 63, 0.04));
-  border-color: rgba(196, 36, 63, 0.22);
+  color: #fda4af;                                     /* rose-300 สด */
+  background: linear-gradient(180deg, rgba(244, 63, 94, 0.15), rgba(244, 63, 94, 0.04));
+  border-color: rgba(244, 63, 94, 0.38);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
     0 1px 3px rgba(0, 0, 0, 0.22);
 }
 /* Logout — refined wine red (premium destructive feel) */
 .sidebar-footer #logoutBtn:hover {
-  background: linear-gradient(180deg, rgba(196, 36, 63, 0.20), rgba(196, 36, 63, 0.08));  /* wine red */
-  border-color: rgba(196, 36, 63, 0.32);
-  color: #f0b8c0;                                     /* dusty rose */
+  background: linear-gradient(180deg, rgba(244, 63, 94, 0.28), rgba(244, 63, 94, 0.10));  /* rose สด */
+  border-color: rgba(244, 63, 94, 0.58);
+  color: #ffc1cb;
   box-shadow:
-    0 8px 22px rgba(196, 36, 63, 0.22),
-    0 0 0 1px rgba(196, 36, 63, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    0 8px 22px rgba(244, 63, 94, 0.26),
+    0 0 0 1px rgba(244, 63, 94, 0.20),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 .sidebar-footer #logoutBtn:hover::before {
-  background: linear-gradient(120deg, transparent 30%, rgba(240, 184, 192, 0.12) 50%, transparent 70%);
+  background: linear-gradient(120deg, transparent 30%, rgba(253, 164, 175, 0.14) 50%, transparent 70%);
 }
 .sidebar-footer #logoutBtn:active {
-  background: linear-gradient(180deg, rgba(196, 36, 63, 0.26), rgba(196, 36, 63, 0.14));
-  border-color: rgba(196, 36, 63, 0.40);
+  background: linear-gradient(180deg, rgba(244, 63, 94, 0.34), rgba(244, 63, 94, 0.16));
+  border-color: rgba(244, 63, 94, 0.62);
 }
 .sidebar-footer #logoutBtn:focus-visible {
   box-shadow:
     0 0 0 2px var(--sidebar-bg),
-    0 0 0 4px rgba(196, 36, 63, 0.45);
+    0 0 0 4px rgba(244, 63, 94, 0.5);
 }
 /* ดูเสมือนพนักงาน — cool indigo identity (distinct จาก gold/red) */
 .sidebar-footer #impersonateBtn:hover {
