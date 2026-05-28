@@ -799,7 +799,14 @@ const DB = {
     // — staff/viewer มี RLS scope แค่ตัวเอง → ต้องใช้ org chart fallback
     // — HR/admin อ่าน employees ครบอยู่แล้ว — org chart ช่วย enrich เพิ่ม (no-op สำหรับ row ที่มี)
     try {
-      const { data: orgRows } = await this.client.rpc('get_org_chart_employees');
+      // [Guard] timeout 8s — กัน boot แขวนถาวรถ้า RPC ไม่ตอบ (network/DB ช้า)
+      //   ถ้า timeout → ใช้ empty cache → boot ดำเนินต่อ (org chart fallback เป็น slim)
+      const _orgTimeout = new Promise((_, rej) =>
+        setTimeout(() => rej(new Error('org-chart RPC timeout (8s)')), 8000));
+      const { data: orgRows } = await Promise.race([
+        this.client.rpc('get_org_chart_employees'),
+        _orgTimeout
+      ]);
       this._orgChartCache = new Map();
       for (const r of (orgRows || [])) {
         this._orgChartCache.set(r.id, {
