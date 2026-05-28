@@ -2038,9 +2038,9 @@ const CHART_PALETTE = {
   emerald:   '#166534',  emeraldHover:   '#0e4d27',  emeraldLight:   'rgba(22, 101, 52, 0.10)',
   crimson:   '#c4243f',  crimsonHover:   '#9a1a30',  crimsonLight:   'rgba(196, 36, 63, 0.10)',
   amber:     '#b87a08',  amberHover:     '#945e06',  amberLight:     'rgba(184, 122, 8, 0.10)',
-  gold:      '#d97aa6',  goldHover:      '#be4d80',  goldLight:      'rgba(217, 122, 166, 0.14)',
-  // Backward-compat aliases (.sage → rose pink)
-  sage:      '#d97aa6',  sageHover:      '#be4d80',  sageLight:      'rgba(217, 122, 166, 0.14)',
+  gold:      '#c4a574',  goldHover:      '#a88652',  goldLight:      'rgba(196, 165, 116, 0.14)',
+  // Backward-compat aliases (.sage → champagne gold)
+  sage:      '#c4a574',  sageHover:      '#a88652',  sageLight:      'rgba(196, 165, 116, 0.14)',
   // Slate ramp — older = darker (intuitive for age)
   slateRamp: ['#cbd5e1', '#94a3b8', '#64748b', '#475569', '#334155', '#1e293b'],
   slateRampDark: ['#475569', '#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0', '#f1f5f9'],
