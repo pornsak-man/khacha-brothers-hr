@@ -195,13 +195,8 @@ const DB = {
       auth_api: Math.round(_tAfterAuth - _tAfterCaptcha)
     };
     // PERF: parallel เหมือนใน init() — โหลด data ทันทีไม่รอ profile เสร็จ
-    const _tPA = performance.now();
     const profilePromise = this.loadProfile();
-    profilePromise.then(() => { window.__lastProfileMs = Math.round(performance.now() - _tPA); }, () => {});
-    const loadAllPromise = this.loadAll(profilePromise);
-    loadAllPromise.then(() => { window.__lastLoadAllMs = Math.round(performance.now() - _tPA); }, () => {});
-    await Promise.all([profilePromise, loadAllPromise]);
-    try { console.log('%c⏱ [debug] Promise.all → loadProfile ' + window.__lastProfileMs + ' ms · loadAll ' + window.__lastLoadAllMs + ' ms', 'color:#7c3aed;font-weight:bold;font-size:13px'); } catch (e) {}
+    await Promise.all([profilePromise, this.loadAll(profilePromise)]);
     this.subscribeRealtime();
     this.ready = true;
     return data.user;
@@ -764,6 +759,10 @@ const DB = {
       return data || [];
     };
 
+    // [PERF] org-chart RPC ย้ายมารันขนานใน Phase 1 (เดิมรัน serial หลังวัด phase1 → +~300ms ที่ปุ่มค้าง)
+    //   มี timeout 8s กัน boot แขวนถ้า RPC ไม่ตอบ; fail → ({data:[]}) → empty cache (fallback slim)
+    const _orgTimeout = new Promise((_, rej) =>
+      setTimeout(() => rej(new Error('org-chart RPC timeout (8s)')), 8000));
     const critical = await Promise.all([
       timed('departments',     this.client.from('departments').select('*').order('id')),
       timed('position_levels', this.client.from('position_levels').select('*').order('id')),
@@ -772,10 +771,10 @@ const DB = {
       timed('user_profiles',   this.client.from('user_profiles').select('*').then(r => r.data || [], () => [])),
       timed('announcements',   this._fetchAllPages('company_announcements', 'created_at', false).catch(() => [])),
       timed('ann_reads',       fetchMyAnnReads().catch(() => [])),
-      timed('position_scopes', this._fetchAllPages('position_scopes', 'sort_order', true).catch(() => []))
+      timed('position_scopes', this._fetchAllPages('position_scopes', 'sort_order', true).catch(() => [])),
+      timed('org_chart',       Promise.race([this.client.rpc('get_org_chart_employees'), _orgTimeout]).then(r => r, () => ({ data: [] })))
     ]);
-    const [deps, pos, emps, branchRows, ups, anns, myReads, scopes] = critical;
-    window.__bootTimings.phases.phase1_total = Math.round(performance.now() - _bootT0);
+    const [deps, pos, emps, branchRows, ups, anns, myReads, scopes, orgResult] = critical;
 
     this.data.departments = (deps.data || []).map(this._depFromDB);
     this.data.positionLevels = (pos.data || []).map(this._posFromDB);
@@ -799,44 +798,32 @@ const DB = {
       } catch (e) { /* non-blocking — dashboard fallback เป็น slim */ }
     }
 
-    // [Org Chart] ดึง basic info ของพนักงานทุกคน (RPC SECURITY DEFINER)
-    // ใช้สำหรับแสดงชื่อ BM/AM/HR/ผู้สร้างประกาศ/ฯลฯ
-    // — staff/viewer มี RLS scope แค่ตัวเอง → ต้องใช้ org chart fallback
-    // — HR/admin อ่าน employees ครบอยู่แล้ว — org chart ช่วย enrich เพิ่ม (no-op สำหรับ row ที่มี)
-    try {
-      // [Guard] timeout 8s — กัน boot แขวนถาวรถ้า RPC ไม่ตอบ (network/DB ช้า)
-      //   ถ้า timeout → ใช้ empty cache → boot ดำเนินต่อ (org chart fallback เป็น slim)
-      const _orgTimeout = new Promise((_, rej) =>
-        setTimeout(() => rej(new Error('org-chart RPC timeout (8s)')), 8000));
-      const { data: orgRows } = await Promise.race([
-        this.client.rpc('get_org_chart_employees'),
-        _orgTimeout
-      ]);
-      this._orgChartCache = new Map();
-      for (const r of (orgRows || [])) {
-        this._orgChartCache.set(r.id, {
-          id: r.id,
-          firstName: r.first_name || '',
-          lastName: r.last_name || '',
-          nickname: r.nickname || '',
-          title: r.title || '',
-          branch: r.branch || '',
-          department: r.department || '',
-          position: r.position_id || '',   // RPC ใช้ position_id (เพราะ "position" reserved)
-          positionTitle: r.position_title || '',
-          status: r.status || 'active',
-          photoUrl: r.photo_url || '',
-          hireDate: r.hire_date || '',
-          terminationDate: r.termination_date || '',
-          employeeType: r.employee_type || '',
-          gender: r.gender || '',
-          _isOrgOnly: true   // marker — ไม่มี salary, ปชช, phone, ฯลฯ
-        });
-      }
-    } catch (e) {
-      console.warn('[org-chart] RPC get_org_chart_employees failed:', e);
-      this._orgChartCache = new Map();
+    // [Org Chart] สร้าง cache จากผล RPC ที่รันขนานใน Phase 1 (ด้านบน) — เดิมรัน serial +~300ms
+    // ใช้แสดงชื่อ BM/AM/HR/ผู้สร้างประกาศ — staff/viewer มี RLS scope แค่ตัวเอง จึงต้อง fallback org chart
+    this._orgChartCache = new Map();
+    for (const r of (orgResult?.data || [])) {
+      this._orgChartCache.set(r.id, {
+        id: r.id,
+        firstName: r.first_name || '',
+        lastName: r.last_name || '',
+        nickname: r.nickname || '',
+        title: r.title || '',
+        branch: r.branch || '',
+        department: r.department || '',
+        position: r.position_id || '',   // RPC ใช้ position_id (เพราะ "position" reserved)
+        positionTitle: r.position_title || '',
+        status: r.status || 'active',
+        photoUrl: r.photo_url || '',
+        hireDate: r.hire_date || '',
+        terminationDate: r.termination_date || '',
+        employeeType: r.employee_type || '',
+        gender: r.gender || '',
+        _isOrgOnly: true   // marker — ไม่มี salary, ปชช, phone, ฯลฯ
+      });
     }
+
+    // phase1_total — วัดหลัง Phase 1 ครบจริง (รวม org-chart ขนาน + ensureFull) → TOTAL สะท้อนเวลาจริง
+    window.__bootTimings.phases.phase1_total = Math.round(performance.now() - _bootT0);
 
     // ─── PERF: log boot timings ทันทีหลัง Phase 1 เสร็จ (dashboard render ต่อ) ───
     // เปิด DevTools Console เห็นว่า query ไหนช้า / ส่ง screenshot/log มาบอกได้
