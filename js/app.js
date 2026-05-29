@@ -32,7 +32,7 @@ const runWhenIdle = (fn, timeout = 1000) =>
 // ใช้ requestAnimationFrame + easeOutQuart ให้ดู smooth premium
 // รักษา formatting เดิม (comma separator, decimal places) ผ่าน parseFloat + format
 // respect prefers-reduced-motion → ตั้งค่า target ตรงเลย
-function animateCountUp(el, duration = 600) {
+function animateCountUp(el, duration = 450) {
   if (!el) return;
   const raw = el.textContent.trim();
   const m = raw.match(/^([\-+]?[\d,]+(?:\.\d+)?)(.*)$/);
@@ -1616,8 +1616,9 @@ router.register('dashboard', () => {
   window.afterRender = () => {
     // animate KPI counters ก่อน — เห็นทันทีหลัง render เลข fade จาก 0
     animateKPICounters();
-    // render charts ตอน main thread ว่าง — กัน initial render กระตุก
-    runWhenIdle(() => renderDashboardCharts(s, monthly, trailing12));
+    // render charts ทันทีหลัง first paint (2× rAF) — ขึ้นก่อน Phase 2 จะแย่ง main thread
+    // (เดิมใช้ runWhenIdle รอ idle สูงสุด 1s → Phase 2 background ดีเลย์กราฟ → ทำให้ "รู้สึก" ช้า)
+    requestAnimationFrame(() => requestAnimationFrame(() => renderDashboardCharts(s, monthly, trailing12)));
     const goDash = debounce(() => router.go('dashboard'), 80);
     document.getElementById('dashScope')?.addEventListener('change', (e) => {
       dashState.scope = e.target.value;
@@ -2069,6 +2070,8 @@ function renderDashboardCharts(s, monthly, trailing12) {
   Chart.defaults.color = isDark ? '#adada4' : '#5e5d57';
   Chart.defaults.font.family = 'Inter, "IBM Plex Sans Thai", system-ui, sans-serif';
   Chart.defaults.font.size = 12;
+  // [UX] ลด chart animation จาก default 1000ms → 350ms : กราฟขึ้นเร็ว รู้สึก snappy ไม่อืด
+  Chart.defaults.animation.duration = 350;
   const gridColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(20,20,15,0.04)';
   const tooltipStyle = {
     backgroundColor: isDark ? 'rgba(20, 20, 24, 0.96)' : 'rgba(14, 14, 12, 0.96)',
@@ -2366,7 +2369,7 @@ function renderDashboardCharts(s, monthly, trailing12) {
           // value label ปลาย bar — ใช้ ChartJS plugin pattern (afterDatasetsDraw)
           datalabels: { display: false }  // กัน plugin ภายนอกถ้ามี
         },
-        animation: { duration: 600, easing: 'easeOutQuart' },
+        animation: { duration: 350, easing: 'easeOutQuart' },
         scales: {
           x: {
             beginAtZero: true,
