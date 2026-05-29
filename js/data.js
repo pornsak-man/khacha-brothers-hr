@@ -866,8 +866,10 @@ const DB = {
       return all;
     };
 
-    const _p2T0 = performance.now();
-    this._secondaryLoadPromise = Promise.all([
+    // [PERF/UX] Phase 2: ห่อเป็น function เพื่อหน่วงเริ่มหลัง dashboard พร้อมใช้ (ดูท้าย block)
+    const _runSecondary = () => {
+      const _p2T0 = performance.now();
+      return Promise.all([
       // ─── จาก Phase 1 (เดิม block login) ย้ายมา Phase 2 — ไม่จำเป็นต่อ dashboard ───
       // หมายเหตุ: Supabase query builder เป็น "thenable" ไม่ใช่ Promise จริง — ใช้ .then(ok, err) แทน .catch
       timed('calendar_items',          this.client.from('calendar_items').select('*').order('date').then(r => r, () => ({ data: [] }))),
@@ -948,6 +950,12 @@ const DB = {
     }).catch(err => {
       console.warn('Secondary data load failed:', err);
     });
+    };
+    // [PERF/UX] เริ่ม Phase 2 เมื่อ main thread ว่าง — ให้ dashboard paint + charts + กดใช้งานลื่นก่อน
+    // แล้วค่อยโหลด 22 ตารางเบื้องหลัง (ไม่มีใคร await; หน้าที่ใช้ data จะ re-render เองเมื่อโหลดเสร็จ — block ด้านบน)
+    this._secondaryLoadPromise = (typeof requestIdleCallback === 'function')
+      ? new Promise(res => requestIdleCallback(() => res(_runSecondary()), { timeout: 1500 }))
+      : new Promise(res => setTimeout(() => res(_runSecondary()), 400));
   },
 
   // ─── REALTIME ───
