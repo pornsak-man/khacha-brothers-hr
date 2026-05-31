@@ -773,6 +773,7 @@ const auth = {
     if (typeof updateBorrowBadge === 'function') updateBorrowBadge();
     if (typeof updateHeadcountBadge === 'function') updateHeadcountBadge();
     if (typeof updateResignBadge === 'function') updateResignBadge();
+    if (typeof updateOvertimeBadge === 'function') updateOvertimeBadge();
     if (typeof renderNotifBell === 'function') renderNotifBell();
     this.refreshImpersonateUI();
     // ★ ใช้ helper function — share logic กับ onProfileChange handler
@@ -830,6 +831,10 @@ function refreshRoleDependentUI() {
   // "แจ้งพนักงานลาออก" — เฉพาะ ผจก.สาขา / AM / OM / HR / admin (ซ่อนจากพนักงานทั่วไป)
   const resignEl = document.getElementById('navResign');
   if (resignEl) resignEl.style.display = (DB.isHR || ['branch_manager', 'area_manager', 'operation_manager'].includes(DB.role)) ? '' : 'none';
+
+  // "ขอทำงานล่วงเวลา (OT)" — เฉพาะ ผจก.สาขา / AM / OM / HR / admin
+  const otEl = document.getElementById('navOvertime');
+  if (otEl) otEl.style.display = (DB.isHR || ['branch_manager', 'area_manager', 'operation_manager'].includes(DB.role)) ? '' : 'none';
 
   // [Phase B] Auto-hide nav-group ที่ไม่มี item แสดงเลย (เช่น viewer ไม่เห็น "การเงิน")
   //   ต้อง run หลัง set item visibility ครบ
@@ -1020,6 +1025,7 @@ const router = {
       'leave-calendar': 'ปฏิทินสาขา',
       'borrow-requests': 'ขอยืมพนักงาน',
       resignations: 'แจ้งพนักงานลาออก',
+      overtime: 'ขอทำงานล่วงเวลา (OT)',
       'my-uniform': 'ขอชุดของฉัน',
       loans: 'การกู้เงินบริษัท',
       advances: 'เบิกเงินล่วงหน้า',
@@ -1363,6 +1369,10 @@ window.onRealtimeChange = (payload) => {
     updateResignBadge();
     if (router.current === 'resignations') router.go('resignations');
   }
+  if (table === 'overtime_requests' && typeof updateOvertimeBadge === 'function') {
+    updateOvertimeBadge();
+    if (router.current === 'overtime') router.go('overtime');
+  }
 
   // อัปเดต badge ประกันสังคม เมื่อ employees เปลี่ยน — เสมอ (ไม่ขึ้นกับหน้าปัจจุบัน)
   if (table === 'employees' && typeof updateSSOBadge === 'function') updateSSOBadge();
@@ -1633,6 +1643,7 @@ router.register('dashboard', () => {
   const probByBranch = DB.getProbationPassByBranch();
   const pendingUniform = DB.getUniformRequests({ status: 'pending' });
   const pendingResign = DB.getResignationReports({ status: 'reported' });
+  const pendingOT = DB.getOvertimeRequests({ status: 'pending' });
   // ★ พนักงานพ้นสภาพในเดือนปัจจุบัน — เรียงจากใหม่สุด
   const thisYM = new Date().toISOString().slice(0, 7);  // YYYY-MM
   const resignedThisMonth = DB._filterByScope(DB.getEmployees(), scope)
@@ -1788,6 +1799,35 @@ router.register('dashboard', () => {
           </div>`;
         }).join('')}
         ${pendingResign.length > 8 ? `<div class="muted-2" style="text-align:center;padding:10px;font-size:12px">+ อีก ${pendingResign.length - 8} คน</div>` : ''}
+      </div>
+    </div>
+    ` : ''}
+
+    ${(pendingOT.length && (DB.isHR || DB.role === 'area_manager' || DB.role === 'operation_manager')) ? `
+    <div class="sw-section-label">แจ้งเตือนด่วน</div>
+    <div class="sw-chart-card" style="border-left:4px solid var(--warning);background:linear-gradient(90deg, rgba(184,122,8,0.06), transparent 60%)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+        <div class="sw-chart-title" style="display:flex;align-items:center;gap:10px">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
+          <span style="color:var(--warning-text)">มีคำขอ OT รออนุมัติ</span>
+          <span class="badge badge-warning" style="font-size:12px;padding:4px 12px;font-weight:700">${pendingOT.length} รายการ</span>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="router.go('overtime')">ไปอนุมัติ →</button>
+      </div>
+      <div class="sw-chart-sub" style="margin-bottom:14px">ผจก.สาขาขอ OT ให้พนักงาน — รอ AM/HR อนุมัติ</div>
+      <div style="max-height:240px;overflow-y:auto">
+        ${pendingOT.slice(0, 8).map(r => {
+          const e = DB.getEmployee(r.employeeId);
+          const name = r.employeeName || (e ? `${e.firstName || ''} ${e.lastName || ''}`.trim() : r.employeeId);
+          return `
+          <div style="display:flex;align-items:center;gap:14px;padding:10px 8px;border-bottom:1px solid var(--border);cursor:pointer" onclick="router.go('overtime')">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:13.5px">${escapeHtml(name)}${r.otHours != null ? ` <span class="muted-2" style="font-weight:400">· ${r.otHours} ชม.</span>` : ''}</div>
+              <div class="muted-2" style="font-size:12px;margin-top:2px">สาขา ${escapeHtml(r.branchId)}${r.otDate ? ' · ' + fmt.date(r.otDate) : ''} · ${escapeHtml((r.startTime || '').slice(0, 5))}–${escapeHtml((r.endTime || '').slice(0, 5))}</div>
+            </div>
+          </div>`;
+        }).join('')}
+        ${pendingOT.length > 8 ? `<div class="muted-2" style="text-align:center;padding:10px;font-size:12px">+ อีก ${pendingOT.length - 8} รายการ</div>` : ''}
       </div>
     </div>
     ` : ''}
@@ -16927,6 +16967,292 @@ function updateResignBadge() {
     badge.textContent = String(pending);
     badge.style.display = 'inline-block';
     badge.title = `${pending} รายการแจ้งลาออกรอรับทราบ`;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// OVERTIME REQUESTS — หน้า "ขอทำงานล่วงเวลา (OT)" (BM ขอ → AM/HR อนุมัติ)
+// ═══════════════════════════════════════════════════════════
+const OT_STATUS_BADGE = {
+  pending:   { label: '⏳ รออนุมัติ',   cls: 'badge-warning' },
+  approved:  { label: '✓ อนุมัติแล้ว',  cls: 'badge-success' },
+  rejected:  { label: '✕ ไม่อนุมัติ',   cls: 'badge-danger' },
+  cancelled: { label: '⊘ ยกเลิก',       cls: 'badge-neutral' }
+};
+function _otBadgeHtml(r) {
+  const base = OT_STATUS_BADGE[r.status] || { label: r.status, cls: 'badge' };
+  let html = `<span class="badge ${base.cls}">${escapeHtml(base.label)}</span>`;
+  if (r.status === 'rejected' && r.approverNote) {
+    html += `<br><span class="muted-2" style="font-size:10.5px">${escapeHtml(r.approverNote)}</span>`;
+  }
+  return html;
+}
+
+// คำนวณชั่วโมงจาก HH:MM (ข้ามเที่ยงคืน +24) — ตรงกับสูตรใน RPC
+function _otCalcHours(start, end) {
+  if (!start || !end) return 0;
+  const [h1, m1] = start.split(':').map(Number);
+  const [h2, m2] = end.split(':').map(Number);
+  if ([h1, m1, h2, m2].some(n => Number.isNaN(n))) return 0;
+  let mins = (h2 * 60 + m2) - (h1 * 60 + m1);
+  if (mins <= 0) mins += 24 * 60;
+  return +(mins / 60).toFixed(2);
+}
+
+const _otFilter = { year: '', status: '' };
+function setOtFilter(k, v) { _otFilter[k] = v || ''; router.go('overtime'); }
+function clearOtFilter() { _otFilter.year = ''; _otFilter.status = ''; router.go('overtime'); }
+
+router.register('overtime', () => {
+  const allList = DB.getOvertimeRequests();
+  const role = DB.role;
+  const list = allList.filter(r => {
+    if (_otFilter.year && String(r.otDate || '').slice(0, 4) !== _otFilter.year) return false;
+    if (_otFilter.status && r.status !== _otFilter.status) return false;
+    return true;
+  });
+  const _otHasFilter = !!(_otFilter.year || _otFilter.status);
+  const _otYears = (() => {
+    const ty = new Date().getFullYear();
+    const ys = new Set(allList.map(r => String(r.otDate || '').slice(0, 4)).filter(Boolean));
+    for (let y = ty - 5; y <= ty + 1; y++) ys.add(String(y));
+    return Array.from(ys).filter(Boolean).sort((a, b) => Number(b) - Number(a));
+  })();
+  const managed = DB._managedBranches || [];
+  const canActOn = (r) => r.status === 'pending' && (DB.isHR || ((role === 'area_manager' || role === 'operation_manager') && managed.includes(r.branchId)));
+  const totalPending = allList.filter(r => r.status === 'pending').length;
+  const canCreate = DB.isHR || role === 'branch_manager' || role === 'area_manager' || role === 'operation_manager';
+
+  return `
+    <div class="sw-page-title">ขอทำงานล่วงเวลา (OT)</div>
+    <div class="sw-page-subtitle">
+      ผจก.สาขาขอ OT ให้พนักงานประจำสายงาน operation → AM หรือ HR อนุมัติ · ระบบคำนวณชั่วโมงให้อัตโนมัติ
+    </div>
+    <div class="card mt-4">
+      <div class="flex items-center" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <span class="badge badge-warning" style="font-size:13px;padding:6px 12px">⏳ รออนุมัติ ${totalPending}</span>
+          <span class="badge" style="font-size:13px;padding:6px 12px">รวมทั้งหมด ${list.length}</span>
+        </div>
+        ${canCreate ? `<button class="btn btn-primary" onclick="openOvertimeForm()">+ ขอ OT</button>` : ''}
+      </div>
+      <div class="sw-filter-bar" style="margin-bottom:14px">
+        <select class="sw-filter-select" onchange="setOtFilter('year', this.value)" aria-label="กรองตามปี">
+          <option value="">— ทุกปี —</option>
+          ${_otYears.map(y => `<option value="${y}" ${_otFilter.year === y ? 'selected' : ''}>ปี ${Number(y) + 543}</option>`).join('')}
+        </select>
+        <select class="sw-filter-select" onchange="setOtFilter('status', this.value)" aria-label="กรองตามสถานะ">
+          <option value="">— ทุกสถานะ —</option>
+          ${Object.entries(OT_STATUS_BADGE).map(([k, v]) => `<option value="${k}" ${_otFilter.status === k ? 'selected' : ''}>${escapeHtml(v.label)}</option>`).join('')}
+        </select>
+        ${_otHasFilter ? `<button class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearOtFilter()">✕ ล้างตัวกรอง</button>` : ''}
+      </div>
+      ${list.length === 0 ? `
+        <div class="empty-state" style="padding:32px">
+          <div class="icon">⏱️</div>
+          <div>${_otHasFilter ? 'ไม่พบคำขอตามตัวกรอง' : 'ยังไม่มีคำขอ OT'}</div>
+          <div class="muted-2" style="font-size:13px;margin-top:6px">${_otHasFilter ? 'ลองเปลี่ยน/ล้างตัวกรอง' : (canCreate ? 'กด "+ ขอ OT" เพื่อขอทำงานล่วงเวลาให้พนักงานประจำสาย operation' : 'ยังไม่มีรายการ')}</div>
+        </div>
+      ` : `
+        <div class="table-wrap">
+          <table class="table" style="font-size:13px">
+            <thead><tr>
+              <th>สถานะ</th>
+              <th>วันที่ OT</th>
+              <th>พนักงาน</th>
+              <th>สาขา</th>
+              <th>เวลา</th>
+              <th>ชม.</th>
+              <th>เหตุผล</th>
+              <th>การกระทำ</th>
+            </tr></thead>
+            <tbody>
+              ${list.map(r => {
+                const canReview = canActOn(r);
+                const canCancel = r.status === 'pending' && (DB.isHR || r.requestedBy === DB.user?.id);
+                const e = DB.getEmployee(r.employeeId);
+                const empName = r.employeeName || (e ? `${e.firstName || ''} ${e.lastName || ''}`.trim() : r.employeeId);
+                const tt = `${(r.startTime || '').slice(0, 5)}–${(r.endTime || '').slice(0, 5)}`;
+                return `<tr>
+                  <td>${_otBadgeHtml(r)}</td>
+                  <td style="white-space:nowrap;font-size:12px">${r.otDate ? fmt.date(r.otDate) : '-'}</td>
+                  <td><a href="#" onclick="viewEmployee('${escapeHtml(r.employeeId)}');return false;">${escapeHtml(empName || '-')}</a></td>
+                  <td><code>${escapeHtml(r.branchId)}</code></td>
+                  <td style="white-space:nowrap;font-size:12px">${escapeHtml(tt)}</td>
+                  <td style="text-align:center"><strong>${r.otHours != null ? r.otHours : '-'}</strong></td>
+                  <td style="max-width:220px;word-break:break-word">${escapeHtml(r.reason || '-')}</td>
+                  <td>
+                    ${canReview ? `
+                      <button class="btn btn-success btn-sm" onclick="reviewOvertimeUI('${escapeHtml(r.id)}', 'approve')">✓ อนุมัติ</button>
+                      <button class="btn btn-danger btn-sm" onclick="reviewOvertimeUI('${escapeHtml(r.id)}', 'reject')">✕ ปฏิเสธ</button>
+                    ` : ''}
+                    ${canCancel ? `<button class="btn btn-ghost btn-sm" onclick="cancelOvertimeUI('${escapeHtml(r.id)}')">ยกเลิก</button>` : ''}
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+  `;
+});
+
+function openOvertimeForm() {
+  const role = DB.role;
+  if (!(DB.isHR || role === 'branch_manager' || role === 'area_manager' || role === 'operation_manager')) {
+    toast('ต้องเป็น ผจก.สาขา / AM / OM / HR', 'error');
+    return;
+  }
+  const myBranch = DB.getEmployee(DB.profile?.employee_id)?.branch || '';
+  const branches = DB.getBranchMaster ? DB.getBranchMaster({ activeOnly: true }) : [];
+  const lockBranch = (role === 'branch_manager' && myBranch);
+  const initialBranch = lockBranch ? myBranch : (myBranch || '');
+
+  // เฉพาะพนักงานประจำ (full-time) สายงาน operation ที่ยัง active
+  const empOptions = (branchId) => {
+    if (!branchId) return '<option value="">— เลือกสาขาก่อน —</option>';
+    const emps = DB.getEmployees({ branch: branchId, scope: 'operation', status: 'active' })
+      .filter(e => e.employeeType === 'พนักงานประจำ')
+      .slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    if (!emps.length) return '<option value="">— ไม่มีพนักงานประจำสาย operation ในสาขานี้ —</option>';
+    return '<option value="">— เลือกพนักงาน —</option>' + emps.map(e =>
+      `<option value="${escapeHtml(e.id)}">${escapeHtml(e.id)} · ${escapeHtml(`${e.firstName || ''} ${e.lastName || ''}`.trim())}${e.positionTitle ? ' — ' + escapeHtml(e.positionTitle) : ''}</option>`
+    ).join('');
+  };
+
+  modal.open('ขอทำงานล่วงเวลา (OT)', `
+    <form id="otReqForm" class="form-grid">
+      <div class="form-group span-2">
+        <label>สาขา *</label>
+        ${lockBranch ? `
+          <input value="${escapeHtml(myBranch)}" readonly/>
+          <input type="hidden" name="branchId" value="${escapeHtml(myBranch)}"/>
+        ` : `
+          <select name="branchId" id="otBranchSel" required>
+            <option value="">— เลือกสาขา —</option>
+            ${branches.map(b => `<option value="${escapeHtml(b.id)}" ${b.id === myBranch ? 'selected' : ''}>${escapeHtml(b.id)}</option>`).join('')}
+          </select>
+        `}
+      </div>
+      <div class="form-group span-2">
+        <label>พนักงาน (เฉพาะพนักงานประจำ สาย operation) *</label>
+        <select name="employeeId" id="otEmpSel" required>${empOptions(initialBranch)}</select>
+      </div>
+      <div class="form-group">
+        <label>วันที่ทำ OT *</label>
+        <input type="date" name="otDate" required/>
+      </div>
+      <div class="form-group">
+        <label>รวมชั่วโมง</label>
+        <input type="text" id="otHoursPreview" readonly value="—" style="font-weight:700;background:var(--surface-2)"/>
+      </div>
+      <div class="form-group">
+        <label>เวลาเริ่ม *</label>
+        <input type="time" name="startTime" id="otStart" required/>
+      </div>
+      <div class="form-group">
+        <label>เวลาเลิก *</label>
+        <input type="time" name="endTime" id="otEnd" required/>
+      </div>
+      <div class="form-group span-2">
+        <label>เหตุผล / งานที่ทำ</label>
+        <textarea name="reason" rows="2" placeholder="เช่น ปิดร้านช่วงเทศกาล / รับลูกค้ากรุ๊ปใหญ่ / ทำงานต่อกะดึก"></textarea>
+      </div>
+    </form>
+  `, {
+    size: 'sm',
+    footer: '<button class="btn btn-secondary" data-close>ยกเลิก</button><button class="btn btn-primary" id="otReqSubmit">ส่งคำขอ</button>'
+  });
+
+  const branchSel = document.getElementById('otBranchSel');
+  if (branchSel) {
+    branchSel.addEventListener('change', () => {
+      const empSel = document.getElementById('otEmpSel');
+      if (empSel) empSel.innerHTML = empOptions(branchSel.value);
+    });
+  }
+  // live preview ชั่วโมง OT
+  const updHrs = () => {
+    const s = document.getElementById('otStart')?.value || '';
+    const en = document.getElementById('otEnd')?.value || '';
+    const h = _otCalcHours(s, en);
+    const prev = document.getElementById('otHoursPreview');
+    if (prev) prev.value = (s && en && h > 0) ? `${h} ชม.` : '—';
+  };
+  document.getElementById('otStart')?.addEventListener('input', updHrs);
+  document.getElementById('otEnd')?.addEventListener('input', updHrs);
+
+  $('#otReqSubmit').addEventListener('click', async () => {
+    const form = $('#otReqForm');
+    if (!form.checkValidity()) { form.reportValidity(); return; }
+    const fd = new FormData(form);
+    const branchId = (fd.get('branchId') || '').toString().trim();
+    const employeeId = (fd.get('employeeId') || '').toString().trim();
+    const otDate = (fd.get('otDate') || '').toString().trim();
+    const startTime = (fd.get('startTime') || '').toString().trim();
+    const endTime = (fd.get('endTime') || '').toString().trim();
+    const reason = (fd.get('reason') || '').toString().trim();
+    if (_otCalcHours(startTime, endTime) <= 0) { toast('เวลาเริ่ม-เลิกไม่ถูกต้อง', 'warning'); return; }
+    const emp = DB.getEmployee(employeeId) || {};
+    const employeeName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
+    const positionTitle = emp.positionTitle || '';
+    const btn = $('#otReqSubmit'); btn.disabled = true; btn.textContent = 'กำลังส่ง...';
+    try {
+      await DB.createOvertimeRequest({ branchId, employeeId, employeeName, positionTitle, otDate, startTime, endTime, reason });
+      modal.close();
+      toast('✓ ส่งคำขอ OT แล้ว — รอ AM/HR อนุมัติ', 'success');
+      router.go('overtime');
+    } catch (ex) {
+      toast(ex.message || String(ex), 'error');
+      btn.disabled = false; btn.textContent = 'ส่งคำขอ';
+    }
+  });
+}
+
+async function reviewOvertimeUI(requestId, decision) {
+  const action = decision === 'approve' ? 'อนุมัติ' : 'ปฏิเสธ';
+  const note = await modal.prompt(`${action}คำขอ OT`, 'หมายเหตุ (ทางเลือก):', '');
+  if (note === null) return;
+  try {
+    await DB.reviewOvertimeRequest(requestId, decision, note);
+    toast(`✓ ${action}คำขอแล้ว`, 'success');
+    router.go('overtime');
+  } catch (ex) {
+    toast(ex.message || String(ex), 'error');
+  }
+}
+
+async function cancelOvertimeUI(requestId) {
+  const reason = await modal.prompt('ยกเลิกคำขอ OT', 'เหตุผลที่ยกเลิก (ทางเลือก):', '');
+  if (reason === null) return;
+  try {
+    await DB.cancelOvertimeRequest(requestId, reason);
+    toast('ยกเลิกคำขอแล้ว', 'success');
+    router.go('overtime');
+  } catch (ex) {
+    toast(ex.message || String(ex), 'error');
+  }
+}
+
+function updateOvertimeBadge() {
+  const badge = document.getElementById('navBadgeOvertime');
+  if (!badge) return;
+  // นับเฉพาะคำขอที่ "ฉันอนุมัติได้" — AM/OM ในสาขาที่ดูแล หรือ HR เห็นทั้งหมด (BM ผู้ขอไม่นับ)
+  const list = DB.data.overtimeRequests || [];
+  let pending = 0;
+  if (DB.isHR) {
+    pending = list.filter(r => r.status === 'pending').length;
+  } else if (DB.role === 'area_manager' || DB.role === 'operation_manager') {
+    const managed = DB._managedBranches || [];
+    pending = list.filter(r => r.status === 'pending' && managed.includes(r.branchId)).length;
+  }
+  if (pending > 0) {
+    badge.textContent = String(pending);
+    badge.style.display = 'inline-block';
+    badge.title = `${pending} คำขอ OT รออนุมัติ`;
   } else {
     badge.style.display = 'none';
   }

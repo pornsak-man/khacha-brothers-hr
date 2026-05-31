@@ -897,12 +897,13 @@ const DB = {
       timed('borrow_requests',         this._fetchAllPages('cross_branch_borrow_requests', 'created_at', false).catch(() => [])),
       timed('headcount_requests',      this._fetchAllPages('headcount_requests', 'requested_at', false).catch(() => [])),
       timed('resignation_reports',     this._fetchAllPages('resignation_reports', 'reported_at', false).catch(() => [])),
+      timed('overtime_requests',       this._fetchAllPages('overtime_requests', 'ot_date', false).catch(() => [])),
       timed('employees_archive',       fetchEmployeesArchive().catch(() => []))
     ]).then(([cal, comp, leaves, lvTypes, swapReqs,
               loans, advs, allow, evals, sal, appls,
               uniBrands, uniItems, uniReqs, uniIssues, uniMoves, uniSched,
               shifts, schedWeeks, schedEntries, borrowReqs, hcReqs,
-              rsgReports, oldEmps]) => {
+              rsgReports, otReqs, oldEmps]) => {
       // ใหม่: ตาราง critical-but-not-dashboard ที่ย้ายมา
       this.data.calendar = ((cal && cal.data) || []).map(this._calFromDB);
       if (comp && comp.data) this.data.company = this._compFromDB(comp.data);
@@ -928,6 +929,7 @@ const DB = {
       this.data.borrowRequests = (borrowReqs || []).map(this._borrowFromDB);
       this.data.headcountRequests = (hcReqs || []).map(this._hcFromDB);
       this.data.resignationReports = (rsgReports || []).map(this._rsgFromDB);
+      this.data.overtimeRequests = (otReqs || []).map(this._otFromDB);
       // Merge employees เก่าเข้ากับ active employees (เรียง id เพื่อให้ stable)
       if (oldEmps.length) {
         const existingIds = new Set(this.data.employees.map(e => e.id));
@@ -1045,7 +1047,8 @@ const DB = {
       schedule_entries: { list: 'scheduleEntries', from: this._schedEntryFromDB },
       cross_branch_borrow_requests: { list: 'borrowRequests', from: this._borrowFromDB },
       headcount_requests: { list: 'headcountRequests', from: this._hcFromDB },
-      resignation_reports: { list: 'resignationReports', from: this._rsgFromDB }
+      resignation_reports: { list: 'resignationReports', from: this._rsgFromDB },
+      overtime_requests: { list: 'overtimeRequests', from: this._otFromDB }
     };
     const m = map[table];
     if (!m) return;
@@ -5447,6 +5450,96 @@ const DB = {
       this.data.resignationReports[idx].status = 'cancelled';
       this.data.resignationReports[idx].cancelledAt = new Date().toISOString();
       this.data.resignationReports[idx].cancelReason = reason;
+    }
+    return data;
+  },
+
+  // ─── OVERTIME REQUESTS (ขอ OT — BM ขอ → AM/HR อนุมัติ · เฉพาะ full-time operation) ───
+  _otFromDB(r) {
+    return {
+      id: r.id,
+      branchId: r.branch_id,
+      employeeId: r.employee_id,
+      employeeName: r.employee_name || '',
+      positionTitle: r.position_title || '',
+      otDate: r.ot_date || '',
+      startTime: r.start_time || '',
+      endTime: r.end_time || '',
+      otHours: r.ot_hours != null ? Number(r.ot_hours) : null,
+      reason: r.reason || '',
+      status: r.status,                      // pending | approved | rejected | cancelled
+      requestedBy: r.requested_by,
+      requestedAt: r.requested_at,
+      approvedBy: r.approved_by, approvedAt: r.approved_at, approverNote: r.approver_note || '',
+      cancelledAt: r.cancelled_at,
+      cancelReason: r.cancel_reason || '',
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
+    };
+  },
+
+  async loadOvertimeRequests() {
+    const { data, error } = await this.client
+      .from('overtime_requests')
+      .select('*')
+      .order('ot_date', { ascending: false });
+    if (error) { console.warn('loadOvertimeRequests failed:', error); this.data.overtimeRequests = []; return []; }
+    this.data.overtimeRequests = (data || []).map(this._otFromDB);
+    return this.data.overtimeRequests;
+  },
+
+  getOvertimeRequests({ status = null, branch = null } = {}) {
+    let list = this.data.overtimeRequests || [];
+    if (status) list = list.filter(r => r.status === status);
+    if (branch) list = list.filter(r => r.branchId === branch);
+    return list;
+  },
+
+  async createOvertimeRequest({ branchId, employeeId, employeeName, positionTitle, otDate, startTime, endTime, reason }) {
+    if (!branchId || !employeeId || !otDate || !startTime || !endTime) {
+      throw new Error('ข้อมูลไม่ครบ — ต้องมี สาขา, พนักงาน, วันที่, เวลาเริ่ม-เลิก');
+    }
+    const { data, error } = await this.client.rpc('create_overtime_request', {
+      p_branch_id: branchId,
+      p_employee_id: employeeId,
+      p_employee_name: employeeName || null,
+      p_position_title: positionTitle || null,
+      p_ot_date: otDate,
+      p_start_time: startTime,
+      p_end_time: endTime,
+      p_reason: reason || null
+    });
+    if (error) throw error;
+    await this.loadOvertimeRequests();
+    return data;   // { id, status, ot_hours }
+  },
+
+  // decision: 'approve' | 'reject' — AM ของสาขา หรือ HR/admin
+  async reviewOvertimeRequest(requestId, decision, note = '') {
+    if (!['approve', 'reject'].includes(decision)) {
+      throw new Error('decision ต้องเป็น approve หรือ reject');
+    }
+    const { data, error } = await this.client.rpc('review_overtime_request', {
+      p_request_id: requestId,
+      p_decision: decision,
+      p_note: note || null
+    });
+    if (error) throw error;
+    await this.loadOvertimeRequests();
+    return data;
+  },
+
+  async cancelOvertimeRequest(requestId, reason = '') {
+    const { data, error } = await this.client.rpc('cancel_overtime_request', {
+      p_request_id: requestId,
+      p_reason: reason || null
+    });
+    if (error) throw error;
+    const idx = (this.data.overtimeRequests || []).findIndex(r => r.id === requestId);
+    if (idx >= 0) {
+      this.data.overtimeRequests[idx].status = 'cancelled';
+      this.data.overtimeRequests[idx].cancelledAt = new Date().toISOString();
+      this.data.overtimeRequests[idx].cancelReason = reason;
     }
     return data;
   },
