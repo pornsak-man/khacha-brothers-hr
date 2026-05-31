@@ -1671,7 +1671,7 @@ router.register('dashboard', () => {
       <div class="sw-stat-card sw-accent-red">
         <div class="sw-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 13 12 18 17 13"/><polyline points="7 7 12 12 17 7"/></svg></div>
         <div class="sw-stat-label">พ้นสภาพ เดือนนี้</div>
-        <div class="sw-stat-value" style="color:var(--danger)">${fmt.num(kpi.exitThisMonth)}</div>
+        <div class="sw-stat-value" style="color:#1e88e5">${fmt.num(kpi.exitThisMonth)}</div>
         <div class="sw-stat-change">รวมปี ${kpi.year}: ${fmt.num(kpi.exitYTD)} คน · 12 เดือนย้อนหลัง</div>
         <div class="sw-stat-spark"><canvas id="sparkExits"></canvas></div>
       </div>
@@ -1770,7 +1770,7 @@ ${resignedThisMonth.length ? `
             </div>
             <div style="text-align:right;flex-shrink:0">
               <div style="font-size:11px;color:var(--text-3)">พ้นสภาพ</div>
-              <div style="font-size:13px;font-weight:700;color:var(--danger)">${fmt.date(e.terminationDate)}</div>
+              <div style="font-size:13px;font-weight:700;color:#1e88e5">${fmt.date(e.terminationDate)}</div>
             </div>
           </div>`;
         }).join('')}
