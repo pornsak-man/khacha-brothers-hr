@@ -17601,7 +17601,7 @@ function renderScheduleGrid(branchId, weekStart, canEdit) {
           const timeText = shift.isOffDay
             ? 'OFF'
             : `${(shift.startTime || '').slice(0, 5)}–${(shift.endTime || '').slice(0, 5)}`;
-          cellContent = `<span class="shift-badge" style="background:${escapeHtml(shift.color)}33;color:${escapeHtml(shift.color)};border-color:${escapeHtml(shift.color)}66">
+          cellContent = `<span class="shift-badge" style="background:${escapeHtml(shift.color)}33;border-color:${escapeHtml(shift.color)}">
             <strong>${escapeHtml(shift.code)}</strong>
             <span class="shift-badge-time">${escapeHtml(timeText)}</span>
           </span>`;

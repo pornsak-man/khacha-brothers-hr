@@ -4656,6 +4656,7 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
   padding: 5px 9px; border-radius: 6px;
   border: 1.5px solid; font-size: 13px; font-weight: 700;
   white-space: nowrap;
+  color: var(--text);   /* [contrast] ตัวอักษรสีเข้มเสมอ (ไม่ใช้สีกะมาเป็นสีตัวอักษร) — กันจางกลืนพื้นในกะสีอ่อน */
   /* [Visibility v2] เพิ่ม contrast แรงขึ้น —
      - saturate 1.4 ทำสี vivid ขึ้น (เดิม 1.15 ยังจาง)
      - contrast 1.05 เพิ่มความเข้ม
@@ -5157,7 +5158,8 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
    ใน dark mode พื้นเซลล์เข้มแล้ว alpha 12% เลยมืดมาก
    → filter brightness ทำให้ทั้ง bg + text สว่างขึ้น */
 [data-theme="dark"] .shift-badge {
-  filter: brightness(1.7) saturate(1.15);
+  /* [contrast] ไม่เพิ่ม brightness — ให้พื้นกะยังเข้มพอ ตัวอักษรสว่าง (var(--text)) อ่านชัด */
+  filter: saturate(1.3);
 }
 
 /* ปุ่ม "+" ในเซลล์ว่าง */
