@@ -17610,7 +17610,7 @@ function updateShiftChangeBadge() {
 // ═══════════════════════════════════════════════════════════════════
 const _attState = (() => {
   const d = new Date();
-  return { year: d.getFullYear(), month: d.getMonth() + 1, branch: '', status: '', grace: 0, loaded: false, loading: false };
+  return { year: d.getFullYear(), month: d.getMonth() + 1, branch: '', status: '', search: '', grace: 0, loaded: false, loading: false };
 })();
 
 const ATT_ANOMALY = {
@@ -17859,7 +17859,22 @@ function setAttMonth(val) {
 }
 function setAttBranch(v) { _attState.branch = v || ''; _attState.loaded = false; attLoadAndRender(); }
 function setAttStatus(v) { _attState.status = v || ''; if (router.current === 'attendance') router.go('attendance'); }
-function clearAttFilter() { _attState.branch = ''; _attState.status = ''; _attState.loaded = false; attLoadAndRender(); }
+// ค้นหารายบุคคล — กรองแถวในที่ (ไม่ re-render ทั้งหน้า → ไม่เด้ง focus, ไม่หน่วงเมื่อมีพันแถว)
+function setAttSearch(v) {
+  _attState.search = v || '';
+  const q = _attState.search.trim().toLowerCase();
+  const tbody = document.getElementById('attTbody');
+  if (!tbody) return;
+  let shown = 0;
+  tbody.querySelectorAll('tr[data-search]').forEach(tr => {
+    const hit = !q || (tr.getAttribute('data-search') || '').includes(q);
+    tr.style.display = hit ? '' : 'none';
+    if (hit) shown++;
+  });
+  const nores = document.getElementById('attNoSearch');
+  if (nores) nores.style.display = (q && shown === 0) ? '' : 'none';
+}
+function clearAttFilter() { _attState.branch = ''; _attState.status = ''; _attState.search = ''; _attState.loaded = false; attLoadAndRender(); }
 
 function attMonthOptionsHtml() {
   const now = new Date();
@@ -18003,7 +18018,7 @@ router.register('attendance', () => {
     if (f === 'no_shift')   return k === 'no_shift';
     return true;
   });
-  const hasFilter = !!(_attState.branch || _attState.status);
+  const hasFilter = !!(_attState.branch || _attState.status || _attState.search);
 
   // สรุป
   const cnt = { normal:0, late:0, early:0, off:0, incomplete:0, noshift:0 };
@@ -18022,6 +18037,8 @@ router.register('attendance', () => {
   const totEmps = new Set(att.map(r => r.employeeId)).size;
   const totWorkMin = att.reduce((s, r) => s + (r.workMinutes || 0), 0);
   const hasSchedule = (DB.data.scheduleEntries || []).length > 0;
+  // หลัง re-render (เปลี่ยนเดือน/สาขา/สถานะ) → กรองคำค้นเดิมซ้ำในที่
+  window.afterRender = () => { try { setAttSearch(_attState.search); } catch (e) {} };
 
   return `
     <div class="sw-page-title">บันทึกเวลาทำงาน (สแกนนิ้ว)</div>
@@ -18052,6 +18069,9 @@ router.register('attendance', () => {
       </div>
       ${!hasSchedule ? `<div style="font-size:12.5px;color:var(--warning);background:rgba(217,119,6,.08);border:1px solid var(--warning);border-radius:8px;padding:8px 10px;margin-bottom:12px">⚠ ยังไม่พบตารางกะในระบบ — คอลัมน์ "กะ / สาย / ออกก่อน / ขาดงาน" จะคำนวณได้เมื่อมีการจัดตารางงาน (เมนู "ตารางงาน")</div>` : ''}
       <div class="sw-filter-bar" style="margin-bottom:14px">
+        <input id="attSearchInput" type="search" class="sw-filter-input" style="flex:0 1 240px;min-width:170px"
+          value="${escapeHtml(_attState.search || '')}" oninput="setAttSearch(this.value)"
+          placeholder="🔍 ค้นหาชื่อ / รหัสพนักงาน" aria-label="ค้นหาพนักงาน"/>
         <select class="sw-filter-select" onchange="setAttMonth(this.value)" aria-label="เลือกเดือน">${attMonthOptionsHtml()}</select>
         <select class="sw-filter-select" onchange="setAttBranch(this.value)" aria-label="กรองตามสาขา">${attBranchOptionsHtml()}</select>
         <select class="sw-filter-select" onchange="setAttStatus(this.value)" aria-label="กรองตามผลเทียบกะ">
@@ -18084,14 +18104,15 @@ router.register('attendance', () => {
               <th style="text-align:center">ชม.ทำงาน</th><th>ผลเทียบกะ</th>
               ${canManage ? '<th></th>' : ''}
             </tr></thead>
-            <tbody>
+            <tbody id="attTbody">
               ${list.map(row => {
                 const e = DB.getEmployee(row.employeeId);
                 const nm = row.employeeName || (e ? `${e.firstName||''} ${e.lastName||''}`.trim() : row.employeeId);
+                const srch = escapeHtml(`${nm} ${row.employeeId}`.toLowerCase());
                 const nameCell = `<td><a href="#" onclick="viewEmployee('${escapeHtml(row.employeeId)}');return false;">${escapeHtml(nm || row.employeeId)}</a>
                       <div class="muted-2" style="font-size:11px">${escapeHtml(row.employeeId)}${row.branchId ? ' · '+escapeHtml(row.branchId) : ''}</div></td>`;
                 if (row._absent) {
-                  return `<tr style="background:rgba(220,38,38,.05)">
+                  return `<tr data-search="${srch}" style="background:rgba(220,38,38,.05)">
                     ${nameCell}
                     <td style="white-space:nowrap;font-size:12px">${fmt.date(row.workDate)}</td>
                     <td>${_attShiftCell(row.roster)}</td>
@@ -18106,7 +18127,7 @@ router.register('attendance', () => {
                 const scan = `${_attHM(row.checkIn)} – ${_attHM(row.checkOut)}`
                   + ((row.breakOut || row.breakIn) ? `<div class="muted-2" style="font-size:10px">พัก ${_attHM(row.breakOut)}–${_attHM(row.breakIn)}</div>` : '');
                 const statusCell = (ro.kind && ro.kind !== 'no_shift') ? _attRosterCell(ro) : _attStatusCell(row);
-                return `<tr>
+                return `<tr data-search="${srch}">
                   ${nameCell}
                   <td style="white-space:nowrap;font-size:12px">${fmt.date(row.workDate)}</td>
                   <td>${_attShiftCell(ro)}</td>
@@ -18121,6 +18142,7 @@ router.register('attendance', () => {
                   </td>` : ''}
                 </tr>`;
               }).join('')}
+              <tr id="attNoSearch" style="display:none"><td colspan="${canManage ? 9 : 8}" style="text-align:center;padding:24px" class="muted-2">ไม่พบพนักงานที่ค้นหา — ลองพิมพ์ชื่อหรือรหัสอื่น</td></tr>
             </tbody>
           </table>
         </div>
