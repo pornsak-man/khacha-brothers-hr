@@ -2099,6 +2099,18 @@ const DB = {
     return includeInactive ? list : list.filter(s => s.active);
   },
   getScope(id) { return (this.data.positionScopes || []).find(s => s.id === id); },
+  // resolve สายงาน (scope) ของพนักงาน: ตำแหน่ง→scope (priority) → ฝ่าย→scope (fallback) → null
+  // ใช้ logic เดียวกับ _computeScopeStats เพื่อให้ผลตรงกันทั้งระบบ
+  scopeOfEmployee(emp) {
+    if (!emp) return null;
+    const pos = emp.position ? this.getPosition(emp.position) : null;
+    let scopeId = pos?.scope || null;
+    if (!scopeId && emp.department) {
+      const dept = this.getDepartment(emp.department);
+      if (dept?.scope) scopeId = dept.scope;
+    }
+    return scopeId || null;
+  },
   async saveScope(scope) {
     if (!this.isHR) throw new Error('ต้องเป็น admin หรือ HR');
     const id = (scope.id || '').trim().toLowerCase();
