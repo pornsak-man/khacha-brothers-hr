@@ -771,6 +771,7 @@ const auth = {
     if (typeof updateAnnouncementBadge === 'function') updateAnnouncementBadge();
     if (typeof updateScheduleBadge === 'function') updateScheduleBadge();
     if (typeof updateBorrowBadge === 'function') updateBorrowBadge();
+    if (typeof updateHeadcountBadge === 'function') updateHeadcountBadge();
     if (typeof renderNotifBell === 'function') renderNotifBell();
     this.refreshImpersonateUI();
     // ★ ใช้ helper function — share logic กับ onProfileChange handler
@@ -1008,6 +1009,7 @@ const router = {
       blacklist: 'รายชื่อห้ามจ้าง',
       leave: 'การลางาน',
       'salary-adjust': 'ปรับค่าจ้าง / ตำแหน่ง / สาขา',
+      'headcount': 'ขออัตรากำลัง',
       loans: 'การกู้เงินบริษัท',
       advances: 'เบิกเงินล่วงหน้า',
       allowance: 'เบี้ยเลี้ยงรายเดือน',
@@ -1337,6 +1339,10 @@ window.onRealtimeChange = (payload) => {
   if (table === 'cross_branch_borrow_requests' && typeof updateBorrowBadge === 'function') {
     updateBorrowBadge();
     if (router.current === 'borrow-requests') router.go('borrow-requests');
+  }
+  if (table === 'headcount_requests' && typeof updateHeadcountBadge === 'function') {
+    updateHeadcountBadge();
+    if (router.current === 'headcount') router.go('headcount');
   }
 
   // อัปเดต badge ประกันสังคม เมื่อ employees เปลี่ยน — เสมอ (ไม่ขึ้นกับหน้าปัจจุบัน)
@@ -16372,6 +16378,218 @@ function updateBorrowBadge() {
     badge.textContent = String(pending);
     badge.style.display = 'inline-block';
     badge.title = `${pending} คำขอยืมพนักงานรออนุมัติ`;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// HEADCOUNT REQUESTS — หน้า "ขออัตรากำลัง" (BM → AM → HR)
+// ═══════════════════════════════════════════════════════════
+const HC_STATUS_BADGE = {
+  pending_am: { label: '⏳ รอ AM อนุมัติ',  cls: 'badge-warning' },
+  pending_hr: { label: '⏳ รอ HR อนุมัติ',  cls: 'badge-warning' },
+  approved:   { label: '✓ อนุมัติแล้ว',     cls: 'badge-success' },
+  rejected:   { label: '✕ ปฏิเสธ',           cls: 'badge-danger' },
+  cancelled:  { label: '⊘ ยกเลิก',            cls: 'badge' }
+};
+function _hcBadgeHtml(r) {
+  const base = HC_STATUS_BADGE[r.status] || { label: r.status, cls: 'badge' };
+  let html = `<span class="badge ${base.cls}">${escapeHtml(base.label)}</span>`;
+  if (r.status === 'rejected' && r.rejectedByRole) {
+    html += `<br><span class="muted-2" style="font-size:10.5px">โดย ${r.rejectedByRole === 'hr' ? 'HR' : 'AM'}</span>`;
+  }
+  return html;
+}
+
+router.register('headcount', () => {
+  const list = DB.getHeadcountRequests();
+  const role = DB.role;
+  // ใครอนุมัติคำขอนี้ได้ (ตาม step): pending_am → AM ของสาขา/HR ; pending_hr → HR
+  const canActOn = (r) => {
+    if (r.status === 'pending_am') return DB.isHR || ((role === 'area_manager' || role === 'operation_manager') && (DB._managedBranches || []).includes(r.branchId));
+    if (r.status === 'pending_hr') return DB.isHR;
+    return false;
+  };
+  const totalPending = list.filter(r => r.status === 'pending_am' || r.status === 'pending_hr').length;
+  const canCreate = DB.isHR || role === 'branch_manager' || role === 'area_manager' || role === 'operation_manager';
+
+  return `
+    <div class="sw-page-title">ขออัตรากำลัง</div>
+    <div class="sw-page-subtitle">
+      ผจก.สาขาขออัตรากำลัง → AM อนุมัติ → HR อนุมัติขั้นสุดท้าย
+    </div>
+    <div class="card mt-4">
+      <div class="flex items-center" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <span class="badge badge-warning" style="font-size:13px;padding:6px 12px">⏳ รออนุมัติ ${totalPending}</span>
+          <span class="badge" style="font-size:13px;padding:6px 12px">รวมทั้งหมด ${list.length}</span>
+        </div>
+        ${canCreate ? `<button class="btn btn-primary" onclick="openHeadcountForm()">+ สร้างคำขอใหม่</button>` : ''}
+      </div>
+      ${list.length === 0 ? `
+        <div class="empty-state" style="padding:32px">
+          <div class="icon">📋</div>
+          <div>ยังไม่มีคำขออัตรากำลัง</div>
+          <div class="muted-2" style="font-size:13px;margin-top:6px">กด "+ สร้างคำขอใหม่" เพื่อขอเปิดอัตราพนักงาน</div>
+        </div>
+      ` : `
+        <div class="table-wrap">
+          <table class="table" style="font-size:13px">
+            <thead><tr>
+              <th>สถานะ</th>
+              <th>สาขา</th>
+              <th>ตำแหน่ง</th>
+              <th>จำนวน</th>
+              <th>เหตุผล</th>
+              <th>หมายเหตุ</th>
+              <th>การกระทำ</th>
+            </tr></thead>
+            <tbody>
+              ${list.map(r => {
+                const note = r.status === 'rejected' ? r.rejectReason : (r.status === 'cancelled' ? r.cancelReason : (r.hrNote || r.amNote || ''));
+                const canReview = canActOn(r);
+                const canCancel = ['pending_am','pending_hr'].includes(r.status) && (DB.isHR || r.requestedBy === DB.user?.id);
+                return `<tr>
+                  <td>${_hcBadgeHtml(r)}</td>
+                  <td><code>${escapeHtml(r.branchId)}</code></td>
+                  <td>${escapeHtml(r.positionTitle)}</td>
+                  <td style="text-align:center"><strong>${fmt.num(r.headcount)}</strong></td>
+                  <td style="max-width:240px;word-break:break-word">${escapeHtml(r.reason || '-')}</td>
+                  <td style="max-width:200px;word-break:break-word;font-size:12px">${escapeHtml(note || '-')}</td>
+                  <td>
+                    ${canReview ? `
+                      <button class="btn btn-success btn-sm" onclick="reviewHeadcountUI('${escapeHtml(r.id)}', 'approve')">✓ อนุมัติ</button>
+                      <button class="btn btn-danger btn-sm" onclick="reviewHeadcountUI('${escapeHtml(r.id)}', 'reject')">✕ ปฏิเสธ</button>
+                    ` : ''}
+                    ${canCancel ? `<button class="btn btn-ghost btn-sm" onclick="cancelHeadcountUI('${escapeHtml(r.id)}')">ยกเลิก</button>` : ''}
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+  `;
+});
+
+function openHeadcountForm() {
+  const role = DB.role;
+  if (!(DB.isHR || role === 'branch_manager' || role === 'area_manager' || role === 'operation_manager')) {
+    toast('ต้องเป็น ผจก.สาขา / AM / HR', 'error');
+    return;
+  }
+  const myBranch = DB.getEmployee(DB.profile?.employee_id)?.branch || '';
+  const branches = DB.getBranchMaster ? DB.getBranchMaster({ activeOnly: true }) : [];
+  const positions = DB.getPositions ? DB.getPositions() : [];
+  const lockBranch = (role === 'branch_manager' && myBranch);
+
+  modal.open('สร้างคำขออัตรากำลัง', `
+    <form id="hcReqForm" class="form-grid">
+      <div class="form-group span-2">
+        <label>สาขา *</label>
+        ${lockBranch ? `
+          <input value="${escapeHtml(myBranch)}" readonly/>
+          <input type="hidden" name="branchId" value="${escapeHtml(myBranch)}"/>
+        ` : `
+          <select name="branchId" required>
+            <option value="">— เลือกสาขา —</option>
+            ${branches.map(b => `<option value="${escapeHtml(b.id)}" ${b.id === myBranch ? 'selected' : ''}>${escapeHtml(b.id)}${b.name ? ' — ' + escapeHtml(b.name) : ''}</option>`).join('')}
+          </select>
+        `}
+      </div>
+      <div class="form-group span-2">
+        <label>ตำแหน่งที่ขอ *</label>
+        ${positions.length ? `
+          <select name="positionId" required>
+            <option value="">— เลือกตำแหน่ง —</option>
+            ${positions.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name || p.id)}</option>`).join('')}
+          </select>
+        ` : `
+          <input name="positionTitle" required placeholder="เช่น พนักงานขาย"/>
+        `}
+      </div>
+      <div class="form-group">
+        <label>จำนวน (อัตรา) *</label>
+        <input type="number" name="headcount" required min="1" value="1"/>
+      </div>
+      <div class="form-group span-2">
+        <label>เหตุผล</label>
+        <textarea name="reason" rows="3" placeholder="เช่น ทดแทนพนักงานลาออก 2 คน / ขยายงานช่วงเทศกาล"></textarea>
+      </div>
+    </form>
+  `, {
+    size: 'sm',
+    footer: '<button class="btn btn-secondary" data-close>ยกเลิก</button><button class="btn btn-primary" id="hcReqSubmit">ส่งคำขอ</button>'
+  });
+
+  $('#hcReqSubmit').addEventListener('click', async () => {
+    const form = $('#hcReqForm');
+    if (!form.checkValidity()) { form.reportValidity(); return; }
+    const fd = new FormData(form);
+    const branchId = (fd.get('branchId') || '').toString().trim();
+    const positionId = (fd.get('positionId') || '').toString().trim();
+    let positionTitle = (fd.get('positionTitle') || '').toString().trim();
+    if (!positionTitle && positionId) {
+      const pos = (DB.getPositions ? DB.getPositions() : []).find(p => p.id === positionId);
+      positionTitle = pos?.name || positionId;
+    }
+    const headcount = Number(fd.get('headcount') || 0);
+    const reason = (fd.get('reason') || '').toString().trim();
+    const btn = $('#hcReqSubmit'); btn.disabled = true; btn.textContent = 'กำลังส่ง...';
+    try {
+      await DB.createHeadcountRequest({ branchId, positionId, positionTitle, headcount, reason });
+      modal.close();
+      toast('✓ ส่งคำขอแล้ว — รอ AM อนุมัติ', 'success');
+      router.go('headcount');
+    } catch (ex) {
+      toast(ex.message || String(ex), 'error');
+      btn.disabled = false; btn.textContent = 'ส่งคำขอ';
+    }
+  });
+}
+
+async function reviewHeadcountUI(requestId, decision) {
+  const action = decision === 'approve' ? 'อนุมัติ' : 'ปฏิเสธ';
+  const note = await modal.prompt(`${action}คำขออัตรากำลัง`, 'กรอกหมายเหตุ (ทางเลือก):', '');
+  if (note === null) return;
+  try {
+    await DB.reviewHeadcountRequest(requestId, decision, note);
+    toast(`✓ ${action}คำขอแล้ว`, 'success');
+    router.go('headcount');
+  } catch (ex) {
+    toast(ex.message || String(ex), 'error');
+  }
+}
+
+async function cancelHeadcountUI(requestId) {
+  const reason = await modal.prompt('ยกเลิกคำขออัตรากำลัง', 'เหตุผลที่ยกเลิก (ทางเลือก):', '');
+  if (reason === null) return;
+  try {
+    await DB.cancelHeadcountRequest(requestId, reason);
+    toast('ยกเลิกคำขอแล้ว', 'success');
+    router.go('headcount');
+  } catch (ex) {
+    toast(ex.message || String(ex), 'error');
+  }
+}
+
+function updateHeadcountBadge() {
+  const badge = document.getElementById('navBadgeHeadcount');
+  if (!badge) return;
+  const list = DB.data.headcountRequests || [];
+  let pending = 0;
+  if (DB.isHR) {
+    pending = list.filter(r => r.status === 'pending_hr').length;
+  } else if (DB.role === 'area_manager' || DB.role === 'operation_manager') {
+    const managed = DB._managedBranches || [];
+    pending = list.filter(r => r.status === 'pending_am' && managed.includes(r.branchId)).length;
+  }
+  if (pending > 0) {
+    badge.textContent = String(pending);
+    badge.style.display = 'inline-block';
+    badge.title = `${pending} คำขออัตรากำลังรออนุมัติ`;
   } else {
     badge.style.display = 'none';
   }

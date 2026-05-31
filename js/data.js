@@ -895,11 +895,12 @@ const DB = {
       timed('schedule_weeks',          this._fetchAllPages('schedule_weeks', 'week_start', false).catch(() => [])),
       timed('schedule_entries',        this._fetchAllPages('schedule_entries', 'work_date', true).catch(() => [])),
       timed('borrow_requests',         this._fetchAllPages('cross_branch_borrow_requests', 'created_at', false).catch(() => [])),
+      timed('headcount_requests',      this._fetchAllPages('headcount_requests', 'requested_at', false).catch(() => [])),
       timed('employees_archive',       fetchEmployeesArchive().catch(() => []))
     ]).then(([cal, comp, leaves, lvTypes, swapReqs,
               loans, advs, allow, evals, sal, appls,
               uniBrands, uniItems, uniReqs, uniIssues, uniMoves, uniSched,
-              shifts, schedWeeks, schedEntries, borrowReqs,
+              shifts, schedWeeks, schedEntries, borrowReqs, hcReqs,
               oldEmps]) => {
       // ใหม่: ตาราง critical-but-not-dashboard ที่ย้ายมา
       this.data.calendar = ((cal && cal.data) || []).map(this._calFromDB);
@@ -924,6 +925,7 @@ const DB = {
       this.data.scheduleWeeks = (schedWeeks || []).map(this._schedWeekFromDB);
       this.data.scheduleEntries = (schedEntries || []).map(this._schedEntryFromDB);
       this.data.borrowRequests = (borrowReqs || []).map(this._borrowFromDB);
+      this.data.headcountRequests = (hcReqs || []).map(this._hcFromDB);
       // Merge employees เก่าเข้ากับ active employees (เรียง id เพื่อให้ stable)
       if (oldEmps.length) {
         const existingIds = new Set(this.data.employees.map(e => e.id));
@@ -1039,7 +1041,8 @@ const DB = {
       shifts: { list: 'shifts', from: this._shiftFromDB },
       schedule_weeks: { list: 'scheduleWeeks', from: this._schedWeekFromDB },
       schedule_entries: { list: 'scheduleEntries', from: this._schedEntryFromDB },
-      cross_branch_borrow_requests: { list: 'borrowRequests', from: this._borrowFromDB }
+      cross_branch_borrow_requests: { list: 'borrowRequests', from: this._borrowFromDB },
+      headcount_requests: { list: 'headcountRequests', from: this._hcFromDB }
     };
     const m = map[table];
     if (!m) return;
@@ -5260,6 +5263,92 @@ const DB = {
       this.data.borrowRequests[idx].status = 'cancelled';
       this.data.borrowRequests[idx].cancelledAt = new Date().toISOString();
       this.data.borrowRequests[idx].cancelReason = reason;
+    }
+    return data;
+  },
+
+  // ─── HEADCOUNT REQUESTS (ขออัตรากำลัง — BM → AM → HR) ───
+  _hcFromDB(r) {
+    return {
+      id: r.id,
+      branchId: r.branch_id,
+      positionId: r.position_id || '',
+      positionTitle: r.position_title || '',
+      headcount: r.headcount,
+      reason: r.reason || '',
+      status: r.status,                      // pending_am | pending_hr | approved | rejected | cancelled
+      requestedBy: r.requested_by,
+      requestedAt: r.requested_at,
+      amBy: r.am_by, amAt: r.am_at, amNote: r.am_note || '',
+      hrBy: r.hr_by, hrAt: r.hr_at, hrNote: r.hr_note || '',
+      rejectReason: r.reject_reason || '',
+      rejectedByRole: r.rejected_by_role || '',
+      cancelledAt: r.cancelled_at,
+      cancelReason: r.cancel_reason || '',
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
+    };
+  },
+
+  async loadHeadcountRequests() {
+    const { data, error } = await this.client
+      .from('headcount_requests')
+      .select('*')
+      .order('requested_at', { ascending: false });
+    if (error) { console.warn('loadHeadcountRequests failed:', error); this.data.headcountRequests = []; return []; }
+    this.data.headcountRequests = (data || []).map(this._hcFromDB);
+    return this.data.headcountRequests;
+  },
+
+  getHeadcountRequests({ status = null, branch = null } = {}) {
+    let list = this.data.headcountRequests || [];
+    if (status) list = list.filter(r => r.status === status);
+    if (branch) list = list.filter(r => r.branchId === branch);
+    return list;
+  },
+
+  async createHeadcountRequest({ branchId, positionId, positionTitle, headcount, reason }) {
+    if (!branchId || !positionTitle || !headcount) {
+      throw new Error('ข้อมูลคำขอไม่ครบ — ต้องมี สาขา, ตำแหน่ง, จำนวน');
+    }
+    const { data, error } = await this.client.rpc('create_headcount_request', {
+      p_branch_id: branchId,
+      p_position_id: positionId || null,
+      p_position_title: positionTitle,
+      p_headcount: Number(headcount),
+      p_reason: reason || null
+    });
+    if (error) throw error;
+    await this.loadHeadcountRequests();
+    return data;   // { id, status }
+  },
+
+  // decision: 'approve' | 'reject' — RPC ตีความตาม step (pending_am → pending_hr → approved)
+  async reviewHeadcountRequest(requestId, decision, note = '') {
+    if (!['approve', 'reject'].includes(decision)) {
+      throw new Error('decision ต้องเป็น approve หรือ reject');
+    }
+    const { data, error } = await this.client.rpc('review_headcount_request', {
+      p_request_id: requestId,
+      p_decision: decision,
+      p_note: note || null
+    });
+    if (error) throw error;
+    await this.loadHeadcountRequests();  // reload — status เปลี่ยนตาม step
+    return data;
+  },
+
+  async cancelHeadcountRequest(requestId, reason = '') {
+    const { data, error } = await this.client.rpc('cancel_headcount_request', {
+      p_request_id: requestId,
+      p_reason: reason || null
+    });
+    if (error) throw error;
+    const idx = (this.data.headcountRequests || []).findIndex(r => r.id === requestId);
+    if (idx >= 0) {
+      this.data.headcountRequests[idx].status = 'cancelled';
+      this.data.headcountRequests[idx].cancelledAt = new Date().toISOString();
+      this.data.headcountRequests[idx].cancelReason = reason;
     }
     return data;
   },
