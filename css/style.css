@@ -966,6 +966,13 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .sidebar-footer #changePwdBtn:focus-visible {
   box-shadow: 0 0 0 2px var(--sidebar-bg), 0 0 0 4px rgba(232, 191, 92, 0.45);
 }
+/* [click feedback] กดแล้วเห็นชัดบนพื้นมืด — เรืองทอง + วงแหวนสีรอบปุ่ม */
+.sidebar-footer #changePwdBtn:active {
+  background: linear-gradient(180deg, rgba(232, 191, 92, 0.34), rgba(232, 191, 92, 0.16));
+  border-color: rgba(232, 191, 92, 0.75);
+  color: #fff2cf;
+  box-shadow: 0 0 0 2px rgba(232, 191, 92, 0.45), inset 0 1px 3px rgba(0, 0, 0, 0.28);
+}
 
 /* ออกจากระบบ — icon rose (พื้นเรียบ) · hover ค่อยเรืองแดง */
 .sidebar-footer #logoutBtn { color: #f3a6b0; }   /* rose นวล */
@@ -978,8 +985,11 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   background: linear-gradient(120deg, transparent 30%, rgba(253, 164, 175, 0.13) 50%, transparent 70%);
 }
 .sidebar-footer #logoutBtn:active {
-  background: linear-gradient(180deg, rgba(244, 63, 94, 0.20), rgba(244, 63, 94, 0.08));
-  border-color: rgba(244, 63, 94, 0.50);
+  /* [click feedback] กดแล้วเห็นชัดบนพื้นมืด — เรืองแดง + วงแหวนสีรอบปุ่ม */
+  background: linear-gradient(180deg, rgba(244, 63, 94, 0.36), rgba(244, 63, 94, 0.17));
+  border-color: rgba(244, 63, 94, 0.78);
+  color: #ffd5db;
+  box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.45), inset 0 1px 3px rgba(0, 0, 0, 0.28);
 }
 .sidebar-footer #logoutBtn:focus-visible {
   box-shadow:
