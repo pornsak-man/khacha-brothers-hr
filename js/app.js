@@ -17890,7 +17890,7 @@ function attMonthOptionsHtml() {
 function attBranchOptionsHtml() {
   const branches = (DB.getBranchMaster ? DB.getBranchMaster({ activeOnly: true }) : []) || [];
   return '<option value="">— ทุกสาขา —</option>' + branches.map(b =>
-    `<option value="${escapeHtml(b.id)}" ${_attState.branch === b.id ? 'selected' : ''}>${escapeHtml(b.id)}${b.name ? ' · ' + escapeHtml(b.name) : ''}</option>`).join('');
+    `<option value="${escapeHtml(b.id)}" ${_attState.branch === b.id ? 'selected' : ''}>${escapeHtml(b.id)}</option>`).join('');
 }
 function _attStatusCell(r) {
   if (r.anomaly && ATT_ANOMALY[r.anomaly]) {
