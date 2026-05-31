@@ -17622,7 +17622,7 @@ function updateShiftChangeBadge() {
 // ═══════════════════════════════════════════════════════════════════
 const _attState = (() => {
   const d = new Date();
-  return { year: d.getFullYear(), month: d.getMonth() + 1, branch: '', scope: '', status: '', search: '', grace: 0, loaded: false, loading: false };
+  return { year: d.getFullYear(), month: d.getMonth() + 1, branch: '', scope: '', status: '', search: '', grace: 0, view: 'daily', loaded: false, loading: false };
 })();
 
 const ATT_ANOMALY = {
@@ -17872,6 +17872,7 @@ function setAttMonth(val) {
 function setAttBranch(v) { _attState.branch = v || ''; _attState.loaded = false; attLoadAndRender(); }
 function setAttScope(v) { _attState.scope = v || ''; if (router.current === 'attendance') router.go('attendance'); }
 function setAttStatus(v) { _attState.status = v || ''; if (router.current === 'attendance') router.go('attendance'); }
+function setAttView(v) { _attState.view = (v === 'summary') ? 'summary' : 'daily'; if (router.current === 'attendance') router.go('attendance'); }
 // ค้นหารายบุคคล — กรองแถวในที่ (ไม่ re-render ทั้งหน้า → ไม่เด้ง focus, ไม่หน่วงเมื่อมีพันแถว)
 function setAttSearch(v) {
   _attState.search = v || '';
@@ -18011,6 +18012,128 @@ function _attShiftCell(roster) {
   return `<div style="font-size:12px">${escapeHtml(sh.label)}</div><div class="muted-2" style="font-size:10px">${sh.start||'?'}–${sh.end||'?'}</div>`;
 }
 
+// ═══ สรุปรายเดือน (1 แถว/พนักงาน + แถวรวมท้ายตาราง) ═══
+function _attNextDate(ymd) {
+  const p = String(ymd).split('-').map(Number);
+  return new Date(p[0], p[1] - 1, p[2] + 1).toLocaleDateString('en-CA');
+}
+// Set "empId|YYYY-MM-DD" ของวันลาที่อนุมัติแล้วในช่วง [from,to]
+function attBuildLeaveIndex(from, to) {
+  const set = new Set();
+  for (const r of (DB.data.leaveRequests || [])) {
+    if (r.status !== 'approved' || !r.startDate || !r.endDate) continue;
+    if (r.startDate > to || r.endDate < from) continue;
+    let cur = r.startDate < from ? from : r.startDate;
+    const end = r.endDate > to ? to : r.endDate;
+    let guard = 0;
+    while (cur <= end && guard < 400) { set.add(r.employeeId + '|' + cur); cur = _attNextDate(cur); guard++; }
+  }
+  return set;
+}
+// _atnum: เลขในเซลล์ (0 → ขีดจาง) + สีตามชนิด
+function _attNumCell(n, color) {
+  if (!n) return '<span class="att-dash">—</span>';
+  return color ? `<strong style="color:${color}">${n}</strong>` : String(n);
+}
+function renderAttSummaryTable(att, absences, from, to) {
+  const leaveSet = attBuildLeaveIndex(from, to);
+  const byEmp = new Map();
+  const ensure = (empId) => {
+    let t = byEmp.get(empId);
+    if (!t) {
+      const e = DB.getEmployee(empId);
+      t = { empId, name: e ? `${e.firstName||''} ${e.lastName||''}`.trim() : empId, branch: e?.branch || '',
+            shift: 0, recorded: 0, present: 0, late: 0, early: 0, absent: 0, leave: 0, workMin: 0 };
+      byEmp.set(empId, t);
+    }
+    return t;
+  };
+  for (const r of att) {
+    const t = ensure(r.employeeId);
+    t.recorded++;
+    if (r.workMinutes) t.workMin += r.workMinutes;
+    if (r.checkIn && r.checkOut) t.present++;
+    const k = r.roster?.kind;
+    if (k === 'late' || k === 'late_early') t.late++;
+    if (k === 'early' || k === 'late_early') t.early++;
+    if (r.roster?.shift && !r.roster.shift.isOff) t.shift++;
+  }
+  for (const a of absences) {
+    const t = ensure(a.employeeId);
+    t.shift++;
+    if (!leaveSet.has(a.employeeId + '|' + a.workDate)) t.absent++;   // วันลา ไม่นับขาด
+  }
+  // ลา: นับวันลาที่อนุมัติทั้งหมดในเดือน (เคารพตัวกรอง สาขา/สายงาน) — authoritative
+  const visible = new Set(DB.getEmployees().map(e => String(e.id)));
+  const leaveByEmp = new Map();
+  for (const key of leaveSet) {
+    const empId = key.slice(0, key.indexOf('|'));
+    leaveByEmp.set(empId, (leaveByEmp.get(empId) || 0) + 1);
+  }
+  for (const [empId, cnt] of leaveByEmp) {
+    const e = DB.getEmployee(empId);
+    if (!e || !visible.has(String(empId))) continue;
+    if (_attState.branch && e.branch !== _attState.branch) continue;
+    if (_attState.scope && DB.scopeOfEmployee(e) !== _attState.scope) continue;
+    ensure(empId).leave = cnt;
+  }
+
+  let rows = [...byEmp.values()].sort((a, b) => String(a.empId).localeCompare(String(b.empId)));
+  const f = _attState.status;
+  if (f) rows = rows.filter(t =>
+    f === 'late' ? t.late > 0 : f === 'early' ? t.early > 0 : f === 'absent' ? t.absent > 0 :
+    f === 'issues' ? (t.late > 0 || t.early > 0 || t.absent > 0) : true);
+
+  if (!rows.length) {
+    return `<div class="empty-state" style="padding:32px"><div class="icon">📊</div><div>ไม่มีข้อมูลสรุปในเดือนนี้</div></div>`;
+  }
+  const tot = rows.reduce((s, t) => { ['shift','recorded','present','late','early','absent','leave','workMin'].forEach(k => s[k] += t[k]); return s; },
+    { shift:0, recorded:0, present:0, late:0, early:0, absent:0, leave:0, workMin:0 });
+  const C_DANGER = 'var(--danger)', C_WARN = 'var(--warning)', C_BLUE = '#2563eb';
+
+  return `
+    <div class="muted-2" style="font-size:12px;margin-bottom:8px">สรุปการมาทำงานรายเดือน · ${rows.length.toLocaleString()} คน — คลิกหัวข้อ "รายวัน" เพื่อดูรายละเอียดแต่ละวัน</div>
+    <div class="table-wrap">
+      <table class="table" style="font-size:13px">
+        <thead><tr>
+          <th>พนักงาน</th><th>สาขา</th>
+          <th style="text-align:center">กะ</th><th style="text-align:center">บันทึก</th>
+          <th style="text-align:center">มาทำงาน</th><th style="text-align:center">สาย</th>
+          <th style="text-align:center">ออกก่อน</th><th style="text-align:center">ขาด</th>
+          <th style="text-align:center">ลา</th><th style="text-align:center">ชม.รวม</th>
+        </tr></thead>
+        <tbody id="attTbody">
+          ${rows.map(t => `<tr data-search="${escapeHtml((t.name + ' ' + t.empId).toLowerCase())}">
+            <td><a href="#" onclick="viewEmployee('${escapeHtml(t.empId)}');return false;">${escapeHtml(t.name || t.empId)}</a>
+                <div class="muted-2" style="font-size:11px">${escapeHtml(t.empId)}</div></td>
+            <td style="font-size:12px">${escapeHtml(t.branch || '-')}</td>
+            <td style="text-align:center">${_attNumCell(t.shift)}</td>
+            <td style="text-align:center">${_attNumCell(t.recorded)}</td>
+            <td style="text-align:center">${_attNumCell(t.present)}</td>
+            <td style="text-align:center">${_attNumCell(t.late, C_DANGER)}</td>
+            <td style="text-align:center">${_attNumCell(t.early, C_WARN)}</td>
+            <td style="text-align:center">${_attNumCell(t.absent, C_DANGER)}</td>
+            <td style="text-align:center">${_attNumCell(t.leave, C_BLUE)}</td>
+            <td style="text-align:center;white-space:nowrap">${_attFmtMinutes(t.workMin)}</td>
+          </tr>`).join('')}
+          <tr id="attNoSearch" style="display:none"><td colspan="10" style="text-align:center;padding:24px" class="muted-2">ไม่พบพนักงานที่ค้นหา</td></tr>
+        </tbody>
+        <tfoot><tr style="font-weight:700;background:var(--surface-2)">
+          <td colspan="2">รวมทั้งหมด (${rows.length.toLocaleString()} คน)</td>
+          <td style="text-align:center">${tot.shift.toLocaleString()}</td>
+          <td style="text-align:center">${tot.recorded.toLocaleString()}</td>
+          <td style="text-align:center">${tot.present.toLocaleString()}</td>
+          <td style="text-align:center;color:${C_DANGER}">${tot.late.toLocaleString()}</td>
+          <td style="text-align:center;color:${C_WARN}">${tot.early.toLocaleString()}</td>
+          <td style="text-align:center;color:${C_DANGER}">${tot.absent.toLocaleString()}</td>
+          <td style="text-align:center;color:${C_BLUE}">${tot.leave.toLocaleString()}</td>
+          <td style="text-align:center;white-space:nowrap">${_attFmtMinutes(tot.workMin)}</td>
+        </tr></tfoot>
+      </table>
+    </div>
+  `;
+}
+
 router.register('attendance', () => {
   if (!_attState.loaded && !_attState.loading) attLoadAndRender();
   const canManage = DB.isHR;   // import/แก้/ลบ = HR/admin เท่านั้น
@@ -18116,7 +18239,11 @@ router.register('attendance', () => {
           <input type="number" min="0" max="120" value="${_attState.grace}" onchange="setAttGrace(this.value)" style="width:62px" aria-label="อนุโลมสาย (นาที)"/> น.</label>
         ${hasFilter ? `<button class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearAttFilter()">✕ ล้างตัวกรอง</button>` : ''}
       </div>
-      ${_attState.loading ? `<div class="muted-2" style="padding:24px;text-align:center">กำลังโหลดข้อมูลเดือนนี้...</div>` : (list.length === 0 ? `
+      <div style="display:inline-flex;gap:3px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:14px">
+        <button class="btn btn-sm ${_attState.view !== 'summary' ? 'btn-primary' : 'btn-ghost'}" onclick="setAttView('daily')">รายวัน</button>
+        <button class="btn btn-sm ${_attState.view === 'summary' ? 'btn-primary' : 'btn-ghost'}" onclick="setAttView('summary')">สรุปรายเดือน</button>
+      </div>
+      ${_attState.loading ? `<div class="muted-2" style="padding:24px;text-align:center">กำลังโหลดข้อมูลเดือนนี้...</div>` : (_attState.view === 'summary' ? renderAttSummaryTable(att, absences, from, to) : (list.length === 0 ? `
         <div class="empty-state" style="padding:32px">
           <div class="icon">🕘</div>
           <div>${hasFilter ? 'ไม่พบข้อมูลตามตัวกรอง' : 'ยังไม่มีข้อมูลเวลาในเดือนนี้'}</div>
@@ -18174,7 +18301,7 @@ router.register('attendance', () => {
             </tbody>
           </table>
         </div>
-      `)}
+      `))}
     </div>
   `;
 });
