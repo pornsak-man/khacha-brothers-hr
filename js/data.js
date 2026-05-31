@@ -48,6 +48,7 @@ const DB = {
   _empIndex: null,
   _deptIndex: null,
   _posIndex: null,
+  _shiftIndex: null,
   // ─── STATS CACHE (memoize expensive computations) ───
   // คีย์ = `{method}:{params}:{dataVersion}` — เพิ่ม dataVersion เมื่อ data เปลี่ยน
   // → invalidate อัตโนมัติเมื่อ realtime update / save methods เรียก _invalidateIndex
@@ -57,6 +58,7 @@ const DB = {
     if (table === 'employees' || !table) this._empIndex = null;
     if (table === 'departments' || !table) this._deptIndex = null;
     if (table === 'position_levels' || !table) this._posIndex = null;
+    if (table === 'shifts' || !table) this._shiftIndex = null;
     // Stats cache invalidate — table ที่กระทบ stats: employees, positions, depts, leaves, scopes
     const statsAffected = ['employees', 'position_levels', 'departments', 'leave_requests', 'position_scopes'];
     if (!table || statsAffected.includes(table)) {
@@ -4893,7 +4895,10 @@ const DB = {
     );
     return list.sort((a, b) => (a.sortOrder - b.sortOrder) || a.code.localeCompare(b.code));
   },
-  getShift(id) { return (this.data.shifts || []).find(s => s.id === id); },
+  getShift(id) {
+    if (!this._shiftIndex) this._shiftIndex = new Map((this.data.shifts || []).map(s => [s.id, s]));
+    return this._shiftIndex.get(id);
+  },
   getShiftByCode(code) {
     if (!code) return null;
     const up = String(code).toUpperCase();
@@ -4915,6 +4920,7 @@ const DB = {
     const idx = this.data.shifts.findIndex(s => s.id === mapped.id);
     if (idx >= 0) this.data.shifts[idx] = mapped;
     else this.data.shifts.push(mapped);
+    this._shiftIndex = null;
     return mapped;
   },
 
@@ -4928,6 +4934,7 @@ const DB = {
     const { error } = await this.client.from('shifts').delete().eq('id', id);
     if (error) throw error;
     this.data.shifts = this.data.shifts.filter(s => s.id !== id);
+    this._shiftIndex = null;
   },
 
   // ─── SCHEDULE WEEK ───
@@ -5675,13 +5682,20 @@ const DB = {
     };
   },
 
-  // โหลดช่วงวันที่ (default = เดือนปัจจุบัน) — แทนที่ cache ทั้งก้อน
-  async loadTimeAttendance({ from = null, to = null, branch = null } = {}) {
+  // โหลดช่วงวันที่ (default = เดือนปัจจุบัน) — มี cache รายเดือน (สลับเดือนเดิม = ไม่ต้องโหลดใหม่)
+  async loadTimeAttendance({ from = null, to = null, branch = null, force = false } = {}) {
     if (!from || !to) {
       const now = new Date();
       const y = now.getFullYear(), m = now.getMonth();
       from = new Date(y, m, 1).toLocaleDateString('en-CA');
       to = new Date(y, m + 1, 0).toLocaleDateString('en-CA');
+    }
+    const key = `${from}|${to}|${branch || ''}`;
+    if (!this._attCache) this._attCache = new Map();
+    if (!force && this._attCache.has(key)) {
+      this._attRange = { from, to, branch: branch || '' };
+      this.data.timeAttendance = this._attCache.get(key);
+      return this.data.timeAttendance;
     }
     // ★ ไล่หน้า (Supabase คืนสูงสุด 1000 แถว/ครั้ง) — เดือนที่เกิน 1000 แถวจะโหลดครบ ไม่ถูกตัด
     const PAGE = 1000;
@@ -5708,9 +5722,13 @@ const DB = {
       return [];
     }
     this._attRange = { from, to, branch: branch || '' };
-    this.data.timeAttendance = all.map(this._attFromDB);
-    return this.data.timeAttendance;
+    const mapped = all.map(this._attFromDB);
+    this.data.timeAttendance = mapped;
+    this._attCache.set(key, mapped);
+    if (this._attCache.size > 10) this._attCache.delete(this._attCache.keys().next().value);  // เก็บ ~10 เดือนล่าสุด
+    return mapped;
   },
+  _clearAttCache() { if (this._attCache) this._attCache.clear(); },
 
   getTimeAttendance({ branch = null, employeeId = null, status = null } = {}) {
     let list = this.data.timeAttendance || [];
@@ -5745,6 +5763,7 @@ const DB = {
       p_batch_id: batchId || null
     });
     if (error) throw error;
+    this._clearAttCache();
     return data;
   },
 
@@ -5759,6 +5778,7 @@ const DB = {
       p_note: note || null
     });
     if (error) throw error;
+    this._clearAttCache();
     return data;
   },
 
@@ -5766,12 +5786,14 @@ const DB = {
     const { data, error } = await this.client.rpc('delete_time_attendance', { p_id: id });
     if (error) throw error;
     this.data.timeAttendance = (this.data.timeAttendance || []).filter(r => r.id !== id);
+    this._clearAttCache();
     return data;
   },
 
   async deleteTimeAttendanceBatch(batchId) {
     const { data, error } = await this.client.rpc('delete_time_attendance_batch', { p_batch_id: batchId });
     if (error) throw error;
+    this._clearAttCache();
     return data;
   },
 

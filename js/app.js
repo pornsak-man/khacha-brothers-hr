@@ -17929,10 +17929,12 @@ function setAttGrace(v) {
   if (router.current === 'attendance') router.go('attendance');
 }
 // index ตารางกะ: "empId|date" → entry
-function attBuildScheduleIndex() {
+function attBuildScheduleIndex(from, to) {
   const m = new Map();
   for (const e of (DB.data.scheduleEntries || [])) {
-    if (e.employeeId && e.workDate) m.set(e.employeeId + '|' + e.workDate, e);
+    if (!e.employeeId || !e.workDate) continue;
+    if (from && (e.workDate < from || e.workDate > to)) continue;  // [PERF] เฉพาะเดือนที่ดู → index เล็ก สแกนครั้งเดียว
+    m.set(e.employeeId + '|' + e.workDate, e);
   }
   return m;
 }
@@ -17968,14 +17970,12 @@ function attRoster(rec, idx) {
   return { kind, shift: sh, lateMin, earlyMin, schedMin: sh.schedMin };
 }
 // แถว "ขาดงาน" = มีกะทำงาน (ไม่ใช่วันหยุด) แต่ไม่มีบันทึกเวลา · เฉพาะวันที่ผ่านมาแล้ว + พนักงานที่เห็นได้
-function attFindAbsences(attRows, idx, from, to, branch) {
+function attFindAbsences(attRows, idx, branch) {
   const todayStr = tz.today();
   const visible = new Set(DB.getEmployees().map(e => String(e.id)));
   const have = new Set(attRows.map(r => r.employeeId + '|' + r.workDate));
   const out = [];
-  for (const e of (DB.data.scheduleEntries || [])) {
-    if (!e.employeeId || !e.workDate) continue;
-    if (e.workDate < from || e.workDate > to) continue;
+  for (const e of idx.values()) {                               // [PERF] วนเฉพาะ entry ของเดือน (idx scope แล้ว)
     if (e.workDate >= todayStr) continue;                       // ยังไม่ถึง/วันนี้ — ยังไม่นับขาด
     if (branch && e.branchId && e.branchId !== branch) continue;
     if (!visible.has(String(e.employeeId))) continue;
@@ -18063,7 +18063,7 @@ function _attGridCellTd(rec, sched, onLeave, dateStr, todayStr, weekend) {
   if (sh && sh.isOff) return `<td class="att-c${we}"><div class="att-c-off">หยุด</div></td>`;
   return `<td class="att-c${we}"></td>`;
 }
-function renderAttSummaryTable(att, absences, from, to) {
+function renderAttSummaryTable(att, absences, from, to, idx) {
   const leaveSet = attBuildLeaveIndex(from, to);
   const byEmp = new Map();
   const ensure = (empId) => {
@@ -18118,7 +18118,7 @@ function renderAttSummaryTable(att, absences, from, to) {
   // ── สร้างกริดรายวัน: วันที่ 1 → สิ้นเดือน ──
   const attMap = new Map();
   for (const r of att) attMap.set(r.employeeId + '|' + r.workDate, r);
-  const schedIdx = attBuildScheduleIndex();
+  const schedIdx = idx || attBuildScheduleIndex(from, to);
   const todayStr = tz.today();
   const WD = ['อา','จ','อ','พ','พฤ','ศ','ส'];
   const lastDay = new Date(_attState.year, _attState.month, 0).getDate();
@@ -18174,10 +18174,10 @@ router.register('attendance', () => {
   if (!_attState.loaded && !_attState.loading) attLoadAndRender();
   const canManage = DB.isHR;   // import/แก้/ลบ = HR/admin เท่านั้น
   const { from, to } = _attMonthRange(_attState.year, _attState.month);
-  const idx = attBuildScheduleIndex();
+  const idx = attBuildScheduleIndex(from, to);
   let att = DB.getTimeAttendance({ branch: _attState.branch || null });
   for (const r of att) r.roster = attRoster(r, idx);             // คำนวณเทียบกะต่อแถว
-  let absences = attFindAbsences(att, idx, from, to, _attState.branch || null);
+  let absences = attFindAbsences(att, idx, _attState.branch || null);
   // กรองตามสายงาน (resolve ตำแหน่ง→ฝ่าย) — มีผลทั้งตาราง สรุป และขาดงาน
   if (_attState.scope) {
     const inScope = (id) => DB.scopeOfEmployee(DB.getEmployee(id)) === _attState.scope;
@@ -18279,7 +18279,7 @@ router.register('attendance', () => {
         <button class="btn btn-sm ${_attState.view !== 'summary' ? 'btn-primary' : 'btn-ghost'}" onclick="setAttView('daily')">รายวัน</button>
         <button class="btn btn-sm ${_attState.view === 'summary' ? 'btn-primary' : 'btn-ghost'}" onclick="setAttView('summary')">ตารางรายเดือน</button>
       </div>
-      ${_attState.loading ? `<div class="muted-2" style="padding:24px;text-align:center">กำลังโหลดข้อมูลเดือนนี้...</div>` : (_attState.view === 'summary' ? renderAttSummaryTable(att, absences, from, to) : (list.length === 0 ? `
+      ${_attState.loading ? `<div class="muted-2" style="padding:24px;text-align:center">กำลังโหลดข้อมูลเดือนนี้...</div>` : (_attState.view === 'summary' ? renderAttSummaryTable(att, absences, from, to, idx) : (list.length === 0 ? `
         <div class="empty-state" style="padding:32px">
           <div class="icon">🕘</div>
           <div>${hasFilter ? 'ไม่พบข้อมูลตามตัวกรอง' : 'ยังไม่มีข้อมูลเวลาในเดือนนี้'}</div>
@@ -18459,10 +18459,10 @@ function openAttendanceManual(empId = '', workDate = '') {
 async function attExportMonth() {
   if (typeof XLSX === 'undefined') { try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; } }
   const { from, to } = _attMonthRange(_attState.year, _attState.month);
-  const idx = attBuildScheduleIndex();
+  const idx = attBuildScheduleIndex(from, to);
   let att = DB.getTimeAttendance({ branch: _attState.branch || null });
   for (const r of att) r.roster = attRoster(r, idx);
-  let absences = attFindAbsences(att, idx, from, to, _attState.branch || null);
+  let absences = attFindAbsences(att, idx, _attState.branch || null);
   if (_attState.scope) {
     const inScope = (id) => DB.scopeOfEmployee(DB.getEmployee(id)) === _attState.scope;
     att = att.filter(r => inScope(r.employeeId));
