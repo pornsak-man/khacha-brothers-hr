@@ -896,12 +896,13 @@ const DB = {
       timed('schedule_entries',        this._fetchAllPages('schedule_entries', 'work_date', true).catch(() => [])),
       timed('borrow_requests',         this._fetchAllPages('cross_branch_borrow_requests', 'created_at', false).catch(() => [])),
       timed('headcount_requests',      this._fetchAllPages('headcount_requests', 'requested_at', false).catch(() => [])),
+      timed('resignation_reports',     this._fetchAllPages('resignation_reports', 'reported_at', false).catch(() => [])),
       timed('employees_archive',       fetchEmployeesArchive().catch(() => []))
     ]).then(([cal, comp, leaves, lvTypes, swapReqs,
               loans, advs, allow, evals, sal, appls,
               uniBrands, uniItems, uniReqs, uniIssues, uniMoves, uniSched,
               shifts, schedWeeks, schedEntries, borrowReqs, hcReqs,
-              oldEmps]) => {
+              rsgReports, oldEmps]) => {
       // ใหม่: ตาราง critical-but-not-dashboard ที่ย้ายมา
       this.data.calendar = ((cal && cal.data) || []).map(this._calFromDB);
       if (comp && comp.data) this.data.company = this._compFromDB(comp.data);
@@ -926,6 +927,7 @@ const DB = {
       this.data.scheduleEntries = (schedEntries || []).map(this._schedEntryFromDB);
       this.data.borrowRequests = (borrowReqs || []).map(this._borrowFromDB);
       this.data.headcountRequests = (hcReqs || []).map(this._hcFromDB);
+      this.data.resignationReports = (rsgReports || []).map(this._rsgFromDB);
       // Merge employees เก่าเข้ากับ active employees (เรียง id เพื่อให้ stable)
       if (oldEmps.length) {
         const existingIds = new Set(this.data.employees.map(e => e.id));
@@ -1042,7 +1044,8 @@ const DB = {
       schedule_weeks: { list: 'scheduleWeeks', from: this._schedWeekFromDB },
       schedule_entries: { list: 'scheduleEntries', from: this._schedEntryFromDB },
       cross_branch_borrow_requests: { list: 'borrowRequests', from: this._borrowFromDB },
-      headcount_requests: { list: 'headcountRequests', from: this._hcFromDB }
+      headcount_requests: { list: 'headcountRequests', from: this._hcFromDB },
+      resignation_reports: { list: 'resignationReports', from: this._rsgFromDB }
     };
     const m = map[table];
     if (!m) return;
@@ -5362,6 +5365,89 @@ const DB = {
     });
     if (error) throw error;
     await this.loadHeadcountRequests();
+    return data;
+  },
+
+  // ─── RESIGNATION REPORTS (แจ้งพนักงานลาออก — BM → AM/OM/HR ทราบ) ───
+  _rsgFromDB(r) {
+    return {
+      id: r.id,
+      branchId: r.branch_id,
+      employeeId: r.employee_id,
+      employeeName: r.employee_name || '',
+      positionTitle: r.position_title || '',
+      resignDate: r.resign_date || '',
+      reason: r.reason || '',
+      note: r.note || '',
+      status: r.status,                      // reported | acknowledged | cancelled
+      reportedBy: r.reported_by,
+      reportedAt: r.reported_at,
+      acknowledgedBy: r.acknowledged_by, acknowledgedAt: r.acknowledged_at, acknowledgeNote: r.acknowledge_note || '',
+      cancelledAt: r.cancelled_at,
+      cancelReason: r.cancel_reason || '',
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
+    };
+  },
+
+  async loadResignationReports() {
+    const { data, error } = await this.client
+      .from('resignation_reports')
+      .select('*')
+      .order('reported_at', { ascending: false });
+    if (error) { console.warn('loadResignationReports failed:', error); this.data.resignationReports = []; return []; }
+    this.data.resignationReports = (data || []).map(this._rsgFromDB);
+    return this.data.resignationReports;
+  },
+
+  getResignationReports({ status = null, branch = null } = {}) {
+    let list = this.data.resignationReports || [];
+    if (status) list = list.filter(r => r.status === status);
+    if (branch) list = list.filter(r => r.branchId === branch);
+    return list;
+  },
+
+  async createResignationReport({ branchId, employeeId, employeeName, positionTitle, resignDate, reason, note }) {
+    if (!branchId || !employeeId) {
+      throw new Error('ข้อมูลไม่ครบ — ต้องมี สาขา และ พนักงาน');
+    }
+    const { data, error } = await this.client.rpc('create_resignation_report', {
+      p_branch_id: branchId,
+      p_employee_id: employeeId,
+      p_employee_name: employeeName || null,
+      p_position_title: positionTitle || null,
+      p_resign_date: resignDate || null,
+      p_reason: reason || null,
+      p_note: note || null
+    });
+    if (error) throw error;
+    await this.loadResignationReports();
+    return data;   // { id, status }
+  },
+
+  // รับทราบ (HR/admin เท่านั้น) — reported → acknowledged
+  async acknowledgeResignationReport(requestId, note = '') {
+    const { data, error } = await this.client.rpc('acknowledge_resignation_report', {
+      p_request_id: requestId,
+      p_note: note || null
+    });
+    if (error) throw error;
+    await this.loadResignationReports();
+    return data;
+  },
+
+  async cancelResignationReport(requestId, reason = '') {
+    const { data, error } = await this.client.rpc('cancel_resignation_report', {
+      p_request_id: requestId,
+      p_reason: reason || null
+    });
+    if (error) throw error;
+    const idx = (this.data.resignationReports || []).findIndex(r => r.id === requestId);
+    if (idx >= 0) {
+      this.data.resignationReports[idx].status = 'cancelled';
+      this.data.resignationReports[idx].cancelledAt = new Date().toISOString();
+      this.data.resignationReports[idx].cancelReason = reason;
+    }
     return data;
   },
 

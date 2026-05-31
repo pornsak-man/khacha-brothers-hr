@@ -772,6 +772,7 @@ const auth = {
     if (typeof updateScheduleBadge === 'function') updateScheduleBadge();
     if (typeof updateBorrowBadge === 'function') updateBorrowBadge();
     if (typeof updateHeadcountBadge === 'function') updateHeadcountBadge();
+    if (typeof updateResignBadge === 'function') updateResignBadge();
     if (typeof renderNotifBell === 'function') renderNotifBell();
     this.refreshImpersonateUI();
     // ★ ใช้ helper function — share logic กับ onProfileChange handler
@@ -825,6 +826,10 @@ function refreshRoleDependentUI() {
   // ทุก role ที่มี employee_id ก็ใช้ได้ (HR เห็นทั้ง 2 เมนู: "จัดชุดพนักงาน" + "ขอชุดของฉัน")
   const myUniEl = document.getElementById('navMyUniform');
   if (myUniEl) myUniEl.style.display = DB.profile?.employee_id ? '' : 'none';
+
+  // "แจ้งพนักงานลาออก" — เฉพาะ ผจก.สาขา / AM / OM / HR / admin (ซ่อนจากพนักงานทั่วไป)
+  const resignEl = document.getElementById('navResign');
+  if (resignEl) resignEl.style.display = (DB.isHR || ['branch_manager', 'area_manager', 'operation_manager'].includes(DB.role)) ? '' : 'none';
 
   // [Phase B] Auto-hide nav-group ที่ไม่มี item แสดงเลย (เช่น viewer ไม่เห็น "การเงิน")
   //   ต้อง run หลัง set item visibility ครบ
@@ -1344,6 +1349,10 @@ window.onRealtimeChange = (payload) => {
     updateHeadcountBadge();
     if (router.current === 'headcount') router.go('headcount');
   }
+  if (table === 'resignation_reports' && typeof updateResignBadge === 'function') {
+    updateResignBadge();
+    if (router.current === 'resignations') router.go('resignations');
+  }
 
   // อัปเดต badge ประกันสังคม เมื่อ employees เปลี่ยน — เสมอ (ไม่ขึ้นกับหน้าปัจจุบัน)
   if (table === 'employees' && typeof updateSSOBadge === 'function') updateSSOBadge();
@@ -1613,6 +1622,7 @@ router.register('dashboard', () => {
   const reach119 = DB.getProbationDue(119);
   const probByBranch = DB.getProbationPassByBranch();
   const pendingUniform = DB.getUniformRequests({ status: 'pending' });
+  const pendingResign = DB.getResignationReports({ status: 'reported' });
   // ★ พนักงานพ้นสภาพในเดือนปัจจุบัน — เรียงจากใหม่สุด
   const thisYM = new Date().toISOString().slice(0, 7);  // YYYY-MM
   const resignedThisMonth = DB._filterByScope(DB.getEmployees(), scope)
@@ -1739,6 +1749,35 @@ router.register('dashboard', () => {
           </div>`;
         }).join('')}
         ${pendingUniform.length > 8 ? `<div class="muted-2" style="text-align:center;padding:10px;font-size:12px">+ อีก ${pendingUniform.length - 8} รายการ</div>` : ''}
+      </div>
+    </div>
+    ` : ''}
+
+    ${pendingResign.length ? `
+    <div class="sw-section-label">แจ้งเตือนด่วน</div>
+    <div class="sw-chart-card" style="border-left:4px solid #dc2626;background:linear-gradient(90deg, rgba(220,38,38,0.04), transparent 60%)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+        <div class="sw-chart-title" style="display:flex;align-items:center;gap:10px">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" y1="11" x2="23" y2="11"/></svg>
+          <span style="color:#dc2626">มีพนักงานแจ้งลาออก รอรับทราบ</span>
+          <span class="badge badge-danger" style="font-size:12px;padding:4px 12px;font-weight:700">${pendingResign.length} คน</span>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="router.go('resignations')">ไปดู →</button>
+      </div>
+      <div class="sw-chart-sub" style="margin-bottom:14px">ผจก.สาขาแจ้งพนักงานที่ขอลาออก — HR กด "รับทราบ" เพื่อปิดเรื่อง</div>
+      <div style="max-height:240px;overflow-y:auto">
+        ${pendingResign.slice(0, 8).map(r => {
+          const e = DB.getEmployee(r.employeeId);
+          const name = r.employeeName || (e ? `${e.firstName || ''} ${e.lastName || ''}`.trim() : r.employeeId);
+          return `
+          <div style="display:flex;align-items:center;gap:14px;padding:10px 8px;border-bottom:1px solid var(--border);cursor:pointer" onclick="router.go('resignations')">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:13.5px">${escapeHtml(name)}${r.positionTitle ? ` <span class="muted-2" style="font-weight:400">· ${escapeHtml(r.positionTitle)}</span>` : ''}</div>
+              <div class="muted-2" style="font-size:12px;margin-top:2px">สาขา ${escapeHtml(r.branchId)}${r.resignDate ? ' · มีผล ' + fmt.date(r.resignDate) : ''}${r.reason ? ' · ' + escapeHtml(r.reason) : ''}</div>
+            </div>
+          </div>`;
+        }).join('')}
+        ${pendingResign.length > 8 ? `<div class="muted-2" style="text-align:center;padding:10px;font-size:12px">+ อีก ${pendingResign.length - 8} คน</div>` : ''}
       </div>
     </div>
     ` : ''}
@@ -16636,6 +16675,245 @@ function updateHeadcountBadge() {
     badge.textContent = String(pending);
     badge.style.display = 'inline-block';
     badge.title = `${pending} คำขออัตรากำลังรออนุมัติ`;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// RESIGNATION REPORTS — หน้า "แจ้งพนักงานลาออก" (BM → AM/OM/HR ทราบ)
+// ═══════════════════════════════════════════════════════════
+const RSG_STATUS_BADGE = {
+  reported:     { label: '🔔 แจ้งลาออก — รอรับทราบ', cls: 'badge-warning' },
+  acknowledged: { label: '✓ รับทราบแล้ว',            cls: 'badge-success' },
+  cancelled:    { label: '⊘ ยกเลิก',                  cls: 'badge-neutral' }
+};
+function _rsgBadgeHtml(r) {
+  const base = RSG_STATUS_BADGE[r.status] || { label: r.status, cls: 'badge' };
+  return `<span class="badge ${base.cls}">${escapeHtml(base.label)}</span>`;
+}
+
+const _rsgFilter = { year: '', status: '' };
+function setRsgFilter(k, v) { _rsgFilter[k] = v || ''; router.go('resignations'); }
+function clearRsgFilter() { _rsgFilter.year = ''; _rsgFilter.status = ''; router.go('resignations'); }
+
+router.register('resignations', () => {
+  const allList = DB.getResignationReports();
+  const role = DB.role;
+  // ─── ตัวกรอง: ปี (จากวันที่แจ้ง) + สถานะ ───
+  const list = allList.filter(r => {
+    if (_rsgFilter.year && String(r.reportedAt || '').slice(0, 4) !== _rsgFilter.year) return false;
+    if (_rsgFilter.status && r.status !== _rsgFilter.status) return false;
+    return true;
+  });
+  const _rsgHasFilter = !!(_rsgFilter.year || _rsgFilter.status);
+  const _rsgYears = (() => {
+    const ty = new Date().getFullYear();
+    const ys = new Set(allList.map(r => String(r.reportedAt || '').slice(0, 4)).filter(Boolean));
+    for (let y = ty - 5; y <= ty; y++) ys.add(String(y));
+    return Array.from(ys).filter(Boolean).sort((a, b) => Number(b) - Number(a));
+  })();
+  const totalReported = allList.filter(r => r.status === 'reported').length;
+  const canCreate = DB.isHR || role === 'branch_manager' || role === 'area_manager' || role === 'operation_manager';
+
+  return `
+    <div class="sw-page-title">แจ้งพนักงานลาออก</div>
+    <div class="sw-page-subtitle">
+      ผจก.สาขาแจ้งพนักงานที่ขอลาออก → AM/OM และ HR ทราบ · HR กด "รับทราบ" เพื่อปิดเรื่อง (การตั้งวันพ้นสภาพจริงทำในเมนูทะเบียนพนักงาน)
+    </div>
+    <div class="card mt-4">
+      <div class="flex items-center" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <span class="badge badge-warning" style="font-size:13px;padding:6px 12px">🔔 รอรับทราบ ${totalReported}</span>
+          <span class="badge" style="font-size:13px;padding:6px 12px">รวมทั้งหมด ${list.length}</span>
+        </div>
+        ${canCreate ? `<button class="btn btn-primary" onclick="openResignationForm()">+ แจ้งพนักงานลาออก</button>` : ''}
+      </div>
+      <div class="sw-filter-bar" style="margin-bottom:14px">
+        <select class="sw-filter-select" onchange="setRsgFilter('year', this.value)" aria-label="กรองตามปี">
+          <option value="">— ทุกปี —</option>
+          ${_rsgYears.map(y => `<option value="${y}" ${_rsgFilter.year === y ? 'selected' : ''}>ปี ${Number(y) + 543}</option>`).join('')}
+        </select>
+        <select class="sw-filter-select" onchange="setRsgFilter('status', this.value)" aria-label="กรองตามสถานะ">
+          <option value="">— ทุกสถานะ —</option>
+          ${Object.entries(RSG_STATUS_BADGE).map(([k, v]) => `<option value="${k}" ${_rsgFilter.status === k ? 'selected' : ''}>${escapeHtml(v.label)}</option>`).join('')}
+        </select>
+        ${_rsgHasFilter ? `<button class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearRsgFilter()">✕ ล้างตัวกรอง</button>` : ''}
+      </div>
+      ${list.length === 0 ? `
+        <div class="empty-state" style="padding:32px">
+          <div class="icon">📋</div>
+          <div>${_rsgHasFilter ? 'ไม่พบรายการตามตัวกรอง' : 'ยังไม่มีการแจ้งพนักงานลาออก'}</div>
+          <div class="muted-2" style="font-size:13px;margin-top:6px">${_rsgHasFilter ? 'ลองเปลี่ยน/ล้างตัวกรอง' : (canCreate ? 'กด "+ แจ้งพนักงานลาออก" เพื่อแจ้งให้ AM/OM/HR ทราบ' : 'ยังไม่มีรายการ')}</div>
+        </div>
+      ` : `
+        <div class="table-wrap">
+          <table class="table" style="font-size:13px">
+            <thead><tr>
+              <th>สถานะ</th>
+              <th>วันที่แจ้ง</th>
+              <th>สาขา</th>
+              <th>พนักงาน</th>
+              <th>ตำแหน่ง</th>
+              <th>วันมีผล</th>
+              <th>เหตุผล / หมายเหตุ</th>
+              <th>การกระทำ</th>
+            </tr></thead>
+            <tbody>
+              ${list.map(r => {
+                const canAck = r.status === 'reported' && DB.isHR;
+                const canCancel = r.status === 'reported' && (DB.isHR || r.reportedBy === DB.user?.id);
+                const e = DB.getEmployee(r.employeeId);
+                const empName = r.employeeName || (e ? `${e.firstName || ''} ${e.lastName || ''}`.trim() : r.employeeId);
+                return `<tr>
+                  <td>${_rsgBadgeHtml(r)}</td>
+                  <td style="white-space:nowrap;font-size:12px">${fmt.date(r.reportedAt)}</td>
+                  <td><code>${escapeHtml(r.branchId)}</code></td>
+                  <td><a href="#" onclick="viewEmployee('${escapeHtml(r.employeeId)}');return false;">${escapeHtml(empName || '-')}</a></td>
+                  <td>${escapeHtml(r.positionTitle || '-')}</td>
+                  <td style="white-space:nowrap;font-size:12px">${r.resignDate ? fmt.date(r.resignDate) : '-'}</td>
+                  <td style="max-width:260px;word-break:break-word">${escapeHtml(r.reason || '-')}${r.note ? `<br><span class="muted-2" style="font-size:11px">${escapeHtml(r.note)}</span>` : ''}</td>
+                  <td>
+                    ${canAck ? `<button class="btn btn-success btn-sm" onclick="acknowledgeResignationUI('${escapeHtml(r.id)}')">✓ รับทราบ</button>` : ''}
+                    ${canCancel ? `<button class="btn btn-ghost btn-sm" onclick="cancelResignationUI('${escapeHtml(r.id)}')">ยกเลิก</button>` : ''}
+                    ${r.status === 'acknowledged' && r.acknowledgeNote ? `<span class="muted-2" style="font-size:11px">📝 ${escapeHtml(r.acknowledgeNote)}</span>` : ''}
+                    ${r.status === 'cancelled' && r.cancelReason ? `<span class="muted-2" style="font-size:11px">${escapeHtml(r.cancelReason)}</span>` : ''}
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+  `;
+});
+
+function openResignationForm() {
+  const role = DB.role;
+  if (!(DB.isHR || role === 'branch_manager' || role === 'area_manager' || role === 'operation_manager')) {
+    toast('ต้องเป็น ผจก.สาขา / AM / OM / HR', 'error');
+    return;
+  }
+  const myBranch = DB.getEmployee(DB.profile?.employee_id)?.branch || '';
+  const branches = DB.getBranchMaster ? DB.getBranchMaster({ activeOnly: true }) : [];
+  const lockBranch = (role === 'branch_manager' && myBranch);
+  const initialBranch = lockBranch ? myBranch : (myBranch || '');
+
+  // สร้าง <option> รายชื่อพนักงาน (active) ของสาขาที่เลือก — auto-scope ตามสิทธิ์ user อยู่แล้ว
+  const empOptions = (branchId) => {
+    if (!branchId) return '<option value="">— เลือกสาขาก่อน —</option>';
+    const emps = DB.getEmployees({ branch: branchId, status: 'active' })
+      .slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    if (!emps.length) return '<option value="">— ไม่มีพนักงานในสาขานี้ —</option>';
+    return '<option value="">— เลือกพนักงาน —</option>' + emps.map(e =>
+      `<option value="${escapeHtml(e.id)}">${escapeHtml(e.id)} · ${escapeHtml(`${e.firstName || ''} ${e.lastName || ''}`.trim())}${e.nickname ? ' (' + escapeHtml(e.nickname) + ')' : ''}${e.positionTitle ? ' — ' + escapeHtml(e.positionTitle) : ''}</option>`
+    ).join('');
+  };
+
+  modal.open('แจ้งพนักงานลาออก', `
+    <form id="rsgReqForm" class="form-grid">
+      <div class="form-group span-2">
+        <label>สาขา *</label>
+        ${lockBranch ? `
+          <input value="${escapeHtml(myBranch)}" readonly/>
+          <input type="hidden" name="branchId" value="${escapeHtml(myBranch)}"/>
+        ` : `
+          <select name="branchId" id="rsgBranchSel" required>
+            <option value="">— เลือกสาขา —</option>
+            ${branches.map(b => `<option value="${escapeHtml(b.id)}" ${b.id === myBranch ? 'selected' : ''}>${escapeHtml(b.id)}</option>`).join('')}
+          </select>
+        `}
+      </div>
+      <div class="form-group span-2">
+        <label>พนักงานที่ขอลาออก *</label>
+        <select name="employeeId" id="rsgEmpSel" required>${empOptions(initialBranch)}</select>
+      </div>
+      <div class="form-group">
+        <label>วันที่มีผล (วันทำงานวันสุดท้าย)</label>
+        <input type="date" name="resignDate"/>
+      </div>
+      <div class="form-group span-2">
+        <label>เหตุผลการลาออก</label>
+        <textarea name="reason" rows="2" placeholder="เช่น ย้ายกลับภูมิลำเนา / ได้งานใหม่ / ปัญหาส่วนตัว"></textarea>
+      </div>
+      <div class="form-group span-2">
+        <label>หมายเหตุเพิ่มเติม</label>
+        <textarea name="note" rows="2" placeholder="รายละเอียดอื่นๆ ที่อยากให้ AM/OM/HR ทราบ"></textarea>
+      </div>
+    </form>
+  `, {
+    size: 'sm',
+    footer: '<button class="btn btn-secondary" data-close>ยกเลิก</button><button class="btn btn-primary" id="rsgReqSubmit">ส่งแจ้ง</button>'
+  });
+
+  // เปลี่ยนสาขา → โหลดรายชื่อพนักงานใหม่ (เฉพาะกรณีเลือกสาขาได้ — AM/OM/HR)
+  const branchSel = document.getElementById('rsgBranchSel');
+  if (branchSel) {
+    branchSel.addEventListener('change', () => {
+      const empSel = document.getElementById('rsgEmpSel');
+      if (empSel) empSel.innerHTML = empOptions(branchSel.value);
+    });
+  }
+
+  $('#rsgReqSubmit').addEventListener('click', async () => {
+    const form = $('#rsgReqForm');
+    if (!form.checkValidity()) { form.reportValidity(); return; }
+    const fd = new FormData(form);
+    const branchId = (fd.get('branchId') || '').toString().trim();
+    const employeeId = (fd.get('employeeId') || '').toString().trim();
+    const resignDate = (fd.get('resignDate') || '').toString().trim();
+    const reason = (fd.get('reason') || '').toString().trim();
+    const note = (fd.get('note') || '').toString().trim();
+    const emp = DB.getEmployee(employeeId) || {};
+    const employeeName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
+    const positionTitle = emp.positionTitle || '';
+    const btn = $('#rsgReqSubmit'); btn.disabled = true; btn.textContent = 'กำลังส่ง...';
+    try {
+      await DB.createResignationReport({ branchId, employeeId, employeeName, positionTitle, resignDate, reason, note });
+      modal.close();
+      toast('✓ แจ้งลาออกแล้ว — AM/OM/HR จะเห็นทันที', 'success');
+      router.go('resignations');
+    } catch (ex) {
+      toast(ex.message || String(ex), 'error');
+      btn.disabled = false; btn.textContent = 'ส่งแจ้ง';
+    }
+  });
+}
+
+async function acknowledgeResignationUI(requestId) {
+  const note = await modal.prompt('รับทราบการลาออก', 'หมายเหตุ (ทางเลือก):', '');
+  if (note === null) return;
+  try {
+    await DB.acknowledgeResignationReport(requestId, note);
+    toast('✓ รับทราบแล้ว', 'success');
+    router.go('resignations');
+  } catch (ex) {
+    toast(ex.message || String(ex), 'error');
+  }
+}
+
+async function cancelResignationUI(requestId) {
+  const reason = await modal.prompt('ยกเลิกการแจ้งลาออก', 'เหตุผลที่ยกเลิก เช่น พนักงานเปลี่ยนใจ (ทางเลือก):', '');
+  if (reason === null) return;
+  try {
+    await DB.cancelResignationReport(requestId, reason);
+    toast('ยกเลิกการแจ้งแล้ว', 'success');
+    router.go('resignations');
+  } catch (ex) {
+    toast(ex.message || String(ex), 'error');
+  }
+}
+
+function updateResignBadge() {
+  const badge = document.getElementById('navBadgeResign');
+  if (!badge) return;
+  // ข้อมูลถูก RLS กรองมาแล้ว → HR เห็นทั้งหมด, AM/OM เห็นเฉพาะสาขาที่ดูแล, branch_staff = 0
+  const pending = (DB.data.resignationReports || []).filter(r => r.status === 'reported').length;
+  if (pending > 0) {
+    badge.textContent = String(pending);
+    badge.style.display = 'inline-block';
+    badge.title = `${pending} รายการแจ้งลาออกรอรับทราบ`;
   } else {
     badge.style.display = 'none';
   }
