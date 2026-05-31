@@ -17001,19 +17001,20 @@ function _otCalcHours(start, end) {
   return +(mins / 60).toFixed(2);
 }
 
-const _otFilter = { year: '', status: '' };
+const _otFilter = { year: '', month: '', status: '' };
 function setOtFilter(k, v) { _otFilter[k] = v || ''; router.go('overtime'); }
-function clearOtFilter() { _otFilter.year = ''; _otFilter.status = ''; router.go('overtime'); }
+function clearOtFilter() { _otFilter.year = ''; _otFilter.month = ''; _otFilter.status = ''; router.go('overtime'); }
 
 router.register('overtime', () => {
   const allList = DB.getOvertimeRequests();
   const role = DB.role;
   const list = allList.filter(r => {
     if (_otFilter.year && String(r.otDate || '').slice(0, 4) !== _otFilter.year) return false;
+    if (_otFilter.month && String(r.otDate || '').slice(5, 7) !== _otFilter.month) return false;
     if (_otFilter.status && r.status !== _otFilter.status) return false;
     return true;
   });
-  const _otHasFilter = !!(_otFilter.year || _otFilter.status);
+  const _otHasFilter = !!(_otFilter.year || _otFilter.month || _otFilter.status);
   const _otYears = (() => {
     const ty = new Date().getFullYear();
     const ys = new Set(allList.map(r => String(r.otDate || '').slice(0, 4)).filter(Boolean));
@@ -17042,6 +17043,10 @@ router.register('overtime', () => {
         <select class="sw-filter-select" onchange="setOtFilter('year', this.value)" aria-label="กรองตามปี">
           <option value="">— ทุกปี —</option>
           ${_otYears.map(y => `<option value="${y}" ${_otFilter.year === y ? 'selected' : ''}>ปี ${Number(y) + 543}</option>`).join('')}
+        </select>
+        <select class="sw-filter-select" onchange="setOtFilter('month', this.value)" aria-label="กรองตามเดือน">
+          <option value="">— ทุกเดือน —</option>
+          ${['01','02','03','04','05','06','07','08','09','10','11','12'].map((m, i) => `<option value="${m}" ${_otFilter.month === m ? 'selected' : ''}>${['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'][i]}</option>`).join('')}
         </select>
         <select class="sw-filter-select" onchange="setOtFilter('status', this.value)" aria-label="กรองตามสถานะ">
           <option value="">— ทุกสถานะ —</option>
