@@ -18035,24 +18035,33 @@ function _attNumCell(n, color) {
   if (!n) return '<span class="att-dash">—</span>';
   return color ? `<strong style="color:${color}">${n}</strong>` : String(n);
 }
-// เซลล์ 1 วัน ในกริด → <td> พร้อมตัวอักษรย่อ + สี + tooltip
+// ย่อช่วงเวลากะ: 08:00-17:00 → 08-17 · 09:30-18:30 → 09:30-18:30
+function _attShiftShort(sh) {
+  if (!sh || !sh.start) return '';
+  const f = (t) => { t = String(t).slice(0, 5); return t.endsWith(':00') ? t.slice(0, 2) : t; };
+  return `${f(sh.start)}-${f(sh.end)}`;
+}
+// เซลล์ 1 วัน ในกริด → <td> แสดง กะ + เวลาเข้า + เวลาออก (สีแดง=สาย, เหลือง=ออกก่อน)
 function _attGridCellTd(rec, sched, onLeave, dateStr, todayStr, weekend) {
   const sh = attShiftInfo(sched);
-  let c = '', bg = '', fg = '', t = '';
-  const times = rec ? `${rec.checkIn ? 'เข้า ' + _attHM(rec.checkIn) : ''}${rec.checkOut ? ' · ออก ' + _attHM(rec.checkOut) : ''}`.trim() : '';
+  const we = weekend ? ' att-we' : '';
+  const shiftLbl = (sh && sh.start && !sh.isOff) ? `<div class="att-c-shift">${_attShiftShort(sh)}</div>` : '';
   if (rec) {
     const k = rec.roster?.kind;
-    if (k === 'late' || k === 'late_early') { c = 'ส'; bg = 'rgba(220,38,38,.16)'; fg = '#dc2626'; t = `สาย ${rec.roster.lateMin} น. · ${times}`; }
-    else if (k === 'early') { c = 'อ'; bg = 'rgba(184,122,8,.18)'; fg = '#b87a08'; t = `ออกก่อน ${rec.roster.earlyMin} น. · ${times}`; }
-    else if (k === 'incomplete') { c = '?'; bg = 'rgba(184,122,8,.18)'; fg = '#b87a08'; t = `สแกนไม่ครบ · ${times}`; }
-    else if (k === 'off_worked') { c = '✓'; bg = 'rgba(37,99,235,.14)'; fg = '#2563eb'; t = `ทำงานวันหยุด · ${times}`; }
-    else if (k === 'no_shift') { c = '•'; fg = 'var(--text-2)'; t = `นอกตาราง · ${times}`; }
-    else { c = '✓'; bg = 'rgba(21,146,63,.16)'; fg = '#16a34a'; t = `ปกติ · ${times}`; }
-  } else if (onLeave) { c = 'ล'; bg = 'rgba(37,99,235,.14)'; fg = '#2563eb'; t = 'ลา (อนุมัติแล้ว)'; }
-  else if (sh && !sh.isOff && sh.start && dateStr < todayStr) { c = 'ข'; bg = 'rgba(220,38,38,.16)'; fg = '#dc2626'; t = `ขาดงาน · กะ ${sh.start}-${sh.end}`; }
-  else if (sh && sh.isOff) { c = 'ห'; fg = 'var(--text-2)'; t = 'วันหยุด'; }
-  const inner = c ? `<span class="att-cell" style="color:${fg}${bg ? ';background:' + bg : ''}">${c}</span>` : '';
-  return `<td class="${weekend ? 'att-we' : ''}"${t ? ` title="${escapeHtml(t)}"` : ''}>${inner}</td>`;
+    const inLate = (k === 'late' || k === 'late_early');
+    const outEarly = (k === 'early' || k === 'late_early');
+    const inT = rec.checkIn ? _attHM(rec.checkIn) : '—';
+    const outT = rec.checkOut ? _attHM(rec.checkOut) : '—';
+    const t = `${sh && sh.start ? 'กะ ' + sh.start.slice(0,5) + '-' + sh.end.slice(0,5) + ' · ' : ''}เข้า ${inT} · ออก ${outT}`
+      + `${inLate ? ' · สาย ' + rec.roster.lateMin + ' น.' : ''}${outEarly ? ' · ออกก่อน ' + rec.roster.earlyMin + ' น.' : ''}`;
+    return `<td class="att-c${we}" title="${escapeHtml(t)}">${shiftLbl}`
+      + `<div class="att-c-in"${inLate ? ' style="color:#dc2626;font-weight:700"' : ''}>${inT}</div>`
+      + `<div class="att-c-out"${outEarly ? ' style="color:#b87a08;font-weight:700"' : ''}>${outT}</div></td>`;
+  }
+  if (onLeave) return `<td class="att-c${we}" title="ลา (อนุมัติแล้ว)">${shiftLbl}<div class="att-c-tag" style="color:#2563eb;background:rgba(37,99,235,.12)">ลา</div></td>`;
+  if (sh && !sh.isOff && sh.start && dateStr < todayStr) return `<td class="att-c${we}" title="ขาดงาน · กะ ${sh.start.slice(0,5)}-${sh.end.slice(0,5)}">${shiftLbl}<div class="att-c-tag" style="color:#dc2626;background:rgba(220,38,38,.12)">ขาด</div></td>`;
+  if (sh && sh.isOff) return `<td class="att-c${we}"><div class="att-c-off">หยุด</div></td>`;
+  return `<td class="att-c${we}"></td>`;
 }
 function renderAttSummaryTable(att, absences, from, to) {
   const leaveSet = attBuildLeaveIndex(from, to);
@@ -18156,7 +18165,7 @@ function renderAttSummaryTable(att, absences, from, to) {
       </table>
     </div>
     <div class="muted-2" style="font-size:11.5px;margin-top:8px;display:flex;gap:14px;flex-wrap:wrap">
-      <span><b style="color:${C_G}">✓</b> ปกติ</span><span><b style="color:${C_D}">ส</b> สาย</span><span><b style="color:${C_W}">อ</b> ออกก่อน</span><span><b style="color:${C_D}">ข</b> ขาด</span><span><b style="color:${C_B}">ล</b> ลา</span><span><b style="color:var(--text-2)">ห</b> หยุด</span><span><b style="color:${C_W}">?</b> สแกนไม่ครบ</span>
+      <span>ในช่อง: บรรทัดบน=กะ · เข้า · ออก</span><span><b style="color:${C_D}">เข้าแดง</b>=สาย</span><span><b style="color:${C_W}">ออกเหลือง</b>=ออกก่อน</span><span><b style="color:${C_D}">ข</b>=ขาด</span><span><b style="color:${C_B}">ล</b>=ลา</span><span><b style="color:var(--text-2)">หยุด</b>=วันหยุด</span>
     </div>
   `;
 }
