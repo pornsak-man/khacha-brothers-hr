@@ -1633,7 +1633,7 @@ router.register('dashboard', () => {
   };
 
   const todayStr = new Date().toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' });
-  const tvColor = kpi.turnoverAnnualized <= 5 ? 'var(--success)' : kpi.turnoverAnnualized <= 10 ? 'var(--warning)' : 'var(--danger)';
+  const tvColor = kpi.turnoverAnnualized <= 5 ? 'var(--success)' : kpi.turnoverAnnualized <= 10 ? 'var(--warning)' : '#dc2626';
   const tvDot = kpi.turnoverAnnualized <= 5 ? 'green' : kpi.turnoverAnnualized <= 10 ? 'amber' : 'red';
   const tvLabel = kpi.turnoverAnnualized <= 5 ? 'ดีมาก' : kpi.turnoverAnnualized <= 10 ? 'ปานกลาง' : 'สูง';
   const maxBranch = branchStats[0]?.count || 1;
@@ -1702,11 +1702,11 @@ router.register('dashboard', () => {
 
     ${pendingUniform.length ? `
     <div class="sw-section-label">แจ้งเตือนด่วน</div>
-    <div class="sw-chart-card" style="border-left:4px solid var(--danger);background:linear-gradient(90deg, rgba(220,38,38,0.04), transparent 60%)">
+    <div class="sw-chart-card" style="border-left:4px solid #dc2626;background:linear-gradient(90deg, rgba(220,38,38,0.04), transparent 60%)">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
         <div class="sw-chart-title" style="display:flex;align-items:center;gap:10px">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/></svg>
-          <span style="color:var(--danger)">มีคำขอจัดชุดรอดำเนินการ</span>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/></svg>
+          <span style="color:#dc2626">มีคำขอจัดชุดรอดำเนินการ</span>
           <span class="badge badge-danger" style="font-size:12px;padding:4px 12px;font-weight:700">${pendingUniform.length} รายการ</span>
         </div>
         <button class="btn btn-primary btn-sm" onclick="router.go('uniform')">ไปจัดชุด →</button>
