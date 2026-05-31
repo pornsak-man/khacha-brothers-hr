@@ -16482,7 +16482,8 @@ function openHeadcountForm() {
   }
   const myBranch = DB.getEmployee(DB.profile?.employee_id)?.branch || '';
   const branches = DB.getBranchMaster ? DB.getBranchMaster({ activeOnly: true }) : [];
-  const positions = DB.getPositions ? DB.getPositions() : [];
+  // ตำแหน่งของสาขา — ตัดสายงานสำนักงาน (scope='office') ออก เหลือปฏิบัติการ + ที่ยังไม่ระบุสาย
+  const positions = (DB.getPositions ? DB.getPositions() : []).filter(p => p.scope !== 'office');
   const lockBranch = (role === 'branch_manager' && myBranch);
 
   modal.open('สร้างคำขออัตรากำลัง', `
@@ -16495,7 +16496,7 @@ function openHeadcountForm() {
         ` : `
           <select name="branchId" required>
             <option value="">— เลือกสาขา —</option>
-            ${branches.map(b => `<option value="${escapeHtml(b.id)}" ${b.id === myBranch ? 'selected' : ''}>${escapeHtml(b.id)}${b.name ? ' — ' + escapeHtml(b.name) : ''}</option>`).join('')}
+            ${branches.map(b => `<option value="${escapeHtml(b.id)}" ${b.id === myBranch ? 'selected' : ''}>${escapeHtml(b.id)}</option>`).join('')}
           </select>
         `}
       </div>
