@@ -1013,7 +1013,7 @@ const router = {
       audit: 'ประวัติการแก้ไข',
       blacklist: 'รายชื่อห้ามจ้าง',
       leave: 'การลางาน',
-      'salary-adjust': 'ปรับค่าจ้าง / ตำแหน่ง / สาขา',
+      'salary-adjust': 'ปรับค่าจ้าง / โอนย้าย',
       'headcount': 'ขออัตรากำลัง',
       loans: 'การกู้เงินบริษัท',
       advances: 'เบิกเงินล่วงหน้า',
@@ -10110,7 +10110,7 @@ router.register('salary-adjust', () => {
   return `
     <div class="sw-page-header">
       <div>
-        <div class="sw-page-title">ปรับค่าจ้าง / ตำแหน่ง / สาขา</div>
+        <div class="sw-page-title">ปรับค่าจ้าง / โอนย้าย</div>
         <div class="sw-page-subtitle">บันทึกการเปลี่ยนแปลงพนักงาน · ระบบจะอัปเดตทะเบียนพนักงานอัตโนมัติ</div>
       </div>
       <div class="sw-page-actions">
@@ -13006,7 +13006,7 @@ const _auditState = {
 };
 const AUDIT_TABLE_LABELS = {
   employees: 'พนักงาน',
-  salary_history: 'ปรับค่าจ้าง/ตำแหน่ง/สาขา',
+  salary_history: 'ปรับค่าจ้าง / โอนย้าย',
   applicants: 'ผู้สมัคร',
   loans: 'การกู้',
   advances: 'เบิกเงินล่วงหน้า',
