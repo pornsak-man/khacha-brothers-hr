@@ -1052,8 +1052,12 @@ const router = {
     if (name === 'blacklist') wireBlacklistPage();
     if (name === 'recruit') wireRecruitPage();
     if (name === 'settings' && typeof renderEmpAccounts === 'function') renderEmpAccounts();
-    if (name === 'user-roles' && typeof renderEmpAccounts === 'function') renderEmpAccounts();
+    // [PERF] user-roles: render ตารางสิทธิ์ (matrix) ก่อน — แล้ว defer ตารางบัญชี (ใหญ่) ไปตอน idle
+    //   กันสองตารางใหญ่แย่ง main thread พร้อมกัน ทำให้ matrix ขึ้นช้า/หน่วง
     if (name === 'user-roles' && typeof renderPermMatrix === 'function') renderPermMatrix();
+    if (name === 'user-roles' && typeof renderEmpAccounts === 'function') {
+      (window.requestIdleCallback || ((cb) => setTimeout(cb, 200)))(() => renderEmpAccounts());
+    }
     $('#sidebar').classList.remove('open');
   },
   refresh() { this.go(this.current); }
@@ -14783,9 +14787,11 @@ async function renderPermMatrix() {
     box.innerHTML = `<div id="permDiagBanner"></div>` + _renderMatrixHtml();
     _wireMatrixEvents();
 
-    // ─── [Auto-detect] background scan — ไม่ block การแสดง matrix ───
+    // ─── [Auto-detect] background scan — รันตอน browser ว่าง (idle) เท่านั้น ───
+    //   [PERF] เดิมรันทันทีหลัง render → regex สแกน app.js (~1.1MB) บน main thread → หน่วงตาราง
+    //   ใหม่: เลื่อนไป requestIdleCallback → ไม่แย่งเวลา paint/scroll/click ของ matrix
     const dbKeys = perms.map(p => p.key);
-    diagnosePermissions(dbKeys).then(diagnosis => {
+    const _runPermDiag = () => diagnosePermissions(dbKeys).then(diagnosis => {
       if (!diagnosis || !diagnosis.missing.length) return;
       const bannerBox = document.getElementById('permDiagBanner');
       if (!bannerBox) return;  // user เปลี่ยนหน้าไปแล้ว
@@ -14821,6 +14827,7 @@ async function renderPermMatrix() {
         });
       });
     }).catch(() => { /* diagnosis ล้มเหลว → เงียบ ไม่กระทบ matrix */ });
+    (window.requestIdleCallback || ((cb) => setTimeout(cb, 400)))(_runPermDiag);
   } catch (ex) {
     _permMatrixState.error = ex?.message || String(ex);
     box.innerHTML = `<div class="empty-state" style="padding:24px">
