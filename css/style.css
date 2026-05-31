@@ -4673,9 +4673,11 @@ a:hover .badge, button:hover .badge, .sw-recent-item:hover .badge {
   filter: saturate(1.5) brightness(1.2) contrast(1.1);
 }
 .shift-badge-time {
-  font-size: 11px;     /* เดิม 10px */
-  opacity: 1;          /* เดิม 0.85 — opacity เต็มไม่จาง */
-  font-weight: 600;    /* เดิม 500 — bold ขึ้น */
+  font-size: 12.5px;   /* เดิม 11px — เน้นเวลาเข้า-ออกให้อ่านชัดขึ้น */
+  opacity: 1;
+  font-weight: 700;    /* เดิม 600 */
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;  /* ตัวเลขเรียงตรงกัน อ่านง่าย */
 }
 
 .cross-branch-mark {
