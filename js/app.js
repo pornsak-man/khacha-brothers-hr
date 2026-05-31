@@ -18035,6 +18035,25 @@ function _attNumCell(n, color) {
   if (!n) return '<span class="att-dash">—</span>';
   return color ? `<strong style="color:${color}">${n}</strong>` : String(n);
 }
+// เซลล์ 1 วัน ในกริด → <td> พร้อมตัวอักษรย่อ + สี + tooltip
+function _attGridCellTd(rec, sched, onLeave, dateStr, todayStr, weekend) {
+  const sh = attShiftInfo(sched);
+  let c = '', bg = '', fg = '', t = '';
+  const times = rec ? `${rec.checkIn ? 'เข้า ' + _attHM(rec.checkIn) : ''}${rec.checkOut ? ' · ออก ' + _attHM(rec.checkOut) : ''}`.trim() : '';
+  if (rec) {
+    const k = rec.roster?.kind;
+    if (k === 'late' || k === 'late_early') { c = 'ส'; bg = 'rgba(220,38,38,.16)'; fg = '#dc2626'; t = `สาย ${rec.roster.lateMin} น. · ${times}`; }
+    else if (k === 'early') { c = 'อ'; bg = 'rgba(184,122,8,.18)'; fg = '#b87a08'; t = `ออกก่อน ${rec.roster.earlyMin} น. · ${times}`; }
+    else if (k === 'incomplete') { c = '?'; bg = 'rgba(184,122,8,.18)'; fg = '#b87a08'; t = `สแกนไม่ครบ · ${times}`; }
+    else if (k === 'off_worked') { c = '✓'; bg = 'rgba(37,99,235,.14)'; fg = '#2563eb'; t = `ทำงานวันหยุด · ${times}`; }
+    else if (k === 'no_shift') { c = '•'; fg = 'var(--text-2)'; t = `นอกตาราง · ${times}`; }
+    else { c = '✓'; bg = 'rgba(21,146,63,.16)'; fg = '#16a34a'; t = `ปกติ · ${times}`; }
+  } else if (onLeave) { c = 'ล'; bg = 'rgba(37,99,235,.14)'; fg = '#2563eb'; t = 'ลา (อนุมัติแล้ว)'; }
+  else if (sh && !sh.isOff && sh.start && dateStr < todayStr) { c = 'ข'; bg = 'rgba(220,38,38,.16)'; fg = '#dc2626'; t = `ขาดงาน · กะ ${sh.start}-${sh.end}`; }
+  else if (sh && sh.isOff) { c = 'ห'; fg = 'var(--text-2)'; t = 'วันหยุด'; }
+  const inner = c ? `<span class="att-cell" style="color:${fg}${bg ? ';background:' + bg : ''}">${c}</span>` : '';
+  return `<td class="${weekend ? 'att-we' : ''}"${t ? ` title="${escapeHtml(t)}"` : ''}>${inner}</td>`;
+}
 function renderAttSummaryTable(att, absences, from, to) {
   const leaveSet = attBuildLeaveIndex(from, to);
   const byEmp = new Map();
@@ -18085,51 +18104,59 @@ function renderAttSummaryTable(att, absences, from, to) {
     f === 'issues' ? (t.late > 0 || t.early > 0 || t.absent > 0) : true);
 
   if (!rows.length) {
-    return `<div class="empty-state" style="padding:32px"><div class="icon">📊</div><div>ไม่มีข้อมูลสรุปในเดือนนี้</div></div>`;
+    return `<div class="empty-state" style="padding:32px"><div class="icon">📅</div><div>ไม่มีข้อมูลในเดือนนี้</div></div>`;
   }
-  const tot = rows.reduce((s, t) => { ['shift','recorded','present','late','early','absent','leave','workMin'].forEach(k => s[k] += t[k]); return s; },
-    { shift:0, recorded:0, present:0, late:0, early:0, absent:0, leave:0, workMin:0 });
-  const C_DANGER = 'var(--danger)', C_WARN = 'var(--warning)', C_BLUE = '#2563eb';
+  // ── สร้างกริดรายวัน: วันที่ 1 → สิ้นเดือน ──
+  const attMap = new Map();
+  for (const r of att) attMap.set(r.employeeId + '|' + r.workDate, r);
+  const schedIdx = attBuildScheduleIndex();
+  const todayStr = tz.today();
+  const WD = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+  const lastDay = new Date(_attState.year, _attState.month, 0).getDate();
+  const days = [];
+  for (let d = 1; d <= lastDay; d++) {
+    const dow = new Date(_attState.year, _attState.month - 1, d).getDay();
+    days.push({ d, dow, dateStr: `${_attState.year}-${String(_attState.month).padStart(2,'0')}-${String(d).padStart(2,'0')}`, weekend: dow === 0 || dow === 6 });
+  }
+  const tot = rows.reduce((s, t) => { s.present += t.present; s.late += t.late; s.absent += t.absent; s.leave += t.leave; return s; }, { present:0, late:0, absent:0, leave:0 });
+  const C_D = '#dc2626', C_B = '#2563eb', C_G = '#16a34a', C_W = '#b87a08';
+
+  const headDays = days.map(day => `<th class="${day.weekend ? 'att-we' : ''}"><div>${day.d}</div><div style="font-size:9px;font-weight:400;color:var(--text-2)">${WD[day.dow]}</div></th>`).join('');
+  const rowsHtml = rows.map(t => {
+    const cells = days.map(day => _attGridCellTd(
+      attMap.get(t.empId + '|' + day.dateStr), schedIdx.get(t.empId + '|' + day.dateStr),
+      leaveSet.has(t.empId + '|' + day.dateStr), day.dateStr, todayStr, day.weekend)).join('');
+    return `<tr data-search="${escapeHtml((t.name + ' ' + t.empId).toLowerCase())}">
+      <td class="att-gname"><a href="#" onclick="viewEmployee('${escapeHtml(t.empId)}');return false;">${escapeHtml(t.name || t.empId)}</a><div class="muted-2" style="font-size:10px">${escapeHtml(t.empId)}${t.branch ? ' · ' + escapeHtml(t.branch) : ''}</div></td>
+      ${cells}
+      <td class="att-sumcol">${_attNumCell(t.present)}</td>
+      <td class="att-sumcol">${_attNumCell(t.late, C_D)}</td>
+      <td class="att-sumcol">${_attNumCell(t.absent, C_D)}</td>
+      <td class="att-sumcol">${_attNumCell(t.leave, C_B)}</td>
+    </tr>`;
+  }).join('');
 
   return `
-    <div class="muted-2" style="font-size:12px;margin-bottom:8px">สรุปการมาทำงานรายเดือน · ${rows.length.toLocaleString()} คน — คลิกหัวข้อ "รายวัน" เพื่อดูรายละเอียดแต่ละวัน</div>
+    <div class="muted-2" style="font-size:12px;margin-bottom:8px">ตารางบันทึกเวลารายวัน · ${_TH_MONTHS[_attState.month-1]} ${_attState.year+543} · ${rows.length.toLocaleString()} คน <span style="opacity:.7">(เลื่อนซ้าย–ขวาเพื่อดูทุกวัน)</span></div>
     <div class="table-wrap">
-      <table class="table" style="font-size:13px">
-        <thead><tr>
-          <th>พนักงาน</th><th>สาขา</th>
-          <th style="text-align:center">กะ</th><th style="text-align:center">บันทึก</th>
-          <th style="text-align:center">มาทำงาน</th><th style="text-align:center">สาย</th>
-          <th style="text-align:center">ออกก่อน</th><th style="text-align:center">ขาด</th>
-          <th style="text-align:center">ลา</th><th style="text-align:center">ชม.รวม</th>
-        </tr></thead>
+      <table class="table att-grid">
+        <thead><tr><th class="att-gname">พนักงาน</th>${headDays}<th class="att-sumcol">มา</th><th class="att-sumcol">สาย</th><th class="att-sumcol">ขาด</th><th class="att-sumcol">ลา</th></tr></thead>
         <tbody id="attTbody">
-          ${rows.map(t => `<tr data-search="${escapeHtml((t.name + ' ' + t.empId).toLowerCase())}">
-            <td><a href="#" onclick="viewEmployee('${escapeHtml(t.empId)}');return false;">${escapeHtml(t.name || t.empId)}</a>
-                <div class="muted-2" style="font-size:11px">${escapeHtml(t.empId)}</div></td>
-            <td style="font-size:12px">${escapeHtml(t.branch || '-')}</td>
-            <td style="text-align:center">${_attNumCell(t.shift)}</td>
-            <td style="text-align:center">${_attNumCell(t.recorded)}</td>
-            <td style="text-align:center">${_attNumCell(t.present)}</td>
-            <td style="text-align:center">${_attNumCell(t.late, C_DANGER)}</td>
-            <td style="text-align:center">${_attNumCell(t.early, C_WARN)}</td>
-            <td style="text-align:center">${_attNumCell(t.absent, C_DANGER)}</td>
-            <td style="text-align:center">${_attNumCell(t.leave, C_BLUE)}</td>
-            <td style="text-align:center;white-space:nowrap">${_attFmtMinutes(t.workMin)}</td>
-          </tr>`).join('')}
-          <tr id="attNoSearch" style="display:none"><td colspan="10" style="text-align:center;padding:24px" class="muted-2">ไม่พบพนักงานที่ค้นหา</td></tr>
+          ${rowsHtml}
+          <tr id="attNoSearch" style="display:none"><td colspan="${days.length + 5}" style="text-align:center;padding:24px" class="muted-2">ไม่พบพนักงานที่ค้นหา</td></tr>
         </tbody>
-        <tfoot><tr style="font-weight:700;background:var(--surface-2)">
-          <td colspan="2">รวมทั้งหมด (${rows.length.toLocaleString()} คน)</td>
-          <td style="text-align:center">${tot.shift.toLocaleString()}</td>
-          <td style="text-align:center">${tot.recorded.toLocaleString()}</td>
-          <td style="text-align:center">${tot.present.toLocaleString()}</td>
-          <td style="text-align:center;color:${C_DANGER}">${tot.late.toLocaleString()}</td>
-          <td style="text-align:center;color:${C_WARN}">${tot.early.toLocaleString()}</td>
-          <td style="text-align:center;color:${C_DANGER}">${tot.absent.toLocaleString()}</td>
-          <td style="text-align:center;color:${C_BLUE}">${tot.leave.toLocaleString()}</td>
-          <td style="text-align:center;white-space:nowrap">${_attFmtMinutes(tot.workMin)}</td>
+        <tfoot><tr style="font-weight:700">
+          <td class="att-gname">รวม (${rows.length.toLocaleString()} คน)</td>
+          <td colspan="${days.length}"></td>
+          <td class="att-sumcol">${tot.present.toLocaleString()}</td>
+          <td class="att-sumcol" style="color:${C_D}">${tot.late.toLocaleString()}</td>
+          <td class="att-sumcol" style="color:${C_D}">${tot.absent.toLocaleString()}</td>
+          <td class="att-sumcol" style="color:${C_B}">${tot.leave.toLocaleString()}</td>
         </tr></tfoot>
       </table>
+    </div>
+    <div class="muted-2" style="font-size:11.5px;margin-top:8px;display:flex;gap:14px;flex-wrap:wrap">
+      <span><b style="color:${C_G}">✓</b> ปกติ</span><span><b style="color:${C_D}">ส</b> สาย</span><span><b style="color:${C_W}">อ</b> ออกก่อน</span><span><b style="color:${C_D}">ข</b> ขาด</span><span><b style="color:${C_B}">ล</b> ลา</span><span><b style="color:var(--text-2)">ห</b> หยุด</span><span><b style="color:${C_W}">?</b> สแกนไม่ครบ</span>
     </div>
   `;
 }
@@ -18241,7 +18268,7 @@ router.register('attendance', () => {
       </div>
       <div style="display:inline-flex;gap:3px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:14px">
         <button class="btn btn-sm ${_attState.view !== 'summary' ? 'btn-primary' : 'btn-ghost'}" onclick="setAttView('daily')">รายวัน</button>
-        <button class="btn btn-sm ${_attState.view === 'summary' ? 'btn-primary' : 'btn-ghost'}" onclick="setAttView('summary')">สรุปรายเดือน</button>
+        <button class="btn btn-sm ${_attState.view === 'summary' ? 'btn-primary' : 'btn-ghost'}" onclick="setAttView('summary')">ตารางรายเดือน</button>
       </div>
       ${_attState.loading ? `<div class="muted-2" style="padding:24px;text-align:center">กำลังโหลดข้อมูลเดือนนี้...</div>` : (_attState.view === 'summary' ? renderAttSummaryTable(att, absences, from, to) : (list.length === 0 ? `
         <div class="empty-state" style="padding:32px">

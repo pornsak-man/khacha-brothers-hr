@@ -1996,6 +1996,24 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 /* ตัวคั่นจาง ๆ ในเซลล์ว่าง (ไม่มีกะ / ไม่มีค่า) */
 .att-dash { color: var(--border-strong); }
 
+/* ── Attendance: ตารางกริดรายวัน (พนักงาน × วันที่ 1..สิ้นเดือน) ── */
+.att-grid { font-size: 11px; }
+.att-grid th, .att-grid td { padding: 5px 3px; text-align: center; white-space: nowrap; border-bottom: 1px solid var(--border); }
+.att-grid thead th { font-size: 10px; letter-spacing: 0; text-transform: none; line-height: 1.1; }
+.att-grid .att-gname,
+.att-grid thead .att-gname {
+  position: sticky; left: 0; z-index: 2; text-align: left;
+  min-width: 138px; max-width: 190px; background: var(--surface);
+  box-shadow: 1px 0 0 var(--border);
+}
+.att-grid thead .att-gname { z-index: 4; background: var(--surface-2); }
+.att-grid tfoot .att-gname { background: var(--surface-2); }
+.att-grid tbody tr:hover td { background: var(--surface-2); }
+.att-grid tbody tr:hover .att-gname { background: var(--surface-2); }
+.att-grid .att-we { background: rgba(120, 120, 120, 0.06); }
+.att-grid .att-sumcol { background: var(--surface-2); min-width: 30px; }
+.att-cell { display: inline-block; min-width: 17px; font-weight: 700; border-radius: 4px; padding: 0 3px; line-height: 1.5; }
+
 /* ═════════════ FORMS ═════════════ */
 .form-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .form-group { display: flex; flex-direction: column; }
