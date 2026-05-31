@@ -16746,9 +16746,9 @@ function _rsgBadgeHtml(r) {
   return `<span class="badge ${base.cls}">${escapeHtml(base.label)}</span>`;
 }
 
-const _rsgFilter = { year: '', status: '' };
+const _rsgFilter = { year: '', month: '', status: '' };
 function setRsgFilter(k, v) { _rsgFilter[k] = v || ''; router.go('resignations'); }
-function clearRsgFilter() { _rsgFilter.year = ''; _rsgFilter.status = ''; router.go('resignations'); }
+function clearRsgFilter() { _rsgFilter.year = ''; _rsgFilter.month = ''; _rsgFilter.status = ''; router.go('resignations'); }
 
 router.register('resignations', () => {
   const allList = DB.getResignationReports();
@@ -16756,10 +16756,11 @@ router.register('resignations', () => {
   // ─── ตัวกรอง: ปี (จากวันที่แจ้ง) + สถานะ ───
   const list = allList.filter(r => {
     if (_rsgFilter.year && String(r.reportedAt || '').slice(0, 4) !== _rsgFilter.year) return false;
+    if (_rsgFilter.month && String(r.reportedAt || '').slice(5, 7) !== _rsgFilter.month) return false;
     if (_rsgFilter.status && r.status !== _rsgFilter.status) return false;
     return true;
   });
-  const _rsgHasFilter = !!(_rsgFilter.year || _rsgFilter.status);
+  const _rsgHasFilter = !!(_rsgFilter.year || _rsgFilter.month || _rsgFilter.status);
   const _rsgYears = (() => {
     const ty = new Date().getFullYear();
     const ys = new Set(allList.map(r => String(r.reportedAt || '').slice(0, 4)).filter(Boolean));
@@ -16786,6 +16787,10 @@ router.register('resignations', () => {
         <select class="sw-filter-select" onchange="setRsgFilter('year', this.value)" aria-label="กรองตามปี">
           <option value="">— ทุกปี —</option>
           ${_rsgYears.map(y => `<option value="${y}" ${_rsgFilter.year === y ? 'selected' : ''}>ปี ${Number(y) + 543}</option>`).join('')}
+        </select>
+        <select class="sw-filter-select" onchange="setRsgFilter('month', this.value)" aria-label="กรองตามเดือน">
+          <option value="">— ทุกเดือน —</option>
+          ${['01','02','03','04','05','06','07','08','09','10','11','12'].map((m, i) => `<option value="${m}" ${_rsgFilter.month === m ? 'selected' : ''}>${['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'][i]}</option>`).join('')}
         </select>
         <select class="sw-filter-select" onchange="setRsgFilter('status', this.value)" aria-label="กรองตามสถานะ">
           <option value="">— ทุกสถานะ —</option>
