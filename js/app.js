@@ -17610,7 +17610,7 @@ function updateShiftChangeBadge() {
 // ═══════════════════════════════════════════════════════════════════
 const _attState = (() => {
   const d = new Date();
-  return { year: d.getFullYear(), month: d.getMonth() + 1, branch: '', status: '', loaded: false, loading: false };
+  return { year: d.getFullYear(), month: d.getMonth() + 1, branch: '', status: '', grace: 0, loaded: false, loading: false };
 })();
 
 const ATT_ANOMALY = {
@@ -17619,6 +17619,18 @@ const ATT_ANOMALY = {
   no_punch:     { label: 'ไม่มีข้อมูล',      cls: 'badge-danger'  },
   check_break:  { label: 'พักไม่ครบคู่',     cls: 'badge-warning' },
   many_punches: { label: 'สแกนเกิน 4 ครั้ง', cls: 'badge-warning' }
+};
+
+// ผลเทียบกับตารางกะ (roster)
+const ATT_ROSTER = {
+  normal:     { label: 'ตรงเวลา',      cls: 'badge-success' },
+  late:       { label: 'สาย',          cls: 'badge-danger'  },
+  early:      { label: 'ออกก่อน',      cls: 'badge-warning' },
+  late_early: { label: 'สาย+ออกก่อน',  cls: 'badge-danger'  },
+  incomplete: { label: 'ลืมสแกน',      cls: 'badge-warning' },
+  off_worked: { label: 'ทำงานวันหยุด', cls: 'badge-info'    },
+  absent:     { label: 'ขาดงาน',       cls: 'badge-danger'  },
+  no_shift:   { label: 'นอกตาราง',     cls: ''              }
 };
 
 const _TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
@@ -17874,30 +17886,159 @@ function _attStatusCell(r) {
   return `<span class="badge" style="font-size:11px">—</span>`;
 }
 
+// ═══ เทียบกับตารางกะ (roster) — client-side (ใช้ DB.data.scheduleEntries + DB.getShift) ═══
+function setAttGrace(v) {
+  _attState.grace = Math.max(0, parseInt(v, 10) || 0);
+  if (router.current === 'attendance') router.go('attendance');
+}
+// index ตารางกะ: "empId|date" → entry
+function attBuildScheduleIndex() {
+  const m = new Map();
+  for (const e of (DB.data.scheduleEntries || [])) {
+    if (e.employeeId && e.workDate) m.set(e.employeeId + '|' + e.workDate, e);
+  }
+  return m;
+}
+// กะที่มีผลของ entry (custom override > shift master)
+function attShiftInfo(entry) {
+  if (!entry) return null;
+  const sh = entry.shiftId ? DB.getShift(entry.shiftId) : null;
+  const start = String(entry.customStartTime || sh?.startTime || '').slice(0, 5);
+  const end = String(entry.customEndTime || sh?.endTime || '').slice(0, 5);
+  const breakMin = Number(entry.customBreakMinutes || sh?.breakMinutes || 0);
+  const isOff = !!(sh && sh.isOffDay) && !entry.customStartTime;
+  const label = entry.customLabel || sh?.name || sh?.code || (isOff ? 'หยุด' : 'กะ');
+  let schedMin = null;
+  if (start && end) { let s = _attToMin(end) - _attToMin(start); if (s < 0) s += 1440; s -= breakMin; schedMin = s > 0 ? s : 0; }
+  return { start, end, breakMin, isOff, label, schedMin };
+}
+// คำนวณผลเทียบกะของบันทึกเวลา 1 แถว
+function attRoster(rec, idx) {
+  const sh = attShiftInfo(idx.get(rec.employeeId + '|' + rec.workDate));
+  if (!sh) return { kind: 'no_shift', shift: null, lateMin: 0, earlyMin: 0, schedMin: null };
+  if (sh.isOff) return { kind: 'off_worked', shift: sh, lateMin: 0, earlyMin: 0, schedMin: 0 };
+  const grace = _attState.grace || 0;
+  const ci = _attToMin(rec.checkIn), co = _attToMin(rec.checkOut);
+  const st = _attToMin(sh.start), en = _attToMin(sh.end);
+  const lateMin = (ci != null && st != null) ? Math.max(0, ci - st) : 0;
+  const earlyMin = (co != null && en != null) ? Math.max(0, en - co) : 0;
+  let kind;
+  if (ci == null || co == null) kind = 'incomplete';
+  else {
+    const isLate = lateMin > grace, isEarly = earlyMin > grace;
+    kind = (isLate && isEarly) ? 'late_early' : isLate ? 'late' : isEarly ? 'early' : 'normal';
+  }
+  return { kind, shift: sh, lateMin, earlyMin, schedMin: sh.schedMin };
+}
+// แถว "ขาดงาน" = มีกะทำงาน (ไม่ใช่วันหยุด) แต่ไม่มีบันทึกเวลา · เฉพาะวันที่ผ่านมาแล้ว + พนักงานที่เห็นได้
+function attFindAbsences(attRows, idx, from, to, branch) {
+  const todayStr = tz.today();
+  const visible = new Set(DB.getEmployees().map(e => String(e.id)));
+  const have = new Set(attRows.map(r => r.employeeId + '|' + r.workDate));
+  const out = [];
+  for (const e of (DB.data.scheduleEntries || [])) {
+    if (!e.employeeId || !e.workDate) continue;
+    if (e.workDate < from || e.workDate > to) continue;
+    if (e.workDate >= todayStr) continue;                       // ยังไม่ถึง/วันนี้ — ยังไม่นับขาด
+    if (branch && e.branchId && e.branchId !== branch) continue;
+    if (!visible.has(String(e.employeeId))) continue;
+    if (have.has(e.employeeId + '|' + e.workDate)) continue;    // มีสแกนแล้ว
+    const sh = attShiftInfo(e);
+    if (!sh || sh.isOff || !sh.start) continue;                 // วันหยุด/ไม่มีเวลากะ → ไม่นับขาด
+    const emp = DB.getEmployee(e.employeeId);
+    out.push({
+      _absent: true, id: 'absent-' + e.employeeId + '-' + e.workDate,
+      employeeId: e.employeeId,
+      employeeName: emp ? `${emp.firstName||''} ${emp.lastName||''}`.trim() : e.employeeId,
+      branchId: e.branchId || (emp?.branch || ''),
+      workDate: e.workDate,
+      roster: { kind: 'absent', shift: sh, lateMin: 0, earlyMin: 0, schedMin: sh.schedMin }
+    });
+  }
+  return out;
+}
+// badge ผลเทียบกะ
+function _attRosterCell(roster) {
+  const k = roster?.kind || 'no_shift';
+  const meta = ATT_ROSTER[k] || ATT_ROSTER.no_shift;
+  let txt = meta.label;
+  if (k === 'late') txt = `สาย ${roster.lateMin} น.`;
+  else if (k === 'early') txt = `ออกก่อน ${roster.earlyMin} น.`;
+  else if (k === 'late_early') txt = `สาย ${roster.lateMin}/ก่อน ${roster.earlyMin} น.`;
+  const style = meta.cls === 'badge-info' ? 'background:rgba(37,99,235,.12);color:#2563eb' : '';
+  return `<span class="badge ${meta.cls}" style="font-size:11px;${style}">${txt}</span>`;
+}
+// กะของวัน (label + ช่วงเวลา)
+function _attShiftCell(roster) {
+  const sh = roster?.shift;
+  if (!sh) return '<span class="muted-2" style="font-size:11px">— ไม่มีกะ —</span>';
+  if (sh.isOff) return `<span class="muted-2" style="font-size:11px">หยุด</span>`;
+  return `<div style="font-size:12px">${escapeHtml(sh.label)}</div><div class="muted-2" style="font-size:10px">${sh.start||'?'}–${sh.end||'?'}</div>`;
+}
+
 router.register('attendance', () => {
   if (!_attState.loaded && !_attState.loading) attLoadAndRender();
   const canManage = DB.isHR;   // import/แก้/ลบ = HR/admin เท่านั้น
-  const all = DB.getTimeAttendance({ branch: _attState.branch || null });
-  const list = DB.getTimeAttendance({ branch: _attState.branch || null, status: _attState.status || null });
+  const { from, to } = _attMonthRange(_attState.year, _attState.month);
+  const idx = attBuildScheduleIndex();
+  const att = DB.getTimeAttendance({ branch: _attState.branch || null });
+  for (const r of att) r.roster = attRoster(r, idx);             // คำนวณเทียบกะต่อแถว
+  const absences = attFindAbsences(att, idx, from, to, _attState.branch || null);
+
+  // รวมบันทึกเวลา + แถวขาดงาน → เรียงวันที่ใหม่สุดก่อน
+  const combined = att.concat(absences).sort((a, b) =>
+    a.workDate < b.workDate ? 1 : a.workDate > b.workDate ? -1 : String(a.employeeId).localeCompare(String(b.employeeId)));
+
+  // filter ตามผลเทียบกะ
+  const f = _attState.status;
+  const kindOf = (row) => row._absent ? 'absent' : row.roster.kind;
+  const list = combined.filter(row => {
+    if (!f) return true;
+    const k = kindOf(row);
+    if (f === 'issues')     return ['late','early','late_early','incomplete','absent'].includes(k) || (!row._absent && row.anomaly);
+    if (f === 'late')       return k === 'late' || k === 'late_early';
+    if (f === 'early')      return k === 'early' || k === 'late_early';
+    if (f === 'absent')     return k === 'absent';
+    if (f === 'incomplete') return k === 'incomplete';
+    if (f === 'off_worked') return k === 'off_worked';
+    if (f === 'no_shift')   return k === 'no_shift';
+    return true;
+  });
   const hasFilter = !!(_attState.branch || _attState.status);
 
-  const totDays = all.length;
-  const totComplete = all.filter(r => r.isComplete && !r.anomaly).length;
-  const totAnomaly = all.filter(r => !!r.anomaly).length;
-  const totEmps = new Set(all.map(r => r.employeeId)).size;
-  const totWorkMin = all.reduce((s, r) => s + (r.workMinutes || 0), 0);
+  // สรุป
+  const cnt = { normal:0, late:0, early:0, off:0, incomplete:0, noshift:0 };
+  let lateMinTot = 0;
+  for (const r of att) {
+    const k = r.roster.kind;
+    if (k === 'late') { cnt.late++; lateMinTot += r.roster.lateMin; }
+    else if (k === 'late_early') { cnt.late++; cnt.early++; lateMinTot += r.roster.lateMin; }
+    else if (k === 'early') cnt.early++;
+    else if (k === 'off_worked') cnt.off++;
+    else if (k === 'incomplete') cnt.incomplete++;
+    else if (k === 'no_shift') cnt.noshift++;
+    else cnt.normal++;
+  }
+  const totDays = att.length;
+  const totEmps = new Set(att.map(r => r.employeeId)).size;
+  const totWorkMin = att.reduce((s, r) => s + (r.workMinutes || 0), 0);
+  const hasSchedule = (DB.data.scheduleEntries || []).length > 0;
 
   return `
     <div class="sw-page-title">บันทึกเวลาทำงาน (สแกนนิ้ว)</div>
     <div class="sw-page-subtitle">
-      นำเข้าข้อมูลสแกนนิ้ว เข้า-ออกงาน จากเครื่องสแกน (รองรับหลายรุ่น/หลายฟอร์แมต) · แต่ละวันมีได้ถึง 4 ครั้ง: เข้า · พักออก · พักเข้า · ออก
+      นำเข้าข้อมูลสแกนนิ้ว + เทียบกับตารางกะที่จัดไว้ → คำนวณ มาสาย / ออกก่อน / ขาดงาน อัตโนมัติในแต่ละวัน
     </div>
     <div class="card mt-4">
       <div class="flex items-center" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <span class="badge" style="font-size:13px;padding:6px 12px">📅 ${totDays.toLocaleString()} วัน-คน</span>
-          <span class="badge badge-success" style="font-size:13px;padding:6px 12px">✓ ครบ ${totComplete.toLocaleString()}</span>
-          ${totAnomaly ? `<span class="badge badge-warning" style="font-size:13px;padding:6px 12px">⚠ ผิดปกติ ${totAnomaly.toLocaleString()}</span>` : ''}
+          <span class="badge badge-success" style="font-size:13px;padding:6px 12px">✓ ตรงเวลา ${cnt.normal.toLocaleString()}</span>
+          ${cnt.late ? `<span class="badge badge-danger" style="font-size:13px;padding:6px 12px">⏰ สาย ${cnt.late.toLocaleString()} (${_attFmtMinutes(lateMinTot)})</span>` : ''}
+          ${cnt.early ? `<span class="badge badge-warning" style="font-size:13px;padding:6px 12px">↩ ออกก่อน ${cnt.early.toLocaleString()}</span>` : ''}
+          ${absences.length ? `<span class="badge badge-danger" style="font-size:13px;padding:6px 12px">✕ ขาดงาน ${absences.length.toLocaleString()}</span>` : ''}
+          ${cnt.incomplete ? `<span class="badge badge-warning" style="font-size:13px;padding:6px 12px">⚠ ลืมสแกน ${cnt.incomplete.toLocaleString()}</span>` : ''}
+          ${cnt.noshift ? `<span class="badge" style="font-size:13px;padding:6px 12px">นอกตาราง ${cnt.noshift.toLocaleString()}</span>` : ''}
           <span class="badge" style="font-size:13px;padding:6px 12px">👥 ${totEmps.toLocaleString()} คน · รวม ${_attFmtMinutes(totWorkMin)}</span>
         </div>
         ${canManage ? `
@@ -17907,15 +18048,22 @@ router.register('attendance', () => {
             <button class="btn btn-primary" onclick="openImportAttendance()">${ICON.upload || '⬆'} นำเข้าสแกนนิ้ว</button>
           </div>` : ''}
       </div>
+      ${!hasSchedule ? `<div style="font-size:12.5px;color:var(--warning);background:rgba(217,119,6,.08);border:1px solid var(--warning);border-radius:8px;padding:8px 10px;margin-bottom:12px">⚠ ยังไม่พบตารางกะในระบบ — คอลัมน์ "กะ / สาย / ออกก่อน / ขาดงาน" จะคำนวณได้เมื่อมีการจัดตารางงาน (เมนู "ตารางงาน")</div>` : ''}
       <div class="sw-filter-bar" style="margin-bottom:14px">
         <select class="sw-filter-select" onchange="setAttMonth(this.value)" aria-label="เลือกเดือน">${attMonthOptionsHtml()}</select>
         <select class="sw-filter-select" onchange="setAttBranch(this.value)" aria-label="กรองตามสาขา">${attBranchOptionsHtml()}</select>
-        <select class="sw-filter-select" onchange="setAttStatus(this.value)" aria-label="กรองตามสถานะ">
+        <select class="sw-filter-select" onchange="setAttStatus(this.value)" aria-label="กรองตามผลเทียบกะ">
           <option value="">— ทุกสถานะ —</option>
-          <option value="complete" ${_attState.status==='complete'?'selected':''}>เฉพาะที่ครบ</option>
-          <option value="incomplete" ${_attState.status==='incomplete'?'selected':''}>ไม่ครบ (ลืมสแกน)</option>
-          <option value="anomaly" ${_attState.status==='anomaly'?'selected':''}>ผิดปกติทั้งหมด</option>
+          <option value="issues" ${f==='issues'?'selected':''}>เฉพาะที่มีปัญหา</option>
+          <option value="late" ${f==='late'?'selected':''}>มาสาย</option>
+          <option value="early" ${f==='early'?'selected':''}>ออกก่อน</option>
+          <option value="absent" ${f==='absent'?'selected':''}>ขาดงาน</option>
+          <option value="incomplete" ${f==='incomplete'?'selected':''}>ลืมสแกน</option>
+          <option value="off_worked" ${f==='off_worked'?'selected':''}>ทำงานวันหยุด</option>
+          <option value="no_shift" ${f==='no_shift'?'selected':''}>นอกตาราง</option>
         </select>
+        <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted-2)">อนุโลมสาย
+          <input type="number" min="0" max="120" value="${_attState.grace}" onchange="setAttGrace(this.value)" style="width:62px" aria-label="อนุโลมสาย (นาที)"/> น.</label>
         ${hasFilter ? `<button class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearAttFilter()">✕ ล้างตัวกรอง</button>` : ''}
       </div>
       ${_attState.loading ? `<div class="muted-2" style="padding:24px;text-align:center">กำลังโหลดข้อมูลเดือนนี้...</div>` : (list.length === 0 ? `
@@ -17928,29 +18076,46 @@ router.register('attendance', () => {
         <div class="table-wrap">
           <table class="table" style="font-size:13px">
             <thead><tr>
-              <th>พนักงาน</th><th>วันที่</th>
-              <th style="text-align:center">เข้า</th><th style="text-align:center">พักออก</th>
-              <th style="text-align:center">พักเข้า</th><th style="text-align:center">ออก</th>
-              <th style="text-align:center">ชม.ทำงาน</th><th>สถานะ</th>
+              <th>พนักงาน</th><th>วันที่</th><th>กะ</th>
+              <th style="text-align:center">สแกน เข้า–ออก</th>
+              <th style="text-align:center">สาย<br>(น.)</th><th style="text-align:center">ออกก่อน<br>(น.)</th>
+              <th style="text-align:center">ชม.ทำงาน</th><th>ผลเทียบกะ</th>
               ${canManage ? '<th></th>' : ''}
             </tr></thead>
             <tbody>
-              ${list.map(r => {
-                const e = DB.getEmployee(r.employeeId);
-                const nm = r.employeeName || (e ? `${e.firstName||''} ${e.lastName||''}`.trim() : r.employeeId);
+              ${list.map(row => {
+                const e = DB.getEmployee(row.employeeId);
+                const nm = row.employeeName || (e ? `${e.firstName||''} ${e.lastName||''}`.trim() : row.employeeId);
+                const nameCell = `<td><a href="#" onclick="viewEmployee('${escapeHtml(row.employeeId)}');return false;">${escapeHtml(nm || row.employeeId)}</a>
+                      <div class="muted-2" style="font-size:11px">${escapeHtml(row.employeeId)}${row.branchId ? ' · '+escapeHtml(row.branchId) : ''}</div></td>`;
+                if (row._absent) {
+                  return `<tr style="background:rgba(220,38,38,.05)">
+                    ${nameCell}
+                    <td style="white-space:nowrap;font-size:12px">${fmt.date(row.workDate)}</td>
+                    <td>${_attShiftCell(row.roster)}</td>
+                    <td style="text-align:center"><span class="muted-2">— ไม่มีสแกน —</span></td>
+                    <td style="text-align:center">—</td><td style="text-align:center">—</td>
+                    <td style="text-align:center">—</td>
+                    <td>${_attRosterCell(row.roster)}</td>
+                    ${canManage ? `<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="openAttendanceManual('${escapeHtml(row.employeeId)}','${escapeHtml(row.workDate)}')" title="เพิ่มเวลาให้วันนี้">＋</button></td>` : ''}
+                  </tr>`;
+                }
+                const ro = row.roster;
+                const scan = `${_attHM(row.checkIn)} – ${_attHM(row.checkOut)}`
+                  + ((row.breakOut || row.breakIn) ? `<div class="muted-2" style="font-size:10px">พัก ${_attHM(row.breakOut)}–${_attHM(row.breakIn)}</div>` : '');
+                const statusCell = (ro.kind && ro.kind !== 'no_shift') ? _attRosterCell(ro) : _attStatusCell(row);
                 return `<tr>
-                  <td><a href="#" onclick="viewEmployee('${escapeHtml(r.employeeId)}');return false;">${escapeHtml(nm || r.employeeId)}</a>
-                      <div class="muted-2" style="font-size:11px">${escapeHtml(r.employeeId)}${r.branchId ? ' · '+escapeHtml(r.branchId) : ''}</div></td>
-                  <td style="white-space:nowrap;font-size:12px">${fmt.date(r.workDate)}</td>
-                  <td style="text-align:center">${_attHM(r.checkIn)}</td>
-                  <td style="text-align:center;color:var(--muted-2)">${_attHM(r.breakOut)}</td>
-                  <td style="text-align:center;color:var(--muted-2)">${_attHM(r.breakIn)}</td>
-                  <td style="text-align:center">${_attHM(r.checkOut)}</td>
-                  <td style="text-align:center;white-space:nowrap">${_attFmtMinutes(r.workMinutes)}</td>
-                  <td>${_attStatusCell(r)}${r.source==='manual' ? ' <span class="muted-2" style="font-size:10px">(มือ)</span>' : ''}</td>
+                  ${nameCell}
+                  <td style="white-space:nowrap;font-size:12px">${fmt.date(row.workDate)}</td>
+                  <td>${_attShiftCell(ro)}</td>
+                  <td style="text-align:center;font-size:12px;white-space:nowrap">${scan}</td>
+                  <td style="text-align:center">${ro.lateMin ? `<strong style="color:var(--danger)">${ro.lateMin}</strong>` : '—'}</td>
+                  <td style="text-align:center">${ro.earlyMin ? `<strong style="color:var(--warning)">${ro.earlyMin}</strong>` : '—'}</td>
+                  <td style="text-align:center;white-space:nowrap">${_attFmtMinutes(row.workMinutes)}</td>
+                  <td>${statusCell}${row.source==='manual' ? ' <span class="muted-2" style="font-size:10px">(มือ)</span>' : ''}</td>
                   ${canManage ? `<td style="white-space:nowrap">
-                    <button class="btn btn-ghost btn-sm" onclick="openAttendanceManual('${escapeHtml(r.employeeId)}','${escapeHtml(r.workDate)}')" title="แก้ไข">✎</button>
-                    <button class="btn btn-ghost btn-sm" onclick="attDeleteRow('${escapeHtml(r.id)}')" title="ลบ">🗑</button>
+                    <button class="btn btn-ghost btn-sm" onclick="openAttendanceManual('${escapeHtml(row.employeeId)}','${escapeHtml(row.workDate)}')" title="แก้ไข">✎</button>
+                    <button class="btn btn-ghost btn-sm" onclick="attDeleteRow('${escapeHtml(row.id)}')" title="ลบ">🗑</button>
                   </td>` : ''}
                 </tr>`;
               }).join('')}
@@ -18024,15 +18189,31 @@ function openAttendanceManual(empId = '', workDate = '') {
 // ─── Export เดือนปัจจุบันเป็น Excel ───
 async function attExportMonth() {
   if (typeof XLSX === 'undefined') { try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; } }
-  const list = DB.getTimeAttendance({ branch: _attState.branch || null, status: _attState.status || null });
-  if (!list.length) { toast('ไม่มีข้อมูลให้ export', 'info'); return; }
-  const rows = list.map(r => ({
-    'รหัสพนักงาน': r.employeeId, 'ชื่อ': r.employeeName, 'สาขา': r.branchId, 'วันที่': r.workDate,
-    'เข้า': _attHM(r.checkIn)==='—'?'':r.checkIn, 'พักออก': (r.breakOut||''), 'พักเข้า': (r.breakIn||''), 'ออก': (r.checkOut||''),
-    'ชม.ทำงาน(นาที)': r.workMinutes ?? '', 'พัก(นาที)': r.breakMinutes || 0,
-    'สถานะ': r.anomaly ? (ATT_ANOMALY[r.anomaly]?.label || r.anomaly) : (r.isComplete ? 'ครบ' : '-'),
-    'หมายเหตุ': r.note || ''
-  }));
+  const { from, to } = _attMonthRange(_attState.year, _attState.month);
+  const idx = attBuildScheduleIndex();
+  const att = DB.getTimeAttendance({ branch: _attState.branch || null });
+  for (const r of att) r.roster = attRoster(r, idx);
+  const absences = attFindAbsences(att, idx, from, to, _attState.branch || null);
+  const combined = att.concat(absences).sort((a, b) =>
+    a.workDate < b.workDate ? 1 : a.workDate > b.workDate ? -1 : String(a.employeeId).localeCompare(String(b.employeeId)));
+  if (!combined.length) { toast('ไม่มีข้อมูลให้ export', 'info'); return; }
+  const kindLabel = (row) => {
+    const k = row._absent ? 'absent' : row.roster.kind;
+    if (k === 'no_shift' && !row._absent && row.anomaly) return ATT_ANOMALY[row.anomaly]?.label || k;
+    return ATT_ROSTER[k]?.label || k;
+  };
+  const rows = combined.map(r => {
+    const sh = r.roster?.shift;
+    return {
+      'รหัสพนักงาน': r.employeeId, 'ชื่อ': r.employeeName, 'สาขา': r.branchId, 'วันที่': r.workDate,
+      'กะ': sh ? sh.label : '', 'เวลากะ': sh && sh.start ? `${sh.start}-${sh.end}` : '',
+      'เข้า': r._absent ? '' : (r.checkIn || ''), 'พักออก': r._absent ? '' : (r.breakOut || ''),
+      'พักเข้า': r._absent ? '' : (r.breakIn || ''), 'ออก': r._absent ? '' : (r.checkOut || ''),
+      'สาย(นาที)': r.roster?.lateMin || 0, 'ออกก่อน(นาที)': r.roster?.earlyMin || 0,
+      'ชม.ทำงาน(นาที)': r._absent ? '' : (r.workMinutes ?? ''),
+      'ผลเทียบกะ': kindLabel(r), 'หมายเหตุ': r.note || ''
+    };
+  });
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'บันทึกเวลา');
