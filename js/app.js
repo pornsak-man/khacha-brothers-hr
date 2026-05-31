@@ -841,6 +841,10 @@ function refreshRoleDependentUI() {
   const scrEl = document.getElementById('navShiftChange');
   if (scrEl) scrEl.style.display = (DB.isHR || ['branch_manager', 'area_manager', 'operation_manager'].includes(DB.role)) ? '' : 'none';
 
+  // "บันทึกเวลาทำงาน (สแกนนิ้ว)" — เฉพาะ ผจก.สาขา / AM / OM / HR / admin (พนักงานทั่วไปเห็นของตัวเองได้ผ่าน RLS แต่ยังไม่เปิดเมนูใน v1)
+  const attEl = document.getElementById('navAttendance');
+  if (attEl) attEl.style.display = (DB.isHR || ['branch_manager', 'area_manager', 'operation_manager'].includes(DB.role)) ? '' : 'none';
+
   // [Phase B] Auto-hide nav-group ที่ไม่มี item แสดงเลย (เช่น viewer ไม่เห็น "การเงิน")
   //   ต้อง run หลัง set item visibility ครบ
   $$('[data-nav-auto]').forEach(group => {
@@ -1032,6 +1036,7 @@ const router = {
       resignations: 'แจ้งพนักงานลาออก',
       overtime: 'ขอทำงานล่วงเวลา (OT)',
       'shift-changes': 'ขอเปลี่ยนกะย้อนหลัง',
+      attendance: 'บันทึกเวลาทำงาน',
       'my-uniform': 'ขอชุดของฉัน',
       loans: 'การกู้เงินบริษัท',
       advances: 'เบิกเงินล่วงหน้า',
@@ -17596,6 +17601,680 @@ function updateShiftChangeBadge() {
   } else {
     badge.style.display = 'none';
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TIME ATTENDANCE — บันทึกเวลาสแกนนิ้ว เข้า-ออกงาน (นำเข้าจากเครื่องสแกน)
+//   รองรับหลายเครื่อง/หลายฟอร์แมต ผ่าน auto-detect + map คอลัมน์เอง
+//   raw-punch (1 แถว=1 ครั้ง → จับคู่ให้เอง) | paired (1 แถว=1 วัน)
+// ═══════════════════════════════════════════════════════════════════
+const _attState = (() => {
+  const d = new Date();
+  return { year: d.getFullYear(), month: d.getMonth() + 1, branch: '', status: '', loaded: false, loading: false };
+})();
+
+const ATT_ANOMALY = {
+  missing_in:   { label: 'ลืมสแกนเข้า',     cls: 'badge-danger'  },
+  missing_out:  { label: 'ลืมสแกนออก',     cls: 'badge-danger'  },
+  no_punch:     { label: 'ไม่มีข้อมูล',      cls: 'badge-danger'  },
+  check_break:  { label: 'พักไม่ครบคู่',     cls: 'badge-warning' },
+  many_punches: { label: 'สแกนเกิน 4 ครั้ง', cls: 'badge-warning' }
+};
+
+const _TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+
+function _attMonthRange(y, m) {
+  return {
+    from: new Date(y, m - 1, 1).toLocaleDateString('en-CA'),
+    to: new Date(y, m, 0).toLocaleDateString('en-CA')
+  };
+}
+function _attFmtMinutes(min) {
+  if (min == null) return '-';
+  const h = Math.floor(min / 60), m = min % 60;
+  return (h ? `${h} ชม. ` : '') + `${m} น.`;
+}
+function _attHM(t) { return t ? String(t).slice(0, 5) : '—'; }
+
+// ─── PARSE date/time จากเซลล์ (รองรับหลายรูปแบบ + Excel Date object) ───
+function attParseDate(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) {
+    // Excel time-only cell = ปี 1899/1900 → ไม่ใช่วันที่จริง
+    if (v.getFullYear() < 1970) return null;
+    return v.toLocaleDateString('en-CA');
+  }
+  const s = String(v).trim();
+  if (!s) return null;
+  let m = s.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);   // YYYY-MM-DD
+  if (m) { let y = +m[1], mo = +m[2], d = +m[3]; if (y > 2400) y -= 543; return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+  m = s.match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);     // DD/MM/YYYY
+  if (m) {
+    let d = +m[1], mo = +m[2], y = +m[3];
+    if (y < 100) y += 2000;
+    if (y > 2400) y -= 543;
+    if (mo > 12 && d <= 12) { const t = d; d = mo; mo = t; }  // เผื่อ MM/DD
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+  return null;
+}
+function attParseTime(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) {
+    return `${String(v.getHours()).padStart(2,'0')}:${String(v.getMinutes()).padStart(2,'0')}`;
+  }
+  const s = String(v).trim();
+  if (!s) return null;
+  // Excel time = เศษส่วนของวัน (0..1)
+  if (/^0?\.\d+$/.test(s)) {
+    const total = Math.round(Number(s) * 24 * 60);
+    return `${String(Math.floor(total / 60) % 24).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`;
+  }
+  const ap = s.match(/(AM|PM)/i);
+  const m = s.match(/(\d{1,2}):(\d{2})(?::\d{2})?/);
+  if (!m) return null;
+  let h = +m[1]; const mi = +m[2];
+  if (ap) { const u = ap[1].toUpperCase(); if (u === 'PM' && h < 12) h += 12; if (u === 'AM' && h === 12) h = 0; }
+  if (h > 23 || mi > 59) return null;
+  return `${String(h).padStart(2,'0')}:${String(mi).padStart(2,'0')}`;
+}
+
+const _attToMin = (t) => { if (!t) return null; const p = String(t).split(':'); return (+p[0]) * 60 + (+p[1]); };
+
+// dedup ครั้งสแกนที่ห่างกัน < 2 นาที (เครื่องมักสแกนซ้ำ) + เรียงเวลา
+function attDedupTimes(times) {
+  const sorted = times.filter(Boolean).slice().sort((a, b) => _attToMin(a) - _attToMin(b));
+  const out = [];
+  for (const t of sorted) {
+    if (!out.length || Math.abs(_attToMin(t) - _attToMin(out[out.length - 1])) >= 2) out.push(t);
+  }
+  return out;
+}
+// จับคู่ครั้งสแกน (เรียงแล้ว) → เข้า/พักออก/พักเข้า/ออก
+function attAssignPunches(times) {
+  const n = times.length;
+  const r = { checkIn: null, breakOut: null, breakIn: null, checkOut: null };
+  if (n === 0) return r;
+  if (n === 1) { r.checkIn = times[0]; return r; }              // ลืมสแกนออก
+  r.checkIn = times[0]; r.checkOut = times[n - 1];
+  if (n === 2) return r;                                        // เข้า-ออก (ไม่มีพัก)
+  if (n === 3) { r.breakOut = times[1]; return r; }            // พักไม่ครบคู่
+  r.breakOut = times[1]; r.breakIn = times[n - 2];             // n>=4: ใช้ตัวที่ 2 และรองสุดท้าย
+  return r;
+}
+function attCalcWorkMin(rec) {
+  const ci = _attToMin(rec.checkIn), co = _attToMin(rec.checkOut);
+  const bo = _attToMin(rec.breakOut), bi = _attToMin(rec.breakIn);
+  let brk = 0;
+  if (bo != null && bi != null) { brk = bi - bo; if (brk < 0) brk += 1440; if (brk < 0) brk = 0; }
+  if (ci == null || co == null) return null;
+  let w = co - ci; if (w < 0) w += 1440; w -= brk;
+  return w < 0 ? 0 : w;
+}
+
+// ─── จับคู่รหัสสแกน → พนักงานในระบบ (ลอง exact ก่อน แล้วตัด 0 นำหน้า) ───
+function attBuildEmpLookup() {
+  const byId = new Map(), byNum = new Map();
+  for (const e of DB.getEmployees()) {
+    const id = String(e.id).trim();
+    byId.set(id, e);
+    const num = id.replace(/^0+/, '');
+    if (num && !byNum.has(num)) byNum.set(num, e);
+  }
+  return { byId, byNum };
+}
+function attMatchEmp(lk, rawId) {
+  const id = String(rawId == null ? '' : rawId).trim();
+  if (!id) return null;
+  if (lk.byId.has(id)) return lk.byId.get(id);
+  const num = id.replace(/^0+/, '');
+  if (num && lk.byNum.has(num)) return lk.byNum.get(num);
+  return null;
+}
+
+// ─── auto-detect คอลัมน์จากชื่อหัวตาราง ───
+const _ATT_ALIASES = {
+  empId:    ['รหัสพนักงาน','รหัสผู้ใช้','employeeid','employeeno','userid','enrollno','enrollnumber','badgenumber','acno','รหัสบัตร','empid','pin','รหัส'],
+  date:     ['วันที่ทำงาน','workdate','attdate','วันที่','date','วัน'],
+  time:     ['เวลาสแกน','atttime','clocktime','เวลา','time'],
+  datetime: ['วันที่เวลา','วันเวลา','datetime','timestamp','scantime','punchtime','recordtime','transactiontime','date/time'],
+  checkIn:  ['เวลาเข้า','เข้างาน','clockin','checkin','timein','onduty','เข้า'],
+  breakOut: ['พักออก','ออกพัก','breakout','breakstart','พัก'],
+  breakIn:  ['พักเข้า','เข้าพัก','breakin','breakend','กลับพัก'],
+  checkOut: ['เวลาออก','ออกงาน','clockout','checkout','timeout','offduty','ออก']
+};
+function attDetectCol(headers, key) {
+  const norm = (s) => String(s).toLowerCase().replace(/[\s_\-./()]/g, '');
+  const H = headers.map(h => ({ raw: h, n: norm(h) }));
+  const aliases = _ATT_ALIASES[key] || [];
+  for (const a of aliases) {                       // exact normalized
+    const an = norm(a);
+    const hit = H.find(h => h.n === an);
+    if (hit) return hit.raw;
+  }
+  for (const a of aliases) {                       // substring (เฉพาะ alias ยาว ≥4 กัน false match)
+    const an = norm(a);
+    if (an.length < 4) continue;
+    const hit = H.find(h => h.n.includes(an));
+    if (hit) return hit.raw;
+  }
+  return '';
+}
+
+// ─── โหลดเดือนที่เลือก แล้ว re-render ───
+async function attLoadAndRender() {
+  if (_attState.loading) return;
+  _attState.loading = true;
+  const { from, to } = _attMonthRange(_attState.year, _attState.month);
+  try {
+    await DB.loadTimeAttendance({ from, to, branch: _attState.branch || null });
+    _attState.loaded = true;
+  } catch (ex) {
+    toast('โหลดข้อมูลเวลาไม่สำเร็จ: ' + (ex.message || ex), 'error');
+  } finally {
+    _attState.loading = false;
+  }
+  if (router.current === 'attendance') router.go('attendance');
+}
+function setAttMonth(val) {
+  const [y, m] = String(val).split('-').map(Number);
+  if (y && m) { _attState.year = y; _attState.month = m; _attState.loaded = false; attLoadAndRender(); }
+}
+function setAttBranch(v) { _attState.branch = v || ''; _attState.loaded = false; attLoadAndRender(); }
+function setAttStatus(v) { _attState.status = v || ''; if (router.current === 'attendance') router.go('attendance'); }
+function clearAttFilter() { _attState.branch = ''; _attState.status = ''; _attState.loaded = false; attLoadAndRender(); }
+
+function attMonthOptionsHtml() {
+  const now = new Date();
+  let out = '';
+  for (let i = 0; i < 18; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const y = d.getFullYear(), m = d.getMonth() + 1;
+    const sel = (y === _attState.year && m === _attState.month) ? 'selected' : '';
+    out += `<option value="${y}-${String(m).padStart(2,'0')}" ${sel}>${_TH_MONTHS[m-1]} ${y + 543}</option>`;
+  }
+  return out;
+}
+function attBranchOptionsHtml() {
+  const branches = (DB.getBranchMaster ? DB.getBranchMaster({ activeOnly: true }) : []) || [];
+  return '<option value="">— ทุกสาขา —</option>' + branches.map(b =>
+    `<option value="${escapeHtml(b.id)}" ${_attState.branch === b.id ? 'selected' : ''}>${escapeHtml(b.id)}${b.name ? ' · ' + escapeHtml(b.name) : ''}</option>`).join('');
+}
+function _attStatusCell(r) {
+  if (r.anomaly && ATT_ANOMALY[r.anomaly]) {
+    const a = ATT_ANOMALY[r.anomaly];
+    return `<span class="badge ${a.cls}" style="font-size:11px">${a.label}</span>`;
+  }
+  if (r.isComplete) return `<span class="badge badge-success" style="font-size:11px">ครบ</span>`;
+  return `<span class="badge" style="font-size:11px">—</span>`;
+}
+
+router.register('attendance', () => {
+  if (!_attState.loaded && !_attState.loading) attLoadAndRender();
+  const canManage = DB.isHR;   // import/แก้/ลบ = HR/admin เท่านั้น
+  const all = DB.getTimeAttendance({ branch: _attState.branch || null });
+  const list = DB.getTimeAttendance({ branch: _attState.branch || null, status: _attState.status || null });
+  const hasFilter = !!(_attState.branch || _attState.status);
+
+  const totDays = all.length;
+  const totComplete = all.filter(r => r.isComplete && !r.anomaly).length;
+  const totAnomaly = all.filter(r => !!r.anomaly).length;
+  const totEmps = new Set(all.map(r => r.employeeId)).size;
+  const totWorkMin = all.reduce((s, r) => s + (r.workMinutes || 0), 0);
+
+  return `
+    <div class="sw-page-title">บันทึกเวลาทำงาน (สแกนนิ้ว)</div>
+    <div class="sw-page-subtitle">
+      นำเข้าข้อมูลสแกนนิ้ว เข้า-ออกงาน จากเครื่องสแกน (รองรับหลายรุ่น/หลายฟอร์แมต) · แต่ละวันมีได้ถึง 4 ครั้ง: เข้า · พักออก · พักเข้า · ออก
+    </div>
+    <div class="card mt-4">
+      <div class="flex items-center" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span class="badge" style="font-size:13px;padding:6px 12px">📅 ${totDays.toLocaleString()} วัน-คน</span>
+          <span class="badge badge-success" style="font-size:13px;padding:6px 12px">✓ ครบ ${totComplete.toLocaleString()}</span>
+          ${totAnomaly ? `<span class="badge badge-warning" style="font-size:13px;padding:6px 12px">⚠ ผิดปกติ ${totAnomaly.toLocaleString()}</span>` : ''}
+          <span class="badge" style="font-size:13px;padding:6px 12px">👥 ${totEmps.toLocaleString()} คน · รวม ${_attFmtMinutes(totWorkMin)}</span>
+        </div>
+        ${canManage ? `
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" onclick="attExportMonth()">${ICON.download || ''}Export</button>
+            <button class="btn btn-secondary btn-sm" onclick="openAttendanceManual()">+ เพิ่มมือ</button>
+            <button class="btn btn-primary" onclick="openImportAttendance()">${ICON.upload || '⬆'} นำเข้าสแกนนิ้ว</button>
+          </div>` : ''}
+      </div>
+      <div class="sw-filter-bar" style="margin-bottom:14px">
+        <select class="sw-filter-select" onchange="setAttMonth(this.value)" aria-label="เลือกเดือน">${attMonthOptionsHtml()}</select>
+        <select class="sw-filter-select" onchange="setAttBranch(this.value)" aria-label="กรองตามสาขา">${attBranchOptionsHtml()}</select>
+        <select class="sw-filter-select" onchange="setAttStatus(this.value)" aria-label="กรองตามสถานะ">
+          <option value="">— ทุกสถานะ —</option>
+          <option value="complete" ${_attState.status==='complete'?'selected':''}>เฉพาะที่ครบ</option>
+          <option value="incomplete" ${_attState.status==='incomplete'?'selected':''}>ไม่ครบ (ลืมสแกน)</option>
+          <option value="anomaly" ${_attState.status==='anomaly'?'selected':''}>ผิดปกติทั้งหมด</option>
+        </select>
+        ${hasFilter ? `<button class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearAttFilter()">✕ ล้างตัวกรอง</button>` : ''}
+      </div>
+      ${_attState.loading ? `<div class="muted-2" style="padding:24px;text-align:center">กำลังโหลดข้อมูลเดือนนี้...</div>` : (list.length === 0 ? `
+        <div class="empty-state" style="padding:32px">
+          <div class="icon">🕘</div>
+          <div>${hasFilter ? 'ไม่พบข้อมูลตามตัวกรอง' : 'ยังไม่มีข้อมูลเวลาในเดือนนี้'}</div>
+          <div class="muted-2" style="font-size:13px;margin-top:6px">${canManage ? 'กด "นำเข้าสแกนนิ้ว" เพื่ออัปโหลดไฟล์จากเครื่องสแกน' : 'ลองเปลี่ยนเดือน/สาขา'}</div>
+        </div>
+      ` : `
+        <div class="table-wrap">
+          <table class="table" style="font-size:13px">
+            <thead><tr>
+              <th>พนักงาน</th><th>วันที่</th>
+              <th style="text-align:center">เข้า</th><th style="text-align:center">พักออก</th>
+              <th style="text-align:center">พักเข้า</th><th style="text-align:center">ออก</th>
+              <th style="text-align:center">ชม.ทำงาน</th><th>สถานะ</th>
+              ${canManage ? '<th></th>' : ''}
+            </tr></thead>
+            <tbody>
+              ${list.map(r => {
+                const e = DB.getEmployee(r.employeeId);
+                const nm = r.employeeName || (e ? `${e.firstName||''} ${e.lastName||''}`.trim() : r.employeeId);
+                return `<tr>
+                  <td><a href="#" onclick="viewEmployee('${escapeHtml(r.employeeId)}');return false;">${escapeHtml(nm || r.employeeId)}</a>
+                      <div class="muted-2" style="font-size:11px">${escapeHtml(r.employeeId)}${r.branchId ? ' · '+escapeHtml(r.branchId) : ''}</div></td>
+                  <td style="white-space:nowrap;font-size:12px">${fmt.date(r.workDate)}</td>
+                  <td style="text-align:center">${_attHM(r.checkIn)}</td>
+                  <td style="text-align:center;color:var(--muted-2)">${_attHM(r.breakOut)}</td>
+                  <td style="text-align:center;color:var(--muted-2)">${_attHM(r.breakIn)}</td>
+                  <td style="text-align:center">${_attHM(r.checkOut)}</td>
+                  <td style="text-align:center;white-space:nowrap">${_attFmtMinutes(r.workMinutes)}</td>
+                  <td>${_attStatusCell(r)}${r.source==='manual' ? ' <span class="muted-2" style="font-size:10px">(มือ)</span>' : ''}</td>
+                  ${canManage ? `<td style="white-space:nowrap">
+                    <button class="btn btn-ghost btn-sm" onclick="openAttendanceManual('${escapeHtml(r.employeeId)}','${escapeHtml(r.workDate)}')" title="แก้ไข">✎</button>
+                    <button class="btn btn-ghost btn-sm" onclick="attDeleteRow('${escapeHtml(r.id)}')" title="ลบ">🗑</button>
+                  </td>` : ''}
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `)}
+    </div>
+  `;
+});
+
+async function attDeleteRow(id) {
+  if (!requireHR()) return;
+  const ok = await modal.confirm('ลบบันทึกเวลา', 'ลบบันทึกเวลานี้? (ลบเฉพาะแถวนี้)');
+  if (!ok) return;
+  try { await DB.deleteTimeAttendance(id); toast('ลบแล้ว', 'success'); router.go('attendance'); }
+  catch (ex) { toast(ex.message || String(ex), 'error'); }
+}
+
+// ─── เพิ่ม/แก้ บันทึกเดียว (HR กรอกมือ) ───
+function openAttendanceManual(empId = '', workDate = '') {
+  if (!requireHR()) return;
+  const existing = (empId && workDate)
+    ? (DB.data.timeAttendance || []).find(r => r.employeeId === empId && r.workDate === workDate)
+    : null;
+  const emps = DB.getEmployees({ status: 'active' }).slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const empOpts = '<option value="">— เลือกพนักงาน —</option>' + emps.map(e =>
+    `<option value="${escapeHtml(e.id)}" ${e.id===empId?'selected':''}>${escapeHtml(e.id)} · ${escapeHtml(`${e.firstName||''} ${e.lastName||''}`.trim())}</option>`).join('');
+  modal.open(existing ? 'แก้ไขบันทึกเวลา' : 'เพิ่มบันทึกเวลา (กรอกมือ)', `
+    <form id="attManualForm" class="form-grid">
+      <div class="form-group span-2">
+        <label>พนักงาน *</label>
+        ${existing ? `<input value="${escapeHtml(empId)}" readonly/><input type="hidden" name="employeeId" value="${escapeHtml(empId)}"/>` :
+          `<select name="employeeId" required>${empOpts}</select>`}
+      </div>
+      <div class="form-group span-2">
+        <label>วันที่ *</label>
+        <input type="date" name="workDate" required value="${escapeHtml(workDate)}" ${existing ? 'readonly' : ''}/>
+      </div>
+      <div class="form-group"><label>เวลาเข้า</label><input type="time" name="checkIn" value="${escapeHtml(_attHM(existing?.checkIn)==='—'?'':(existing?.checkIn||'').slice(0,5))}"/></div>
+      <div class="form-group"><label>เวลาออก</label><input type="time" name="checkOut" value="${escapeHtml((existing?.checkOut||'').slice(0,5))}"/></div>
+      <div class="form-group"><label>พักออก</label><input type="time" name="breakOut" value="${escapeHtml((existing?.breakOut||'').slice(0,5))}"/></div>
+      <div class="form-group"><label>พักเข้า</label><input type="time" name="breakIn" value="${escapeHtml((existing?.breakIn||'').slice(0,5))}"/></div>
+      <div class="form-group span-2"><label>หมายเหตุ</label><input name="note" value="${escapeHtml(existing?.note||'')}" placeholder="เช่น แก้ลืมสแกนออก"/></div>
+    </form>
+  `, {
+    size: 'sm',
+    footer: '<button class="btn btn-secondary" data-close>ยกเลิก</button><button class="btn btn-primary" id="attManualSave">บันทึก</button>'
+  });
+  $('#attManualSave').addEventListener('click', async () => {
+    const f = $('#attManualForm');
+    const g = (n) => f.elements[n]?.value || '';
+    if (!g('employeeId') || !g('workDate')) { toast('ต้องเลือกพนักงาน + วันที่', 'error'); return; }
+    $('#attManualSave').disabled = true;
+    try {
+      await DB.upsertTimeAttendance({
+        employeeId: g('employeeId'), workDate: g('workDate'),
+        checkIn: g('checkIn'), checkOut: g('checkOut'),
+        breakOut: g('breakOut'), breakIn: g('breakIn'), note: g('note')
+      });
+      toast('บันทึกแล้ว', 'success');
+      modal.close();
+      _attState.loaded = false; attLoadAndRender();
+    } catch (ex) {
+      $('#attManualSave').disabled = false;
+      toast(ex.message || String(ex), 'error');
+    }
+  });
+}
+
+// ─── Export เดือนปัจจุบันเป็น Excel ───
+async function attExportMonth() {
+  if (typeof XLSX === 'undefined') { try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; } }
+  const list = DB.getTimeAttendance({ branch: _attState.branch || null, status: _attState.status || null });
+  if (!list.length) { toast('ไม่มีข้อมูลให้ export', 'info'); return; }
+  const rows = list.map(r => ({
+    'รหัสพนักงาน': r.employeeId, 'ชื่อ': r.employeeName, 'สาขา': r.branchId, 'วันที่': r.workDate,
+    'เข้า': _attHM(r.checkIn)==='—'?'':r.checkIn, 'พักออก': (r.breakOut||''), 'พักเข้า': (r.breakIn||''), 'ออก': (r.checkOut||''),
+    'ชม.ทำงาน(นาที)': r.workMinutes ?? '', 'พัก(นาที)': r.breakMinutes || 0,
+    'สถานะ': r.anomaly ? (ATT_ANOMALY[r.anomaly]?.label || r.anomaly) : (r.isComplete ? 'ครบ' : '-'),
+    'หมายเหตุ': r.note || ''
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'บันทึกเวลา');
+  XLSX.writeFile(wb, `เวลาทำงาน-${_attState.year}-${String(_attState.month).padStart(2,'0')}.xlsx`);
+  toast('ดาวน์โหลดแล้ว', 'success');
+}
+
+// ═══════════════ IMPORT MODAL ═══════════════
+async function attReadFile(file) {
+  if (file.size > 15 * 1024 * 1024) throw new Error('ไฟล์ใหญ่เกิน 15 MB');
+  if (typeof XLSX === 'undefined') await loadXLSX();
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(new Uint8Array(buf), { type: 'array', cellDates: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if (!ws) throw new Error('ไม่พบข้อมูลในไฟล์');
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  const headers = rows.length ? Object.keys(rows[0]) : [];
+  if (!headers.length) throw new Error('ไฟล์ว่าง หรืออ่านหัวตารางไม่ได้');
+  return { headers, rows };
+}
+
+function _attColSelect(id, headers, selected) {
+  return `<select id="${id}" class="sw-filter-select" style="min-width:150px;max-width:100%">
+    <option value="">— ไม่มี —</option>
+    ${headers.map(h => `<option value="${escapeHtml(h)}" ${h===selected?'selected':''}>${escapeHtml(h)}</option>`).join('')}
+  </select>`;
+}
+
+function attMappingHtml(headers) {
+  const empId = attDetectCol(headers, 'empId');
+  const dt = attDetectCol(headers, 'datetime');
+  const date = attDetectCol(headers, 'date');
+  const time = attDetectCol(headers, 'time');
+  const ci = attDetectCol(headers, 'checkIn'), bo = attDetectCol(headers, 'breakOut'),
+        bi = attDetectCol(headers, 'breakIn'), co = attDetectCol(headers, 'checkOut');
+  // เดาโหมด: ถ้าเจอคอลัมน์ เข้า+ออก แยกกัน → paired, ไม่งั้น raw
+  const guessPaired = !!(ci && co);
+  const lab = (t) => `<div style="font-size:12px;color:var(--muted-2);margin-bottom:3px">${t}</div>`;
+  return `
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="attMode" value="raw" ${guessPaired?'':'checked'}> 1 แถว = 1 ครั้งสแกน (จับคู่ให้เอง)</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="attMode" value="paired" ${guessPaired?'checked':''}> 1 แถว = 1 วัน (จับคู่มาแล้ว)</label>
+    </div>
+    <div class="card" style="background:var(--surface-2);padding:12px">
+      <div style="display:flex;flex-wrap:wrap;gap:14px">
+        <div>${lab('รหัสพนักงาน *')}${_attColSelect('attMapEmp', headers, empId)}</div>
+      </div>
+      <div id="attMapRaw" style="display:${guessPaired?'none':'block'};margin-top:12px">
+        <div class="muted-2" style="font-size:12px;margin-bottom:6px">เลือก "วันเวลารวม" คอลัมน์เดียว <b>หรือ</b> แยก วันที่ + เวลา</div>
+        <div style="display:flex;flex-wrap:wrap;gap:14px">
+          <div>${lab('วันเวลา (รวม)')}${_attColSelect('attMapDateTime', headers, dt)}</div>
+          <div>${lab('วันที่ (แยก)')}${_attColSelect('attMapDate', headers, dt?'':date)}</div>
+          <div>${lab('เวลา (แยก)')}${_attColSelect('attMapTime', headers, dt?'':time)}</div>
+        </div>
+      </div>
+      <div id="attMapPaired" style="display:${guessPaired?'block':'none'};margin-top:12px">
+        <div style="display:flex;flex-wrap:wrap;gap:14px">
+          <div>${lab('วันที่ *')}${_attColSelect('attMapPDate', headers, date)}</div>
+          <div>${lab('เข้า')}${_attColSelect('attMapCi', headers, ci)}</div>
+          <div>${lab('พักออก')}${_attColSelect('attMapBo', headers, bo)}</div>
+          <div>${lab('พักเข้า')}${_attColSelect('attMapBi', headers, bi)}</div>
+          <div>${lab('ออก')}${_attColSelect('attMapCo', headers, co)}</div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:12px"><button class="btn btn-primary" id="attPreviewBtn">ดูตัวอย่าง →</button></div>
+  `;
+}
+
+function attReadMapping() {
+  const v = (id) => (document.getElementById(id)?.value || '');
+  return {
+    mode: document.querySelector('input[name="attMode"]:checked')?.value || 'raw',
+    emp: v('attMapEmp'),
+    datetime: v('attMapDateTime'), date: v('attMapDate'), time: v('attMapTime'),
+    pDate: v('attMapPDate'), ci: v('attMapCi'), bo: v('attMapBo'), bi: v('attMapBi'), co: v('attMapCo')
+  };
+}
+
+// ประมวลผล rawRows ตาม mapping → daily records (+ จับคู่พนักงาน)
+function attProcess(rawRows, map) {
+  const lk = attBuildEmpLookup();
+  const dayMap = new Map();   // key = empId|date → { rawId, emp, date, times:Set/array, paired{} }
+  const errors = { noEmp: 0, noDate: 0, noTime: 0 };
+
+  if (map.mode === 'raw') {
+    if (!map.emp) throw new Error('กรุณาเลือกคอลัมน์ "รหัสพนักงาน"');
+    if (!map.datetime && !(map.date && map.time)) throw new Error('เลือก "วันเวลา (รวม)" หรือ "วันที่ + เวลา"');
+    for (const row of rawRows) {
+      const rawId = String(row[map.emp] == null ? '' : row[map.emp]).trim();
+      if (!rawId) { errors.noEmp++; continue; }
+      let date, time;
+      if (map.datetime) { date = attParseDate(row[map.datetime]); time = attParseTime(row[map.datetime]); }
+      else { date = attParseDate(row[map.date]); time = attParseTime(row[map.time]); }
+      if (!date) { errors.noDate++; continue; }
+      if (!time) { errors.noTime++; continue; }
+      const key = rawId + '|' + date;
+      if (!dayMap.has(key)) dayMap.set(key, { rawId, date, times: [] });
+      dayMap.get(key).times.push(time);
+    }
+    // จับคู่
+    for (const d of dayMap.values()) {
+      const times = attDedupTimes(d.times);
+      const a = attAssignPunches(times);
+      d.rec = { ...a, punchCount: times.length, rawPunches: times };
+    }
+  } else {  // paired
+    if (!map.emp) throw new Error('กรุณาเลือกคอลัมน์ "รหัสพนักงาน"');
+    if (!map.pDate) throw new Error('กรุณาเลือกคอลัมน์ "วันที่"');
+    for (const row of rawRows) {
+      const rawId = String(row[map.emp] == null ? '' : row[map.emp]).trim();
+      if (!rawId) { errors.noEmp++; continue; }
+      const date = attParseDate(row[map.pDate]);
+      if (!date) { errors.noDate++; continue; }
+      const ci = map.ci ? attParseTime(row[map.ci]) : null;
+      const bo = map.bo ? attParseTime(row[map.bo]) : null;
+      const bi = map.bi ? attParseTime(row[map.bi]) : null;
+      const co = map.co ? attParseTime(row[map.co]) : null;
+      const key = rawId + '|' + date;
+      const prev = dayMap.get(key);
+      const rec = {
+        checkIn: ci || prev?.rec.checkIn || null, breakOut: bo || prev?.rec.breakOut || null,
+        breakIn: bi || prev?.rec.breakIn || null, checkOut: co || prev?.rec.checkOut || null
+      };
+      const raw = [rec.checkIn, rec.breakOut, rec.breakIn, rec.checkOut].filter(Boolean);
+      dayMap.set(key, { rawId, date, rec: { ...rec, punchCount: raw.length, rawPunches: raw } });
+    }
+  }
+
+  // จับคู่พนักงาน + แยก matched/unmatched
+  const matched = [], unmatchedIds = new Map();
+  for (const d of dayMap.values()) {
+    const emp = attMatchEmp(lk, d.rawId);
+    if (!emp) { unmatchedIds.set(d.rawId, (unmatchedIds.get(d.rawId) || 0) + 1); continue; }
+    matched.push({
+      employeeId: emp.id, employeeName: `${emp.firstName||''} ${emp.lastName||''}`.trim(),
+      branchId: emp.branch || '', workDate: d.date,
+      checkIn: d.rec.checkIn, breakOut: d.rec.breakOut, breakIn: d.rec.breakIn, checkOut: d.rec.checkOut,
+      punchCount: d.rec.punchCount, rawPunches: d.rec.rawPunches,
+      workMin: attCalcWorkMin(d.rec)
+    });
+  }
+  matched.sort((a, b) => (a.workDate < b.workDate ? 1 : a.workDate > b.workDate ? -1 : String(a.employeeId).localeCompare(String(b.employeeId))));
+  return { matched, unmatchedIds, errors, totalDays: dayMap.size };
+}
+
+function attRenderPreview(result) {
+  const { matched, unmatchedIds, errors } = result;
+  const unmatchedList = [...unmatchedIds.entries()];
+  const incomplete = matched.filter(r => !r.checkIn || !r.checkOut).length;
+  const sample = matched.slice(0, 100);
+  const warnHtml = [];
+  if (unmatchedList.length) warnHtml.push(`⚠ ไม่พบรหัสพนักงานในระบบ <b>${unmatchedList.length}</b> รหัส (จะไม่ถูกนำเข้า): ${escapeHtml(unmatchedList.slice(0,15).map(([id,n]) => `${id}(${n})`).join(', '))}${unmatchedList.length>15?' ...':''}`);
+  if (incomplete) warnHtml.push(`⚠ วันที่สแกนไม่ครบ (ขาดเข้า/ออก) <b>${incomplete}</b> วัน — นำเข้าได้ แต่ติดธงให้ตรวจ`);
+  if (errors.noTime) warnHtml.push(`• ข้ามแถวที่อ่านเวลาไม่ได้ ${errors.noTime} แถว`);
+  if (errors.noDate) warnHtml.push(`• ข้ามแถวที่อ่านวันที่ไม่ได้ ${errors.noDate} แถว`);
+
+  return `
+    <div class="card mt-3" style="padding:14px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <span class="badge badge-success" style="padding:6px 12px">พร้อมนำเข้า ${matched.length.toLocaleString()} วัน-คน</span>
+        <span class="badge" style="padding:6px 12px">${new Set(matched.map(r=>r.employeeId)).size} คน</span>
+        ${unmatchedList.length ? `<span class="badge badge-danger" style="padding:6px 12px">ไม่พบรหัส ${unmatchedList.length}</span>` : ''}
+        ${incomplete ? `<span class="badge badge-warning" style="padding:6px 12px">ไม่ครบ ${incomplete}</span>` : ''}
+      </div>
+      ${warnHtml.length ? `<div style="font-size:12.5px;line-height:1.7;color:var(--warning);background:rgba(217,119,6,0.08);border:1px solid var(--warning);border-radius:8px;padding:8px 10px;margin-bottom:10px">${warnHtml.join('<br>')}</div>` : ''}
+      ${matched.length === 0 ? `<div class="muted-2" style="padding:16px;text-align:center">ไม่มีข้อมูลที่จับคู่พนักงานได้ — ตรวจสอบการ map คอลัมน์ "รหัสพนักงาน"</div>` : `
+        <div class="table-wrap" style="max-height:340px;overflow:auto">
+          <table class="table" style="font-size:12.5px">
+            <thead><tr><th>รหัส</th><th>ชื่อ</th><th>วันที่</th><th style="text-align:center">เข้า</th><th style="text-align:center">พักออก</th><th style="text-align:center">พักเข้า</th><th style="text-align:center">ออก</th><th style="text-align:center">ครั้ง</th><th style="text-align:center">ชม.</th></tr></thead>
+            <tbody>
+              ${sample.map(r => {
+                const bad = !r.checkIn || !r.checkOut;
+                return `<tr ${bad?'style="background:rgba(217,119,6,0.06)"':''}>
+                  <td><code>${escapeHtml(r.employeeId)}</code></td>
+                  <td>${escapeHtml(r.employeeName||'-')}</td>
+                  <td style="white-space:nowrap">${fmt.date(r.workDate)}</td>
+                  <td style="text-align:center">${_attHM(r.checkIn)}</td>
+                  <td style="text-align:center;color:var(--muted-2)">${_attHM(r.breakOut)}</td>
+                  <td style="text-align:center;color:var(--muted-2)">${_attHM(r.breakIn)}</td>
+                  <td style="text-align:center">${_attHM(r.checkOut)}</td>
+                  <td style="text-align:center">${r.punchCount}</td>
+                  <td style="text-align:center;white-space:nowrap">${_attFmtMinutes(r.workMin)}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        ${matched.length > sample.length ? `<div class="muted-2" style="font-size:12px;margin-top:6px">แสดง ${sample.length} จาก ${matched.length.toLocaleString()} แถว</div>` : ''}
+      `}
+    </div>
+  `;
+}
+
+function openImportAttendance() {
+  if (!requireHR()) return;
+  modal.open('นำเข้าข้อมูลสแกนนิ้ว (เวลาเข้า-ออกงาน)', `
+    <div class="import-flow">
+      <div class="import-step">
+        <div class="import-step-num">1</div>
+        <div class="import-step-body">
+          <div class="import-step-title">เลือกไฟล์จากเครื่องสแกน (Excel / CSV)</div>
+          <div class="muted-2" style="font-size:13px;margin-bottom:8px">รองรับทุกฟอร์แมต — ขั้นต่อไปจะให้จับคู่คอลัมน์เอง (ระบบเดาให้ก่อน)</div>
+          <input type="file" accept=".xlsx,.xls,.csv" id="attImpFile" class="import-file">
+          <div style="margin-top:8px">
+            <label style="font-size:12px;color:var(--muted-2)">ชื่อ/รุ่นเครื่องสแกน (ไม่บังคับ)</label>
+            <input id="attImpDevice" placeholder="เช่น ZKTeco ประตูหน้า" style="display:block;margin-top:3px;max-width:260px"/>
+          </div>
+        </div>
+      </div>
+      <div class="import-step" id="attImpStep2Wrap" style="display:none">
+        <div class="import-step-num">2</div>
+        <div class="import-step-body">
+          <div class="import-step-title">จับคู่คอลัมน์</div>
+          <div id="attImpMapBody"></div>
+        </div>
+      </div>
+      <div id="attImpStep3"></div>
+    </div>
+  `, {
+    size: 'lg',
+    footer: `<button class="btn btn-secondary" data-close>ปิด</button><button class="btn btn-primary" id="attImpCommit" disabled>นำเข้า</button>`
+  });
+
+  let rawRows = null, processed = null;
+
+  const recompute = () => {
+    const btn = $('#attImpCommit');
+    if (!btn) return;
+    const n = processed?.matched?.length || 0;
+    btn.disabled = n === 0;
+    btn.textContent = n ? `นำเข้า (${n.toLocaleString()} วัน-คน)` : 'นำเข้า';
+  };
+
+  $('#attImpFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    processed = null; recompute();
+    $('#attImpStep3').innerHTML = '';
+    $('#attImpMapBody').innerHTML = '<div class="muted-2">กำลังอ่านไฟล์...</div>';
+    $('#attImpStep2Wrap').style.display = '';
+    try {
+      const r = await attReadFile(file);
+      rawRows = r.rows;
+      $('#attImpMapBody').innerHTML = attMappingHtml(r.headers);
+      // toggle mode panels
+      document.querySelectorAll('input[name="attMode"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+          const paired = document.querySelector('input[name="attMode"]:checked').value === 'paired';
+          $('#attMapRaw').style.display = paired ? 'none' : 'block';
+          $('#attMapPaired').style.display = paired ? 'block' : 'none';
+        });
+      });
+      $('#attPreviewBtn').addEventListener('click', () => {
+        try {
+          processed = attProcess(rawRows, attReadMapping());
+          $('#attImpStep3').innerHTML = attRenderPreview(processed);
+          recompute();
+        } catch (ex) { toast(ex.message || String(ex), 'error'); }
+      });
+    } catch (ex) {
+      $('#attImpStep2Wrap').style.display = 'none';
+      $('#attImpStep3').innerHTML = `<div class="card mt-3" style="border-color:var(--danger);color:var(--danger)">อ่านไฟล์ไม่สำเร็จ: ${escapeHtml(ex.message||String(ex))}</div>`;
+    }
+  });
+
+  $('#attImpCommit').addEventListener('click', async () => {
+    if (!processed || !processed.matched.length) return;
+    const deviceLabel = ($('#attImpDevice')?.value || '').trim();
+    const records = processed.matched.map(r => ({
+      employeeId: r.employeeId, workDate: r.workDate,
+      checkIn: r.checkIn, breakOut: r.breakOut, breakIn: r.breakIn, checkOut: r.checkOut,
+      punchCount: r.punchCount, rawPunches: r.rawPunches, deviceLabel
+    }));
+    const batchId = (window.crypto?.randomUUID?.()) || ('b-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+    const btn = $('#attImpCommit'); btn.disabled = true;
+    $('#attImpStep3').innerHTML = `<div class="card mt-3"><div style="margin-bottom:10px">กำลังนำเข้า <strong id="attProg">0</strong> / ${records.length.toLocaleString()}</div><div class="progress-bar"><div class="progress-fill" id="attProgFill" style="width:0%"></div></div></div>`;
+    const CHUNK = 400;
+    const agg = { inserted: 0, updated: 0, skipped: 0 };
+    try {
+      for (let i = 0; i < records.length; i += CHUNK) {
+        const res = await DB.importTimeAttendance(records.slice(i, i + CHUNK), batchId);
+        agg.inserted += res.inserted || 0; agg.updated += res.updated || 0; agg.skipped += res.skipped || 0;
+        const done = Math.min(i + CHUNK, records.length);
+        const fill = $('#attProgFill'), txt = $('#attProg');
+        if (fill) fill.style.width = (done / records.length * 100) + '%';
+        if (txt) txt.textContent = done.toLocaleString();
+      }
+      // ตั้งเดือนที่แสดงให้ตรงกับข้อมูลที่เพิ่ง import (วันล่าสุด)
+      const maxDate = records.reduce((mx, r) => r.workDate > mx ? r.workDate : mx, records[0].workDate);
+      const [yy, mm] = maxDate.split('-').map(Number);
+      $('#attImpStep3').innerHTML = `<div class="card mt-3"><div style="font-size:16px;font-weight:600;color:var(--success);margin-bottom:6px">✓ นำเข้าสำเร็จ</div>
+        <div style="font-size:14px;line-height:1.8">
+          • เพิ่มใหม่: <strong style="color:var(--success)">${agg.inserted.toLocaleString()}</strong> วัน-คน<br>
+          ${agg.updated ? `• อัปเดตทับของเดิม: <strong style="color:#2563eb">${agg.updated.toLocaleString()}</strong> วัน-คน<br>` : ''}
+          ${agg.skipped ? `• ข้าม (ไม่พบรหัส): <strong style="color:var(--danger)">${agg.skipped.toLocaleString()}</strong><br>` : ''}
+        </div></div>`;
+      toast('นำเข้าข้อมูลสแกนนิ้วสำเร็จ', 'success');
+      btn.textContent = 'เสร็จสิ้น'; btn.disabled = false; btn.setAttribute('data-close', '');
+      _attState.year = yy || _attState.year; _attState.month = mm || _attState.month; _attState.loaded = false;
+      attLoadAndRender();
+    } catch (ex) {
+      btn.disabled = false;
+      $('#attImpStep3').innerHTML = `<div class="card mt-3" style="border-color:var(--danger);color:var(--danger)">นำเข้าไม่สำเร็จ: ${escapeHtml(ex.message||String(ex))}</div>`;
+    }
+  });
 }
 
 router.register('schedule', () => {

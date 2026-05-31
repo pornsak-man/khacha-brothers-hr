@@ -40,7 +40,8 @@ const DB = {
     shifts: [],            // กะตั้งต้น HR CRUD
     scheduleWeeks: [],     // 1 สาขา × 1 สัปดาห์ = 1 แถว
     scheduleEntries: [],   // เซลล์ใน grid: พนักงาน × วัน × กะ
-    borrowRequests: []     // ขอยืมพนักงานข้ามสาขา (Phase 3 Level 3)
+    borrowRequests: [],    // ขอยืมพนักงานข้ามสาขา (Phase 3 Level 3)
+    timeAttendance: []     // บันทึกเวลาสแกนนิ้ว (lazy-load รายเดือน, ไม่อยู่ใน realtime)
   },
 
   // ─── INDEX CACHES (O(1) lookup; rebuild lazily after data change) ───
@@ -5642,6 +5643,118 @@ const DB = {
       this.data.shiftChangeRequests[idx].cancelledAt = new Date().toISOString();
       this.data.shiftChangeRequests[idx].cancelReason = reason;
     }
+    return data;
+  },
+
+  // ─── TIME ATTENDANCE (บันทึกเวลาสแกนนิ้ว เข้า-ออกงาน) ───
+  // lazy-load รายเดือน (ตารางอาจโตเป็นแสนแถว — ไม่ดึงตอน boot, ไม่อยู่ใน realtime)
+  _attFromDB(r) {
+    return {
+      id: r.id,
+      employeeId: r.employee_id,
+      employeeName: r.employee_name || '',
+      branchId: r.branch_id || '',
+      workDate: r.work_date || '',
+      checkIn: r.check_in || '',
+      breakOut: r.break_out || '',
+      breakIn: r.break_in || '',
+      checkOut: r.check_out || '',
+      workMinutes: r.work_minutes != null ? Number(r.work_minutes) : null,
+      breakMinutes: r.break_minutes != null ? Number(r.break_minutes) : 0,
+      punchCount: r.punch_count != null ? Number(r.punch_count) : 0,
+      rawPunches: Array.isArray(r.raw_punches) ? r.raw_punches : [],
+      isComplete: r.is_complete === true,
+      anomaly: r.anomaly || '',
+      source: r.source || 'import',
+      deviceLabel: r.device_label || '',
+      note: r.note || '',
+      importBatchId: r.import_batch_id || '',
+      createdBy: r.created_by,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
+    };
+  },
+
+  // โหลดช่วงวันที่ (default = เดือนปัจจุบัน) — แทนที่ cache ทั้งก้อน
+  async loadTimeAttendance({ from = null, to = null, branch = null } = {}) {
+    if (!from || !to) {
+      const now = new Date();
+      const y = now.getFullYear(), m = now.getMonth();
+      from = new Date(y, m, 1).toLocaleDateString('en-CA');
+      to = new Date(y, m + 1, 0).toLocaleDateString('en-CA');
+    }
+    let q = this.client.from('time_attendance').select('*')
+      .gte('work_date', from).lte('work_date', to);
+    if (branch) q = q.eq('branch_id', branch);
+    const { data, error } = await q
+      .order('work_date', { ascending: false })
+      .order('employee_id', { ascending: true });
+    if (error) { console.warn('loadTimeAttendance failed:', error); this.data.timeAttendance = []; return []; }
+    this._attRange = { from, to, branch: branch || '' };
+    this.data.timeAttendance = (data || []).map(this._attFromDB);
+    return this.data.timeAttendance;
+  },
+
+  getTimeAttendance({ branch = null, employeeId = null, status = null } = {}) {
+    let list = this.data.timeAttendance || [];
+    if (branch) list = list.filter(r => r.branchId === branch);
+    if (employeeId) list = list.filter(r => r.employeeId === employeeId);
+    if (status === 'complete') list = list.filter(r => r.isComplete && !r.anomaly);
+    else if (status === 'incomplete') list = list.filter(r => !r.isComplete);
+    else if (status === 'anomaly') list = list.filter(r => !!r.anomaly);
+    return list;
+  },
+
+  // นำเข้าแบบ batch — records = [{ employeeId, workDate, checkIn, breakOut, breakIn, checkOut, punchCount, rawPunches, deviceLabel, note }]
+  // คืน { total, matched, inserted, updated, skipped, skipped_ids } · ไม่ reload (ผู้เรียกจัดการเอง — อาจหลาย chunk)
+  async importTimeAttendance(records, batchId = null) {
+    if (!Array.isArray(records) || !records.length) {
+      throw new Error('ไม่มีข้อมูลให้นำเข้า');
+    }
+    const payload = records.map(r => ({
+      employee_id: String(r.employeeId == null ? '' : r.employeeId).trim(),
+      work_date: r.workDate,
+      check_in: r.checkIn || null,
+      break_out: r.breakOut || null,
+      break_in: r.breakIn || null,
+      check_out: r.checkOut || null,
+      punch_count: Number(r.punchCount || 0),
+      raw_punches: Array.isArray(r.rawPunches) ? r.rawPunches : null,
+      device_label: r.deviceLabel || null,
+      note: r.note || null
+    }));
+    const { data, error } = await this.client.rpc('import_time_attendance', {
+      p_records: payload,
+      p_batch_id: batchId || null
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async upsertTimeAttendance({ employeeId, workDate, checkIn, breakOut, breakIn, checkOut, note }) {
+    const { data, error } = await this.client.rpc('upsert_time_attendance', {
+      p_employee_id: employeeId,
+      p_work_date: workDate,
+      p_check_in: checkIn || null,
+      p_break_out: breakOut || null,
+      p_break_in: breakIn || null,
+      p_check_out: checkOut || null,
+      p_note: note || null
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteTimeAttendance(id) {
+    const { data, error } = await this.client.rpc('delete_time_attendance', { p_id: id });
+    if (error) throw error;
+    this.data.timeAttendance = (this.data.timeAttendance || []).filter(r => r.id !== id);
+    return data;
+  },
+
+  async deleteTimeAttendanceBatch(batchId) {
+    const { data, error } = await this.client.rpc('delete_time_attendance_batch', { p_batch_id: batchId });
+    if (error) throw error;
     return data;
   },
 
