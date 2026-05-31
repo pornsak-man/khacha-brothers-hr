@@ -5683,15 +5683,32 @@ const DB = {
       from = new Date(y, m, 1).toLocaleDateString('en-CA');
       to = new Date(y, m + 1, 0).toLocaleDateString('en-CA');
     }
-    let q = this.client.from('time_attendance').select('*')
-      .gte('work_date', from).lte('work_date', to);
-    if (branch) q = q.eq('branch_id', branch);
-    const { data, error } = await q
-      .order('work_date', { ascending: false })
-      .order('employee_id', { ascending: true });
-    if (error) { console.warn('loadTimeAttendance failed:', error); this.data.timeAttendance = []; return []; }
+    // ★ ไล่หน้า (Supabase คืนสูงสุด 1000 แถว/ครั้ง) — เดือนที่เกิน 1000 แถวจะโหลดครบ ไม่ถูกตัด
+    const PAGE = 1000;
+    const all = [];
+    let offset = 0;
+    try {
+      while (true) {
+        let q = this.client.from('time_attendance').select('*')
+          .gte('work_date', from).lte('work_date', to);
+        if (branch) q = q.eq('branch_id', branch);
+        const { data, error } = await q
+          .order('work_date', { ascending: false })
+          .order('employee_id', { ascending: true })
+          .range(offset, offset + PAGE - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        all.push(...data);
+        if (data.length < PAGE) break;
+        offset += PAGE;
+      }
+    } catch (error) {
+      console.warn('loadTimeAttendance failed:', error);
+      this.data.timeAttendance = [];
+      return [];
+    }
     this._attRange = { from, to, branch: branch || '' };
-    this.data.timeAttendance = (data || []).map(this._attFromDB);
+    this.data.timeAttendance = all.map(this._attFromDB);
     return this.data.timeAttendance;
   },
 
