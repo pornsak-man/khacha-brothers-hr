@@ -16390,6 +16390,7 @@ const HC_STATUS_BADGE = {
   pending_am: { label: '⏳ รอ AM อนุมัติ',  cls: 'badge-warning' },
   pending_hr: { label: '⏳ รอ HR อนุมัติ',  cls: 'badge-warning' },
   approved:   { label: '✓ อนุมัติแล้ว',     cls: 'badge-success' },
+  fulfilled:  { label: '🎯 เติมอัตราแล้ว',   cls: 'badge-success' },
   rejected:   { label: '✕ ปฏิเสธ',           cls: 'badge-danger' },
   cancelled:  { label: '⊘ ยกเลิก',            cls: 'badge' }
 };
@@ -16402,16 +16403,33 @@ function _hcBadgeHtml(r) {
   return html;
 }
 
+const _hcFilter = { year: '', status: '' };
+function setHcFilter(k, v) { _hcFilter[k] = v || ''; router.go('headcount'); }
+function clearHcFilter() { _hcFilter.year = ''; _hcFilter.status = ''; router.go('headcount'); }
+
 router.register('headcount', () => {
-  const list = DB.getHeadcountRequests();
+  const allList = DB.getHeadcountRequests();
   const role = DB.role;
+  // ─── ตัวกรอง: ปี (จากวันที่ขอ) + สถานะ — ดูย้อนหลังได้ ───
+  const list = allList.filter(r => {
+    if (_hcFilter.year && String(r.requestedAt || '').slice(0, 4) !== _hcFilter.year) return false;
+    if (_hcFilter.status && r.status !== _hcFilter.status) return false;
+    return true;
+  });
+  const _hcHasFilter = !!(_hcFilter.year || _hcFilter.status);
+  const _hcYears = (() => {
+    const ty = new Date().getFullYear();
+    const ys = new Set(allList.map(r => String(r.requestedAt || '').slice(0, 4)).filter(Boolean));
+    for (let y = ty - 5; y <= ty; y++) ys.add(String(y));
+    return Array.from(ys).filter(Boolean).sort((a, b) => Number(b) - Number(a));
+  })();
   // ใครอนุมัติคำขอนี้ได้ (ตาม step): pending_am → AM ของสาขา/HR ; pending_hr → HR
   const canActOn = (r) => {
     if (r.status === 'pending_am') return DB.isHR || ((role === 'area_manager' || role === 'operation_manager') && (DB._managedBranches || []).includes(r.branchId));
     if (r.status === 'pending_hr') return DB.isHR;
     return false;
   };
-  const totalPending = list.filter(r => r.status === 'pending_am' || r.status === 'pending_hr').length;
+  const totalPending = allList.filter(r => r.status === 'pending_am' || r.status === 'pending_hr').length;
   const canCreate = DB.isHR || role === 'branch_manager' || role === 'area_manager' || role === 'operation_manager';
 
   return `
@@ -16427,11 +16445,22 @@ router.register('headcount', () => {
         </div>
         ${canCreate ? `<button class="btn btn-primary" onclick="openHeadcountForm()">+ สร้างคำขอใหม่</button>` : ''}
       </div>
+      <div class="sw-filter-bar" style="margin-bottom:14px">
+        <select class="sw-filter-select" onchange="setHcFilter('year', this.value)" aria-label="กรองตามปี">
+          <option value="">— ทุกปี —</option>
+          ${_hcYears.map(y => `<option value="${y}" ${_hcFilter.year === y ? 'selected' : ''}>ปี ${Number(y) + 543}</option>`).join('')}
+        </select>
+        <select class="sw-filter-select" onchange="setHcFilter('status', this.value)" aria-label="กรองตามสถานะ">
+          <option value="">— ทุกสถานะ —</option>
+          ${Object.entries(HC_STATUS_BADGE).map(([k, v]) => `<option value="${k}" ${_hcFilter.status === k ? 'selected' : ''}>${escapeHtml(v.label)}</option>`).join('')}
+        </select>
+        ${_hcHasFilter ? `<button class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearHcFilter()">✕ ล้างตัวกรอง</button>` : ''}
+      </div>
       ${list.length === 0 ? `
         <div class="empty-state" style="padding:32px">
           <div class="icon">📋</div>
-          <div>ยังไม่มีคำขออัตรากำลัง</div>
-          <div class="muted-2" style="font-size:13px;margin-top:6px">กด "+ สร้างคำขอใหม่" เพื่อขอเปิดอัตราพนักงาน</div>
+          <div>${_hcHasFilter ? 'ไม่พบคำขอตามตัวกรอง' : 'ยังไม่มีคำขออัตรากำลัง'}</div>
+          <div class="muted-2" style="font-size:13px;margin-top:6px">${_hcHasFilter ? 'ลองเปลี่ยน/ล้างตัวกรอง' : 'กด "+ สร้างคำขอใหม่" เพื่อขอเปิดอัตราพนักงาน'}</div>
         </div>
       ` : `
         <div class="table-wrap">
@@ -16451,6 +16480,7 @@ router.register('headcount', () => {
                 const note = r.status === 'rejected' ? r.rejectReason : (r.status === 'cancelled' ? r.cancelReason : (r.hrNote || r.amNote || ''));
                 const canReview = canActOn(r);
                 const canCancel = ['pending_am','pending_hr'].includes(r.status) && (DB.isHR || r.requestedBy === DB.user?.id);
+                const canFulfill = r.status === 'approved' && DB.isHR;
                 return `<tr>
                   <td>${_hcBadgeHtml(r)}</td>
                   <td style="white-space:nowrap;font-size:12px">${fmt.date(r.requestedAt)}</td>
@@ -16464,6 +16494,7 @@ router.register('headcount', () => {
                       <button class="btn btn-success btn-sm" onclick="reviewHeadcountUI('${escapeHtml(r.id)}', 'approve')">✓ อนุมัติ</button>
                       <button class="btn btn-danger btn-sm" onclick="reviewHeadcountUI('${escapeHtml(r.id)}', 'reject')">✕ ปฏิเสธ</button>
                     ` : ''}
+                    ${canFulfill ? `<button class="btn btn-success btn-sm" onclick="fulfillHeadcountUI('${escapeHtml(r.id)}')">🎯 เติมอัตราแล้ว</button>` : ''}
                     ${canCancel ? `<button class="btn btn-ghost btn-sm" onclick="cancelHeadcountUI('${escapeHtml(r.id)}')">ยกเลิก</button>` : ''}
                   </td>
                 </tr>`;
@@ -16572,6 +16603,18 @@ async function cancelHeadcountUI(requestId) {
   try {
     await DB.cancelHeadcountRequest(requestId, reason);
     toast('ยกเลิกคำขอแล้ว', 'success');
+    router.go('headcount');
+  } catch (ex) {
+    toast(ex.message || String(ex), 'error');
+  }
+}
+
+async function fulfillHeadcountUI(requestId) {
+  const note = await modal.prompt('ยืนยันเติมอัตราแล้ว', 'หมายเหตุ เช่น ชื่อพนักงานที่รับเข้า (ทางเลือก):', '');
+  if (note === null) return;
+  try {
+    await DB.fulfillHeadcountRequest(requestId, note);
+    toast('🎯 ปิดคำขอ — เติมอัตราเรียบร้อย', 'success');
     router.go('headcount');
   } catch (ex) {
     toast(ex.message || String(ex), 'error');

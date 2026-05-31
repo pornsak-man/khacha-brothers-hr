@@ -5281,6 +5281,7 @@ const DB = {
       requestedAt: r.requested_at,
       amBy: r.am_by, amAt: r.am_at, amNote: r.am_note || '',
       hrBy: r.hr_by, hrAt: r.hr_at, hrNote: r.hr_note || '',
+      fulfilledBy: r.fulfilled_by, fulfilledAt: r.fulfilled_at, fulfillNote: r.fulfill_note || '',
       rejectReason: r.reject_reason || '',
       rejectedByRole: r.rejected_by_role || '',
       cancelledAt: r.cancelled_at,
@@ -5350,6 +5351,17 @@ const DB = {
       this.data.headcountRequests[idx].cancelledAt = new Date().toISOString();
       this.data.headcountRequests[idx].cancelReason = reason;
     }
+    return data;
+  },
+
+  // มาร์คว่าเติมอัตราแล้ว (HR เท่านั้น, approved → fulfilled)
+  async fulfillHeadcountRequest(requestId, note = '') {
+    const { data, error } = await this.client.rpc('fulfill_headcount_request', {
+      p_request_id: requestId,
+      p_note: note || null
+    });
+    if (error) throw error;
+    await this.loadHeadcountRequests();
     return data;
   },
 
