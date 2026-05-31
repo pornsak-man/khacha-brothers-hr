@@ -898,12 +898,13 @@ const DB = {
       timed('headcount_requests',      this._fetchAllPages('headcount_requests', 'requested_at', false).catch(() => [])),
       timed('resignation_reports',     this._fetchAllPages('resignation_reports', 'reported_at', false).catch(() => [])),
       timed('overtime_requests',       this._fetchAllPages('overtime_requests', 'ot_date', false).catch(() => [])),
+      timed('shift_change_requests',   this._fetchAllPages('shift_change_requests', 'work_date', false).catch(() => [])),
       timed('employees_archive',       fetchEmployeesArchive().catch(() => []))
     ]).then(([cal, comp, leaves, lvTypes, swapReqs,
               loans, advs, allow, evals, sal, appls,
               uniBrands, uniItems, uniReqs, uniIssues, uniMoves, uniSched,
               shifts, schedWeeks, schedEntries, borrowReqs, hcReqs,
-              rsgReports, otReqs, oldEmps]) => {
+              rsgReports, otReqs, scrReqs, oldEmps]) => {
       // ใหม่: ตาราง critical-but-not-dashboard ที่ย้ายมา
       this.data.calendar = ((cal && cal.data) || []).map(this._calFromDB);
       if (comp && comp.data) this.data.company = this._compFromDB(comp.data);
@@ -930,6 +931,7 @@ const DB = {
       this.data.headcountRequests = (hcReqs || []).map(this._hcFromDB);
       this.data.resignationReports = (rsgReports || []).map(this._rsgFromDB);
       this.data.overtimeRequests = (otReqs || []).map(this._otFromDB);
+      this.data.shiftChangeRequests = (scrReqs || []).map(this._scrFromDB);
       // Merge employees เก่าเข้ากับ active employees (เรียง id เพื่อให้ stable)
       if (oldEmps.length) {
         const existingIds = new Set(this.data.employees.map(e => e.id));
@@ -1048,7 +1050,8 @@ const DB = {
       cross_branch_borrow_requests: { list: 'borrowRequests', from: this._borrowFromDB },
       headcount_requests: { list: 'headcountRequests', from: this._hcFromDB },
       resignation_reports: { list: 'resignationReports', from: this._rsgFromDB },
-      overtime_requests: { list: 'overtimeRequests', from: this._otFromDB }
+      overtime_requests: { list: 'overtimeRequests', from: this._otFromDB },
+      shift_change_requests: { list: 'shiftChangeRequests', from: this._scrFromDB }
     };
     const m = map[table];
     if (!m) return;
@@ -5540,6 +5543,104 @@ const DB = {
       this.data.overtimeRequests[idx].status = 'cancelled';
       this.data.overtimeRequests[idx].cancelledAt = new Date().toISOString();
       this.data.overtimeRequests[idx].cancelReason = reason;
+    }
+    return data;
+  },
+
+  // ─── SHIFT-CHANGE REQUESTS (ขอเปลี่ยนกะย้อนหลัง — BM ขอ → AM/HR อนุมัติ → แก้ตารางอัตโนมัติ) ───
+  _scrFromDB(r) {
+    return {
+      id: r.id,
+      branchId: r.branch_id,
+      employeeId: r.employee_id,
+      employeeName: r.employee_name || '',
+      positionTitle: r.position_title || '',
+      workDate: r.work_date || '',
+      oldShiftId: r.old_shift_id || '',
+      oldShiftCode: r.old_shift_code || '',
+      newShiftId: r.new_shift_id || '',
+      newShiftCode: r.new_shift_code || '',
+      reason: r.reason || '',
+      status: r.status,                      // pending | approved | rejected | cancelled
+      requestedBy: r.requested_by,
+      requestedAt: r.requested_at,
+      approvedBy: r.approved_by, approvedAt: r.approved_at, approverNote: r.approver_note || '',
+      applied: r.applied === true, appliedAt: r.applied_at,
+      cancelledAt: r.cancelled_at,
+      cancelReason: r.cancel_reason || '',
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
+    };
+  },
+
+  async loadShiftChangeRequests() {
+    const { data, error } = await this.client
+      .from('shift_change_requests')
+      .select('*')
+      .order('work_date', { ascending: false });
+    if (error) { console.warn('loadShiftChangeRequests failed:', error); this.data.shiftChangeRequests = []; return []; }
+    this.data.shiftChangeRequests = (data || []).map(this._scrFromDB);
+    return this.data.shiftChangeRequests;
+  },
+
+  getShiftChangeRequests({ status = null, branch = null } = {}) {
+    let list = this.data.shiftChangeRequests || [];
+    if (status) list = list.filter(r => r.status === status);
+    if (branch) list = list.filter(r => r.branchId === branch);
+    return list;
+  },
+
+  async createShiftChangeRequest({ branchId, employeeId, employeeName, positionTitle, workDate, newShiftId, reason }) {
+    if (!branchId || !employeeId || !workDate || !newShiftId) {
+      throw new Error('ข้อมูลไม่ครบ — ต้องมี สาขา, พนักงาน, วันที่, กะใหม่');
+    }
+    const { data, error } = await this.client.rpc('create_shift_change_request', {
+      p_branch_id: branchId,
+      p_employee_id: employeeId,
+      p_employee_name: employeeName || null,
+      p_position_title: positionTitle || null,
+      p_work_date: workDate,
+      p_new_shift_id: newShiftId,
+      p_reason: reason || null
+    });
+    if (error) throw error;
+    await this.loadShiftChangeRequests();
+    return data;   // { id, status }
+  },
+
+  // decision: 'approve' | 'reject' — อนุมัติแล้ว RPC แก้ schedule_entries ให้อัตโนมัติ
+  async reviewShiftChangeRequest(requestId, decision, note = '') {
+    if (!['approve', 'reject'].includes(decision)) {
+      throw new Error('decision ต้องเป็น approve หรือ reject');
+    }
+    const { data, error } = await this.client.rpc('review_shift_change_request', {
+      p_request_id: requestId,
+      p_decision: decision,
+      p_note: note || null
+    });
+    if (error) throw error;
+    await this.loadShiftChangeRequests();
+    // อนุมัติ → กะในตารางถูกแก้แล้ว → รีโหลด schedule_entries ให้ตารางสะท้อนทันที (realtime ก็ตามให้เอง)
+    if (decision === 'approve') {
+      try {
+        const rows = await this._fetchAllPages('schedule_entries', 'work_date', true);
+        this.data.scheduleEntries = (rows || []).map(this._schedEntryFromDB);
+      } catch (e) { /* ignore — realtime จะอัปเดตให้ */ }
+    }
+    return data;
+  },
+
+  async cancelShiftChangeRequest(requestId, reason = '') {
+    const { data, error } = await this.client.rpc('cancel_shift_change_request', {
+      p_request_id: requestId,
+      p_reason: reason || null
+    });
+    if (error) throw error;
+    const idx = (this.data.shiftChangeRequests || []).findIndex(r => r.id === requestId);
+    if (idx >= 0) {
+      this.data.shiftChangeRequests[idx].status = 'cancelled';
+      this.data.shiftChangeRequests[idx].cancelledAt = new Date().toISOString();
+      this.data.shiftChangeRequests[idx].cancelReason = reason;
     }
     return data;
   },

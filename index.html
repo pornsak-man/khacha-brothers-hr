@@ -27,7 +27,7 @@
           crossorigin="anonymous" defer></script>
   <!-- hCaptcha (invisible mode) — token แนบกับ signIn/signUp กัน bot bruteforce -->
   <script src="https://js.hcaptcha.com/1/api.js?render=explicit" async defer></script>
-  <link rel="stylesheet" href="css/style.css?v=2026-06-01-rsgm" />
+  <link rel="stylesheet" href="css/style.css?v=2026-06-01-shiftchg" />
   <script>
     (function(){
       try{
@@ -155,6 +155,11 @@
           <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg></span>
           <span>ขอทำงานล่วงเวลา (OT)</span>
           <span class="nav-badge" id="navBadgeOvertime" style="display:none"></span>
+        </a>
+        <a href="#" class="nav-item" data-page="shift-changes" id="navShiftChange" style="display:none">
+          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
+          <span>ขอเปลี่ยนกะย้อนหลัง</span>
+          <span class="nav-badge" id="navBadgeShiftChange" style="display:none"></span>
         </a>
         <a href="#" class="nav-item" data-page="calendar">
           <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
@@ -306,8 +311,8 @@
 <!-- ═══════════════════════ TOAST ═══════════════════════ -->
 <div class="toast-root" id="toastRoot"></div>
 
-<script src="js/config.js?v=2026-06-01-rsgm"></script>
-<script src="js/data.js?v=2026-06-01-rsgm"></script>
-<script src="js/app.js?v=2026-06-01-rsgm"></script>
+<script src="js/config.js?v=2026-06-01-shiftchg"></script>
+<script src="js/data.js?v=2026-06-01-shiftchg"></script>
+<script src="js/app.js?v=2026-06-01-shiftchg"></script>
 </body>
 </html>

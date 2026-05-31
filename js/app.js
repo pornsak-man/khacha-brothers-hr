@@ -774,6 +774,7 @@ const auth = {
     if (typeof updateHeadcountBadge === 'function') updateHeadcountBadge();
     if (typeof updateResignBadge === 'function') updateResignBadge();
     if (typeof updateOvertimeBadge === 'function') updateOvertimeBadge();
+    if (typeof updateShiftChangeBadge === 'function') updateShiftChangeBadge();
     if (typeof renderNotifBell === 'function') renderNotifBell();
     this.refreshImpersonateUI();
     // ★ ใช้ helper function — share logic กับ onProfileChange handler
@@ -835,6 +836,10 @@ function refreshRoleDependentUI() {
   // "ขอทำงานล่วงเวลา (OT)" — เฉพาะ ผจก.สาขา / AM / OM / HR / admin
   const otEl = document.getElementById('navOvertime');
   if (otEl) otEl.style.display = (DB.isHR || ['branch_manager', 'area_manager', 'operation_manager'].includes(DB.role)) ? '' : 'none';
+
+  // "ขอเปลี่ยนกะย้อนหลัง" — เฉพาะ ผจก.สาขา / AM / OM / HR / admin
+  const scrEl = document.getElementById('navShiftChange');
+  if (scrEl) scrEl.style.display = (DB.isHR || ['branch_manager', 'area_manager', 'operation_manager'].includes(DB.role)) ? '' : 'none';
 
   // [Phase B] Auto-hide nav-group ที่ไม่มี item แสดงเลย (เช่น viewer ไม่เห็น "การเงิน")
   //   ต้อง run หลัง set item visibility ครบ
@@ -1026,6 +1031,7 @@ const router = {
       'borrow-requests': 'ขอยืมพนักงาน',
       resignations: 'แจ้งพนักงานลาออก',
       overtime: 'ขอทำงานล่วงเวลา (OT)',
+      'shift-changes': 'ขอเปลี่ยนกะย้อนหลัง',
       'my-uniform': 'ขอชุดของฉัน',
       loans: 'การกู้เงินบริษัท',
       advances: 'เบิกเงินล่วงหน้า',
@@ -1373,6 +1379,10 @@ window.onRealtimeChange = (payload) => {
     updateOvertimeBadge();
     if (router.current === 'overtime') router.go('overtime');
   }
+  if (table === 'shift_change_requests' && typeof updateShiftChangeBadge === 'function') {
+    updateShiftChangeBadge();
+    if (router.current === 'shift-changes') router.go('shift-changes');
+  }
 
   // อัปเดต badge ประกันสังคม เมื่อ employees เปลี่ยน — เสมอ (ไม่ขึ้นกับหน้าปัจจุบัน)
   if (table === 'employees' && typeof updateSSOBadge === 'function') updateSSOBadge();
@@ -1644,6 +1654,7 @@ router.register('dashboard', () => {
   const pendingUniform = DB.getUniformRequests({ status: 'pending' });
   const pendingResign = DB.getResignationReports({ status: 'reported' });
   const pendingOT = DB.getOvertimeRequests({ status: 'pending' });
+  const pendingScr = DB.getShiftChangeRequests({ status: 'pending' });
   // ★ พนักงานพ้นสภาพในเดือนปัจจุบัน — เรียงจากใหม่สุด
   const thisYM = new Date().toISOString().slice(0, 7);  // YYYY-MM
   const resignedThisMonth = DB._filterByScope(DB.getEmployees(), scope)
@@ -1828,6 +1839,35 @@ router.register('dashboard', () => {
           </div>`;
         }).join('')}
         ${pendingOT.length > 8 ? `<div class="muted-2" style="text-align:center;padding:10px;font-size:12px">+ อีก ${pendingOT.length - 8} รายการ</div>` : ''}
+      </div>
+    </div>
+    ` : ''}
+
+    ${(pendingScr.length && (DB.isHR || DB.role === 'area_manager' || DB.role === 'operation_manager')) ? `
+    <div class="sw-section-label">แจ้งเตือนด่วน</div>
+    <div class="sw-chart-card" style="border-left:4px solid var(--info);background:linear-gradient(90deg, rgba(24,100,168,0.06), transparent 60%)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+        <div class="sw-chart-title" style="display:flex;align-items:center;gap:10px">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          <span style="color:var(--info-text)">มีคำขอเปลี่ยนกะย้อนหลัง รออนุมัติ</span>
+          <span class="badge badge-info" style="font-size:12px;padding:4px 12px;font-weight:700">${pendingScr.length} รายการ</span>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="router.go('shift-changes')">ไปอนุมัติ →</button>
+      </div>
+      <div class="sw-chart-sub" style="margin-bottom:14px">ผจก.สาขาขอแก้กะย้อนหลัง — อนุมัติแล้วระบบแก้ตารางให้อัตโนมัติ</div>
+      <div style="max-height:240px;overflow-y:auto">
+        ${pendingScr.slice(0, 8).map(r => {
+          const e = DB.getEmployee(r.employeeId);
+          const name = r.employeeName || (e ? `${e.firstName || ''} ${e.lastName || ''}`.trim() : r.employeeId);
+          return `
+          <div style="display:flex;align-items:center;gap:14px;padding:10px 8px;border-bottom:1px solid var(--border);cursor:pointer" onclick="router.go('shift-changes')">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:13.5px">${escapeHtml(name)} <span class="muted-2" style="font-weight:400">· ${escapeHtml(r.oldShiftCode || '—')} → ${escapeHtml(r.newShiftCode || '-')}</span></div>
+              <div class="muted-2" style="font-size:12px;margin-top:2px">สาขา ${escapeHtml(r.branchId)}${r.workDate ? ' · ' + fmt.date(r.workDate) : ''}</div>
+            </div>
+          </div>`;
+        }).join('')}
+        ${pendingScr.length > 8 ? `<div class="muted-2" style="text-align:center;padding:10px;font-size:12px">+ อีก ${pendingScr.length - 8} รายการ</div>` : ''}
       </div>
     </div>
     ` : ''}
@@ -17263,6 +17303,296 @@ function updateOvertimeBadge() {
     badge.textContent = String(pending);
     badge.style.display = 'inline-block';
     badge.title = `${pending} คำขอ OT รออนุมัติ`;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// SHIFT-CHANGE REQUESTS — หน้า "ขอเปลี่ยนกะย้อนหลัง" (BM ขอ → AM/HR อนุมัติ → แก้ตารางอัตโนมัติ)
+// ═══════════════════════════════════════════════════════════
+const SCR_STATUS_BADGE = {
+  pending:   { label: '⏳ รออนุมัติ',      cls: 'badge-warning' },
+  approved:  { label: '✓ อนุมัติ+แก้แล้ว', cls: 'badge-success' },
+  rejected:  { label: '✕ ไม่อนุมัติ',      cls: 'badge-danger' },
+  cancelled: { label: '⊘ ยกเลิก',          cls: 'badge-neutral' }
+};
+function _scrBadgeHtml(r) {
+  const base = SCR_STATUS_BADGE[r.status] || { label: r.status, cls: 'badge' };
+  let html = `<span class="badge ${base.cls}">${escapeHtml(base.label)}</span>`;
+  if (r.status === 'rejected' && r.approverNote) {
+    html += `<br><span class="muted-2" style="font-size:10.5px">${escapeHtml(r.approverNote)}</span>`;
+  }
+  return html;
+}
+
+const _scrFilter = { year: '', month: '', status: '' };
+function setScrFilter(k, v) { _scrFilter[k] = v || ''; router.go('shift-changes'); }
+function clearScrFilter() { _scrFilter.year = ''; _scrFilter.month = ''; _scrFilter.status = ''; router.go('shift-changes'); }
+
+router.register('shift-changes', () => {
+  const allList = DB.getShiftChangeRequests();
+  const role = DB.role;
+  const list = allList.filter(r => {
+    if (_scrFilter.year && String(r.workDate || '').slice(0, 4) !== _scrFilter.year) return false;
+    if (_scrFilter.month && String(r.workDate || '').slice(5, 7) !== _scrFilter.month) return false;
+    if (_scrFilter.status && r.status !== _scrFilter.status) return false;
+    return true;
+  });
+  const _scrHasFilter = !!(_scrFilter.year || _scrFilter.month || _scrFilter.status);
+  const _scrYears = (() => {
+    const ty = new Date().getFullYear();
+    const ys = new Set(allList.map(r => String(r.workDate || '').slice(0, 4)).filter(Boolean));
+    for (let y = ty - 5; y <= ty; y++) ys.add(String(y));
+    return Array.from(ys).filter(Boolean).sort((a, b) => Number(b) - Number(a));
+  })();
+  const managed = DB._managedBranches || [];
+  const canActOn = (r) => r.status === 'pending' && (DB.isHR || ((role === 'area_manager' || role === 'operation_manager') && managed.includes(r.branchId)));
+  const totalPending = allList.filter(r => r.status === 'pending').length;
+  const canCreate = DB.isHR || role === 'branch_manager' || role === 'area_manager' || role === 'operation_manager';
+
+  return `
+    <div class="sw-page-title">ขอเปลี่ยนกะย้อนหลัง</div>
+    <div class="sw-page-subtitle">
+      ผจก.สาขาขอแก้กะของวันที่ผ่านมาแล้ว → AM หรือ HR อนุมัติ · พออนุมัติ ระบบเปลี่ยนกะในตารางงานให้อัตโนมัติ
+    </div>
+    <div class="card mt-4">
+      <div class="flex items-center" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <span class="badge badge-warning" style="font-size:13px;padding:6px 12px">⏳ รออนุมัติ ${totalPending}</span>
+          <span class="badge" style="font-size:13px;padding:6px 12px">รวมทั้งหมด ${list.length}</span>
+        </div>
+        ${canCreate ? `<button class="btn btn-primary" onclick="openShiftChangeForm()">+ ขอเปลี่ยนกะ</button>` : ''}
+      </div>
+      <div class="sw-filter-bar" style="margin-bottom:14px">
+        <select class="sw-filter-select" onchange="setScrFilter('year', this.value)" aria-label="กรองตามปี">
+          <option value="">— ทุกปี —</option>
+          ${_scrYears.map(y => `<option value="${y}" ${_scrFilter.year === y ? 'selected' : ''}>ปี ${Number(y) + 543}</option>`).join('')}
+        </select>
+        <select class="sw-filter-select" onchange="setScrFilter('month', this.value)" aria-label="กรองตามเดือน">
+          <option value="">— ทุกเดือน —</option>
+          ${['01','02','03','04','05','06','07','08','09','10','11','12'].map((m, i) => `<option value="${m}" ${_scrFilter.month === m ? 'selected' : ''}>${['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'][i]}</option>`).join('')}
+        </select>
+        <select class="sw-filter-select" onchange="setScrFilter('status', this.value)" aria-label="กรองตามสถานะ">
+          <option value="">— ทุกสถานะ —</option>
+          ${Object.entries(SCR_STATUS_BADGE).map(([k, v]) => `<option value="${k}" ${_scrFilter.status === k ? 'selected' : ''}>${escapeHtml(v.label)}</option>`).join('')}
+        </select>
+        ${_scrHasFilter ? `<button class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearScrFilter()">✕ ล้างตัวกรอง</button>` : ''}
+      </div>
+      ${list.length === 0 ? `
+        <div class="empty-state" style="padding:32px">
+          <div class="icon">🔄</div>
+          <div>${_scrHasFilter ? 'ไม่พบคำขอตามตัวกรอง' : 'ยังไม่มีคำขอเปลี่ยนกะ'}</div>
+          <div class="muted-2" style="font-size:13px;margin-top:6px">${_scrHasFilter ? 'ลองเปลี่ยน/ล้างตัวกรอง' : (canCreate ? 'กด "+ ขอเปลี่ยนกะ" เพื่อขอแก้กะของวันที่ผ่านมาแล้ว' : 'ยังไม่มีรายการ')}</div>
+        </div>
+      ` : `
+        <div class="table-wrap">
+          <table class="table" style="font-size:13px">
+            <thead><tr>
+              <th>สถานะ</th>
+              <th>วันที่</th>
+              <th>พนักงาน</th>
+              <th>สาขา</th>
+              <th>เปลี่ยนกะ</th>
+              <th>เหตุผล</th>
+              <th>การกระทำ</th>
+            </tr></thead>
+            <tbody>
+              ${list.map(r => {
+                const canReview = canActOn(r);
+                const canCancel = r.status === 'pending' && (DB.isHR || r.requestedBy === DB.user?.id);
+                const e = DB.getEmployee(r.employeeId);
+                const empName = r.employeeName || (e ? `${e.firstName || ''} ${e.lastName || ''}`.trim() : r.employeeId);
+                return `<tr>
+                  <td>${_scrBadgeHtml(r)}</td>
+                  <td style="white-space:nowrap;font-size:12px">${r.workDate ? fmt.date(r.workDate) : '-'}</td>
+                  <td><a href="#" onclick="viewEmployee('${escapeHtml(r.employeeId)}');return false;">${escapeHtml(empName || '-')}</a></td>
+                  <td><code>${escapeHtml(r.branchId)}</code></td>
+                  <td style="white-space:nowrap"><span class="muted-2">${escapeHtml(r.oldShiftCode || '—')}</span> → <strong>${escapeHtml(r.newShiftCode || '-')}</strong></td>
+                  <td style="max-width:220px;word-break:break-word">${escapeHtml(r.reason || '-')}</td>
+                  <td>
+                    ${canReview ? `
+                      <button class="btn btn-success btn-sm" onclick="reviewShiftChangeUI('${escapeHtml(r.id)}', 'approve')">✓ อนุมัติ</button>
+                      <button class="btn btn-danger btn-sm" onclick="reviewShiftChangeUI('${escapeHtml(r.id)}', 'reject')">✕ ปฏิเสธ</button>
+                    ` : ''}
+                    ${canCancel ? `<button class="btn btn-ghost btn-sm" onclick="cancelShiftChangeUI('${escapeHtml(r.id)}')">ยกเลิก</button>` : ''}
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+  `;
+});
+
+function openShiftChangeForm() {
+  const role = DB.role;
+  if (!(DB.isHR || role === 'branch_manager' || role === 'area_manager' || role === 'operation_manager')) {
+    toast('ต้องเป็น ผจก.สาขา / AM / OM / HR', 'error');
+    return;
+  }
+  const myBranch = DB.getEmployee(DB.profile?.employee_id)?.branch || '';
+  const branches = DB.getBranchMaster ? DB.getBranchMaster({ activeOnly: true }) : [];
+  const lockBranch = (role === 'branch_manager' && myBranch);
+  const initialBranch = lockBranch ? myBranch : (myBranch || '');
+  // วันสูงสุด = เมื่อวาน (ย้อนหลังเท่านั้น) — คำนวณแบบ UTC กัน timezone เพี้ยน
+  const _p = DB.todayBkk().split('-').map(Number);
+  const _d = new Date(Date.UTC(_p[0], _p[1] - 1, _p[2])); _d.setUTCDate(_d.getUTCDate() - 1);
+  const maxDate = _d.toISOString().slice(0, 10);
+
+  const empOptions = (branchId) => {
+    if (!branchId) return '<option value="">— เลือกสาขาก่อน —</option>';
+    const emps = DB.getEmployees({ branch: branchId, status: 'active' })
+      .slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    if (!emps.length) return '<option value="">— ไม่มีพนักงานในสาขานี้ —</option>';
+    return '<option value="">— เลือกพนักงาน —</option>' + emps.map(e =>
+      `<option value="${escapeHtml(e.id)}">${escapeHtml(e.id)} · ${escapeHtml(`${e.firstName || ''} ${e.lastName || ''}`.trim())}${e.positionTitle ? ' — ' + escapeHtml(e.positionTitle) : ''}</option>`
+    ).join('');
+  };
+  const shiftOptions = (branchId) => {
+    const shifts = DB.getShifts ? DB.getShifts({ branchId, activeOnly: true }) : [];
+    if (!shifts.length) return '<option value="">— ไม่มีกะ —</option>';
+    return '<option value="">— เลือกกะใหม่ —</option>' + shifts.map(s =>
+      `<option value="${escapeHtml(s.id)}">${escapeHtml(s.code)}${s.name ? ' · ' + escapeHtml(s.name) : ''}${(!s.isOffDay && s.startTime) ? ' (' + s.startTime.slice(0, 5) + '–' + (s.endTime || '').slice(0, 5) + ')' : ''}</option>`
+    ).join('');
+  };
+
+  modal.open('ขอเปลี่ยนกะย้อนหลัง', `
+    <form id="scrReqForm" class="form-grid">
+      <div class="form-group span-2">
+        <label>สาขา *</label>
+        ${lockBranch ? `
+          <input value="${escapeHtml(myBranch)}" readonly/>
+          <input type="hidden" name="branchId" value="${escapeHtml(myBranch)}"/>
+        ` : `
+          <select name="branchId" id="scrBranchSel" required>
+            <option value="">— เลือกสาขา —</option>
+            ${branches.map(b => `<option value="${escapeHtml(b.id)}" ${b.id === myBranch ? 'selected' : ''}>${escapeHtml(b.id)}</option>`).join('')}
+          </select>
+        `}
+      </div>
+      <div class="form-group span-2">
+        <label>พนักงาน *</label>
+        <select name="employeeId" id="scrEmpSel" required>${empOptions(initialBranch)}</select>
+      </div>
+      <div class="form-group">
+        <label>วันที่ (ย้อนหลัง) *</label>
+        <input type="date" name="workDate" id="scrDate" max="${maxDate}" required/>
+      </div>
+      <div class="form-group">
+        <label>กะเดิมวันนั้น</label>
+        <input type="text" id="scrOldShift" readonly value="—" style="background:var(--surface-2)"/>
+      </div>
+      <div class="form-group span-2">
+        <label>เปลี่ยนเป็นกะใหม่ *</label>
+        <select name="newShiftId" id="scrNewShift" required>${shiftOptions(initialBranch)}</select>
+      </div>
+      <div class="form-group span-2">
+        <label>เหตุผล</label>
+        <textarea name="reason" rows="2" placeholder="เช่น ลงกะผิด / สลับกะกับเพื่อน / ลืมแก้ตอนนั้น"></textarea>
+      </div>
+    </form>
+  `, {
+    size: 'sm',
+    footer: '<button class="btn btn-secondary" data-close>ยกเลิก</button><button class="btn btn-primary" id="scrReqSubmit">ส่งคำขอ</button>'
+  });
+
+  // lookup กะเดิมของพนักงาน+วันนั้น แสดงให้เห็นก่อนขอ
+  const updOld = () => {
+    const empId = document.getElementById('scrEmpSel')?.value || '';
+    const wd = document.getElementById('scrDate')?.value || '';
+    const out = document.getElementById('scrOldShift');
+    if (!out) return;
+    if (!empId || !wd) { out.value = '—'; return; }
+    const ents = DB.getScheduleEntries ? DB.getScheduleEntries({ employeeId: empId, dateFrom: wd, dateTo: wd }) : [];
+    const ent = ents[0];
+    if (!ent) { out.value = '(ยังไม่มีกะในวันนั้น)'; return; }
+    const sh = ent.shiftId ? DB.getShift(ent.shiftId) : null;
+    out.value = sh ? `${sh.code}${sh.name ? ' · ' + sh.name : ''}` : (ent.customLabel || 'กะกำหนดเอง');
+  };
+  const branchSel = document.getElementById('scrBranchSel');
+  if (branchSel) {
+    branchSel.addEventListener('change', () => {
+      const empSel = document.getElementById('scrEmpSel');
+      const shSel = document.getElementById('scrNewShift');
+      if (empSel) empSel.innerHTML = empOptions(branchSel.value);
+      if (shSel) shSel.innerHTML = shiftOptions(branchSel.value);
+      updOld();
+    });
+  }
+  document.getElementById('scrEmpSel')?.addEventListener('change', updOld);
+  document.getElementById('scrDate')?.addEventListener('input', updOld);
+
+  $('#scrReqSubmit').addEventListener('click', async () => {
+    const form = $('#scrReqForm');
+    if (!form.checkValidity()) { form.reportValidity(); return; }
+    const fd = new FormData(form);
+    const branchId = (fd.get('branchId') || '').toString().trim();
+    const employeeId = (fd.get('employeeId') || '').toString().trim();
+    const workDate = (fd.get('workDate') || '').toString().trim();
+    const newShiftId = (fd.get('newShiftId') || '').toString().trim();
+    const reason = (fd.get('reason') || '').toString().trim();
+    const emp = DB.getEmployee(employeeId) || {};
+    const employeeName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
+    const positionTitle = emp.positionTitle || '';
+    const btn = $('#scrReqSubmit'); btn.disabled = true; btn.textContent = 'กำลังส่ง...';
+    try {
+      await DB.createShiftChangeRequest({ branchId, employeeId, employeeName, positionTitle, workDate, newShiftId, reason });
+      modal.close();
+      toast('✓ ส่งคำขอเปลี่ยนกะแล้ว — รอ AM/HR อนุมัติ', 'success');
+      router.go('shift-changes');
+    } catch (ex) {
+      toast(ex.message || String(ex), 'error');
+      btn.disabled = false; btn.textContent = 'ส่งคำขอ';
+    }
+  });
+}
+
+async function reviewShiftChangeUI(requestId, decision) {
+  const action = decision === 'approve' ? 'อนุมัติ' : 'ปฏิเสธ';
+  const msg = decision === 'approve'
+    ? 'ยืนยันอนุมัติ — ระบบจะแก้กะในตารางงานให้อัตโนมัติ · หมายเหตุ (ทางเลือก):'
+    : 'เหตุผลที่ปฏิเสธ (ทางเลือก):';
+  const note = await modal.prompt(`${action}คำขอเปลี่ยนกะ`, msg, '');
+  if (note === null) return;
+  try {
+    await DB.reviewShiftChangeRequest(requestId, decision, note);
+    toast(decision === 'approve' ? '✓ อนุมัติแล้ว — แก้กะในตารางเรียบร้อย' : '✓ ปฏิเสธคำขอแล้ว', 'success');
+    router.go('shift-changes');
+  } catch (ex) {
+    toast(ex.message || String(ex), 'error');
+  }
+}
+
+async function cancelShiftChangeUI(requestId) {
+  const reason = await modal.prompt('ยกเลิกคำขอเปลี่ยนกะ', 'เหตุผลที่ยกเลิก (ทางเลือก):', '');
+  if (reason === null) return;
+  try {
+    await DB.cancelShiftChangeRequest(requestId, reason);
+    toast('ยกเลิกคำขอแล้ว', 'success');
+    router.go('shift-changes');
+  } catch (ex) {
+    toast(ex.message || String(ex), 'error');
+  }
+}
+
+function updateShiftChangeBadge() {
+  const badge = document.getElementById('navBadgeShiftChange');
+  if (!badge) return;
+  const list = DB.data.shiftChangeRequests || [];
+  let pending = 0;
+  if (DB.isHR) {
+    pending = list.filter(r => r.status === 'pending').length;
+  } else if (DB.role === 'area_manager' || DB.role === 'operation_manager') {
+    const managed = DB._managedBranches || [];
+    pending = list.filter(r => r.status === 'pending' && managed.includes(r.branchId)).length;
+  }
+  if (pending > 0) {
+    badge.textContent = String(pending);
+    badge.style.display = 'inline-block';
+    badge.title = `${pending} คำขอเปลี่ยนกะรออนุมัติ`;
   } else {
     badge.style.display = 'none';
   }
