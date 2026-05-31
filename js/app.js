@@ -18045,6 +18045,7 @@ router.register('attendance', () => {
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-secondary btn-sm" onclick="attExportMonth()">${ICON.download || ''}Export</button>
             <button class="btn btn-secondary btn-sm" onclick="openAttendanceManual()">+ เพิ่มมือ</button>
+            <button class="btn btn-secondary btn-sm" onclick="openAttendanceImportHistory()">↩ ยกเลิกนำเข้า</button>
             <button class="btn btn-primary" onclick="openImportAttendance()">${ICON.upload || '⬆'} นำเข้าสแกนนิ้ว</button>
           </div>` : ''}
       </div>
@@ -18133,6 +18134,60 @@ async function attDeleteRow(id) {
   if (!ok) return;
   try { await DB.deleteTimeAttendance(id); toast('ลบแล้ว', 'success'); router.go('attendance'); }
   catch (ex) { toast(ex.message || String(ex), 'error'); }
+}
+
+// ─── ประวัติ / ยกเลิกการนำเข้า (จัดกลุ่มตาม import_batch_id ของเดือนที่โหลดอยู่) ───
+function openAttendanceImportHistory() {
+  if (!requireHR()) return;
+  const rows = DB.data.timeAttendance || [];
+  const batches = new Map();
+  let manualCount = 0;
+  for (const r of rows) {
+    if (r.source === 'manual' || !r.importBatchId) { if (r.source === 'manual') manualCount++; continue; }
+    let b = batches.get(r.importBatchId);
+    if (!b) { b = { id: r.importBatchId, count: 0, minDate: r.workDate, maxDate: r.workDate, device: r.deviceLabel || '', createdAt: r.createdAt || '' }; batches.set(r.importBatchId, b); }
+    b.count++;
+    if (r.workDate < b.minDate) b.minDate = r.workDate;
+    if (r.workDate > b.maxDate) b.maxDate = r.workDate;
+    if (r.createdAt && (!b.createdAt || r.createdAt < b.createdAt)) b.createdAt = r.createdAt;
+    if (!b.device && r.deviceLabel) b.device = r.deviceLabel;
+  }
+  const list = [...batches.values()].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  const monthLabel = `${_TH_MONTHS[_attState.month - 1]} ${_attState.year + 543}`;
+  const fmtWhen = (iso) => { if (!iso) return '-'; try { return new Date(iso).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: TZ }); } catch (e) { return '-'; } };
+  const body = `
+    <div class="muted-2" style="font-size:13px;margin-bottom:10px">
+      การนำเข้าที่มีข้อมูลอยู่ในเดือน <b>${monthLabel}</b>${_attState.branch ? ` · สาขา ${escapeHtml(_attState.branch)}` : ''}<br>
+      <span style="font-size:12px">⚠ "ยกเลิก" จะลบ<b>ทุกวัน</b>ของการนำเข้าครั้งนั้น (รวมวันในเดือนอื่นถ้าไฟล์เดียวกันคร่อมเดือน) — กู้คืนไม่ได้</span>
+    </div>
+    ${list.length ? `
+      <div class="table-wrap"><table class="table" style="font-size:13px">
+        <thead><tr><th>นำเข้าเมื่อ</th><th>เครื่อง</th><th>ช่วงวันที่ (เดือนนี้)</th><th style="text-align:center">รายการ</th><th></th></tr></thead>
+        <tbody>${list.map(b => `<tr>
+          <td style="font-size:12px;white-space:nowrap">${fmtWhen(b.createdAt)}</td>
+          <td style="font-size:12px">${escapeHtml(b.device || '—')}</td>
+          <td style="font-size:12px;white-space:nowrap">${fmt.date(b.minDate)}${b.maxDate !== b.minDate ? ` – ${fmt.date(b.maxDate)}` : ''}</td>
+          <td style="text-align:center"><strong>${b.count.toLocaleString()}</strong></td>
+          <td><button class="btn btn-danger btn-sm" onclick="attUndoBatch('${escapeHtml(b.id)}', ${b.count})">ยกเลิก</button></td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    ` : `<div class="muted-2" style="padding:16px;text-align:center">ไม่พบการนำเข้าในเดือนนี้${manualCount ? ` (มีบันทึกแบบกรอกมือ ${manualCount} รายการ — ลบทีละแถวที่ปุ่ม 🗑)` : ''}</div>`}
+    <div class="muted-2" style="font-size:11px;margin-top:10px">หมายเหตุ: ลบเฉพาะวัน/บางคน → ใช้ปุ่ม 🗑 ในตาราง · ลบทั้งไฟล์ที่นำเข้า → กด "ยกเลิก" ที่นี่</div>
+  `;
+  modal.open('ประวัติ / ยกเลิกการนำเข้า', body, { size: 'lg', footer: '<button class="btn btn-secondary" data-close>ปิด</button>' });
+}
+
+async function attUndoBatch(batchId, count) {
+  if (!requireHR()) return;
+  const ok = await modal.confirm('ยกเลิกการนำเข้า',
+    `ลบข้อมูลเวลาของการนำเข้าครั้งนี้ทั้งหมด (≥ ${Number(count).toLocaleString()} รายการในเดือนนี้)? กู้คืนไม่ได้`);
+  if (!ok) return;
+  try {
+    const res = await DB.deleteTimeAttendanceBatch(batchId);
+    toast(`ยกเลิกแล้ว — ลบ ${(res?.deleted ?? 0).toLocaleString()} รายการ`, 'success');
+    modal.close();
+    _attState.loaded = false; attLoadAndRender();
+  } catch (ex) { toast(ex.message || String(ex), 'error'); }
 }
 
 // ─── เพิ่ม/แก้ บันทึกเดียว (HR กรอกมือ) ───
