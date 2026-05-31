@@ -17637,6 +17637,11 @@ function _attFmtMinutes(min) {
 function _attHM(t) { return t ? String(t).slice(0, 5) : '—'; }
 
 // ─── PARSE date/time จากเซลล์ (รองรับหลายรูปแบบ + Excel Date object) ───
+function _attYmd(y, mo, d) {
+  if (y > 2400) y -= 543;                 // พ.ศ. → ค.ศ.
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
 function attParseDate(v) {
   if (v == null || v === '') return null;
   if (v instanceof Date) {
@@ -17644,18 +17649,41 @@ function attParseDate(v) {
     if (v.getFullYear() < 1970) return null;
     return v.toLocaleDateString('en-CA');
   }
-  const s = String(v).trim();
+  let s = String(v).trim();
   if (!s) return null;
+  // ── เลขล้วนไม่มีตัวคั่น (CSV→number ทำ 0 นำหน้าหาย) เช่น 01052569→1052569, 01052026→1052026 ──
+  if (/^\d+$/.test(s)) {
+    let g = s;
+    if (g.length === 7) g = '0' + g;                 // วันหลักเดียว 0 หาย → pad
+    if (g.length === 8) {
+      const first4 = +g.slice(0, 4);
+      // YYYYMMDD ถ้า 4 ตัวแรกเป็นปี (ค.ศ. 1970-2100 หรือ พ.ศ. 2470-2643)
+      if ((first4 >= 1970 && first4 <= 2100) || (first4 >= 2470 && first4 <= 2643)) {
+        const r = _attYmd(first4, +g.slice(4, 6), +g.slice(6, 8));
+        if (r) return r;
+      }
+      let d = +g.slice(0, 2), mo = +g.slice(2, 4), y = +g.slice(4, 8);  // DDMMYYYY
+      if (mo > 12 && d <= 12) { const t = d; d = mo; mo = t; }
+      const r = _attYmd(y, mo, d);
+      if (r) return r;
+    }
+    if (g.length === 6) {                            // DDMMYY (เดา ค.ศ. 20xx)
+      let d = +g.slice(0, 2), mo = +g.slice(2, 4), y = 2000 + (+g.slice(4, 6));
+      if (mo > 12 && d <= 12) { const t = d; d = mo; mo = t; }
+      const r = _attYmd(y, mo, d);
+      if (r) return r;
+    }
+    return null;
+  }
+  // ── มีตัวคั่น ──
   let m = s.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);   // YYYY-MM-DD
-  if (m) { let y = +m[1], mo = +m[2], d = +m[3]; if (y > 2400) y -= 543; return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+  if (m) return _attYmd(+m[1], +m[2], +m[3]);
   m = s.match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);     // DD/MM/YYYY
   if (m) {
     let d = +m[1], mo = +m[2], y = +m[3];
     if (y < 100) y += 2000;
-    if (y > 2400) y -= 543;
     if (mo > 12 && d <= 12) { const t = d; d = mo; mo = t; }  // เผื่อ MM/DD
-    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
-    return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    return _attYmd(y, mo, d);
   }
   return null;
 }
@@ -17671,6 +17699,19 @@ function attParseTime(v) {
     const total = Math.round(Number(s) * 24 * 60);
     return `${String(Math.floor(total / 60) % 24).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`;
   }
+  // ── เลขล้วน HHMMSS / HHMM (CSV→number ทำ 0 นำหน้าหาย) เช่น 085833→85833, 0800→800 ──
+  if (/^\d+$/.test(s)) {
+    let d = s;
+    if (d.length === 5) d = '0' + d;        // HMMSS → HHMMSS
+    else if (d.length === 3) d = '0' + d;   // HMM → HHMM
+    let h, mi;
+    if (d.length === 6 || d.length === 4) { h = +d.slice(0, 2); mi = +d.slice(2, 4); }
+    else if (d.length <= 2) { h = +d; mi = 0; }
+    else return null;
+    if (h > 23 || mi > 59) return null;
+    return `${String(h).padStart(2,'0')}:${String(mi).padStart(2,'0')}`;
+  }
+  // ── มี ':' (+ AM/PM) ──
   const ap = s.match(/(AM|PM)/i);
   const m = s.match(/(\d{1,2}):(\d{2})(?::\d{2})?/);
   if (!m) return null;
@@ -17735,12 +17776,12 @@ function attMatchEmp(lk, rawId) {
 
 // ─── auto-detect คอลัมน์จากชื่อหัวตาราง ───
 const _ATT_ALIASES = {
-  empId:    ['รหัสพนักงาน','รหัสผู้ใช้','employeeid','employeeno','userid','enrollno','enrollnumber','badgenumber','acno','รหัสบัตร','empid','pin','รหัส'],
-  date:     ['วันที่ทำงาน','workdate','attdate','วันที่','date','วัน'],
+  empId:    ['staffcode','staffid','staffno','employeecode','empcode','รหัสพนักงาน','รหัสผู้ใช้','employeeid','employeeno','userid','enrollno','enrollnumber','badgenumber','acno','รหัสบัตร','empid','staff','pin','รหัส'],
+  date:     ['วันทำงาน','วันที่ทำงาน','workingdate','workdate','attdate','วันที่','date','วัน'],
   time:     ['เวลาสแกน','atttime','clocktime','เวลา','time'],
   datetime: ['วันที่เวลา','วันเวลา','datetime','timestamp','scantime','punchtime','recordtime','transactiontime','date/time'],
   checkIn:  ['เวลาเข้า','เข้างาน','clockin','checkin','timein','onduty','เข้า'],
-  breakOut: ['พักออก','ออกพัก','breakout','breakstart','พัก'],
+  breakOut: ['พักออก','ออกพัก','breakout','breakstart'],
   breakIn:  ['พักเข้า','เข้าพัก','breakin','breakend','กลับพัก'],
   checkOut: ['เวลาออก','ออกงาน','clockout','checkout','timeout','offduty','ออก']
 };
@@ -17760,6 +17801,29 @@ function attDetectCol(headers, key) {
     if (hit) return hit.raw;
   }
   return '';
+}
+// ตรวจหาคอลัมน์ที่เก็บ "เวลาสแกน" (ได้หลายช่อง) — เรียงลำดับ
+//   1) คอลัมน์เลขลำดับ: เวลา 1/2/3/4, time1..4  → 2) TimeIn/TimeOut  → 3) เวลาเดี่ยว
+function attDetectTimeCols(headers) {
+  const norm = (s) => String(s).toLowerCase().replace(/[\s_\-./()]/g, '');
+  const numbered = [];
+  for (const h of headers) {
+    const m = norm(h).match(/^(?:เวลา|time|punch|scan|ครั้งที่|ครั้ง)([1-9])$/);
+    if (m) numbered.push({ h, idx: +m[1] });
+  }
+  if (numbered.length) {
+    numbered.sort((a, b) => a.idx - b.idx);
+    return numbered.map(x => x.h).slice(0, 4);
+  }
+  const cols = [];
+  const ci = attDetectCol(headers, 'checkIn');
+  const co = attDetectCol(headers, 'checkOut');
+  if (ci) cols.push(ci);
+  if (co && co !== ci) cols.push(co);
+  if (cols.length) return cols;
+  const t = attDetectCol(headers, 'time');
+  if (t) cols.push(t);
+  return cols;
 }
 
 // ─── โหลดเดือนที่เลือก แล้ว re-render ───
@@ -18001,30 +18065,36 @@ function attMappingHtml(headers) {
   const empId = attDetectCol(headers, 'empId');
   const dt = attDetectCol(headers, 'datetime');
   const date = attDetectCol(headers, 'date');
-  const time = attDetectCol(headers, 'time');
-  const ci = attDetectCol(headers, 'checkIn'), bo = attDetectCol(headers, 'breakOut'),
-        bi = attDetectCol(headers, 'breakIn'), co = attDetectCol(headers, 'checkOut');
-  // เดาโหมด: ถ้าเจอคอลัมน์ เข้า+ออก แยกกัน → paired, ไม่งั้น raw
-  const guessPaired = !!(ci && co);
+  const tcols = attDetectTimeCols(headers);
+  const bo = attDetectCol(headers, 'breakOut'), bi = attDetectCol(headers, 'breakIn');
+  const ci = attDetectCol(headers, 'checkIn'), co = attDetectCol(headers, 'checkOut');
+  // explicit เฉพาะเมื่อมีคอลัมน์ "พักออก/พักเข้า" ระบุชื่อชัด — ไม่งั้นใช้ auto (ครอบคลุมกว่า)
+  const guessExplicit = !!(bo || bi);
   const lab = (t) => `<div style="font-size:12px;color:var(--muted-2);margin-bottom:3px">${t}</div>`;
+  const tc = (i) => tcols[i] || '';
   return `
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="attMode" value="raw" ${guessPaired?'':'checked'}> 1 แถว = 1 ครั้งสแกน (จับคู่ให้เอง)</label>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="attMode" value="paired" ${guessPaired?'checked':''}> 1 แถว = 1 วัน (จับคู่มาแล้ว)</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="attMode" value="auto" ${guessExplicit?'':'checked'}> จับเวลาอัตโนมัติ (1 ครั้ง/แถว · เข้า-ออกเป็นคู่ · หรือหลายช่องเวลา)</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="attMode" value="explicit" ${guessExplicit?'checked':''}> ระบุช่อง เข้า/พักออก/พักเข้า/ออก เอง</label>
     </div>
     <div class="card" style="background:var(--surface-2);padding:12px">
       <div style="display:flex;flex-wrap:wrap;gap:14px">
         <div>${lab('รหัสพนักงาน *')}${_attColSelect('attMapEmp', headers, empId)}</div>
       </div>
-      <div id="attMapRaw" style="display:${guessPaired?'none':'block'};margin-top:12px">
-        <div class="muted-2" style="font-size:12px;margin-bottom:6px">เลือก "วันเวลารวม" คอลัมน์เดียว <b>หรือ</b> แยก วันที่ + เวลา</div>
-        <div style="display:flex;flex-wrap:wrap;gap:14px">
-          <div>${lab('วันเวลา (รวม)')}${_attColSelect('attMapDateTime', headers, dt)}</div>
-          <div>${lab('วันที่ (แยก)')}${_attColSelect('attMapDate', headers, dt?'':date)}</div>
-          <div>${lab('เวลา (แยก)')}${_attColSelect('attMapTime', headers, dt?'':time)}</div>
+      <div id="attMapAuto" style="display:${guessExplicit?'none':'block'};margin-top:6px">
+        <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:6px">
+          <div>${lab('วันที่ *')}${_attColSelect('attMapDate', headers, dt?'':date)}</div>
+          <div>${lab('— หรือ — วันเวลารวม')}${_attColSelect('attMapDateTime', headers, dt)}</div>
+        </div>
+        <div style="font-size:12px;color:var(--muted-2);margin:10px 0 4px">ช่องเวลาสแกน (เลือกคอลัมน์ที่เก็บเวลา ใส่ได้หลายช่อง — ระบบจับคู่ เข้า/พักออก/พักเข้า/ออก ให้เอง ตามจำนวนครั้ง):</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <div>${lab('เวลา 1')}${_attColSelect('attMapT1', headers, tc(0))}</div>
+          <div>${lab('เวลา 2')}${_attColSelect('attMapT2', headers, tc(1))}</div>
+          <div>${lab('เวลา 3')}${_attColSelect('attMapT3', headers, tc(2))}</div>
+          <div>${lab('เวลา 4')}${_attColSelect('attMapT4', headers, tc(3))}</div>
         </div>
       </div>
-      <div id="attMapPaired" style="display:${guessPaired?'block':'none'};margin-top:12px">
+      <div id="attMapExplicit" style="display:${guessExplicit?'block':'none'};margin-top:6px">
         <div style="display:flex;flex-wrap:wrap;gap:14px">
           <div>${lab('วันที่ *')}${_attColSelect('attMapPDate', headers, date)}</div>
           <div>${lab('เข้า')}${_attColSelect('attMapCi', headers, ci)}</div>
@@ -18040,10 +18110,11 @@ function attMappingHtml(headers) {
 
 function attReadMapping() {
   const v = (id) => (document.getElementById(id)?.value || '');
+  const times = [v('attMapT1'), v('attMapT2'), v('attMapT3'), v('attMapT4')].filter(Boolean);
   return {
-    mode: document.querySelector('input[name="attMode"]:checked')?.value || 'raw',
+    mode: document.querySelector('input[name="attMode"]:checked')?.value || 'auto',
     emp: v('attMapEmp'),
-    datetime: v('attMapDateTime'), date: v('attMapDate'), time: v('attMapTime'),
+    datetime: v('attMapDateTime'), date: v('attMapDate'), times,
     pDate: v('attMapPDate'), ci: v('attMapCi'), bo: v('attMapBo'), bi: v('attMapBi'), co: v('attMapCo')
   };
 }
@@ -18051,31 +18122,10 @@ function attReadMapping() {
 // ประมวลผล rawRows ตาม mapping → daily records (+ จับคู่พนักงาน)
 function attProcess(rawRows, map) {
   const lk = attBuildEmpLookup();
-  const dayMap = new Map();   // key = empId|date → { rawId, emp, date, times:Set/array, paired{} }
+  const dayMap = new Map();   // key = empId|date → { rawId, date, times[] / rec{} }
   const errors = { noEmp: 0, noDate: 0, noTime: 0 };
 
-  if (map.mode === 'raw') {
-    if (!map.emp) throw new Error('กรุณาเลือกคอลัมน์ "รหัสพนักงาน"');
-    if (!map.datetime && !(map.date && map.time)) throw new Error('เลือก "วันเวลา (รวม)" หรือ "วันที่ + เวลา"');
-    for (const row of rawRows) {
-      const rawId = String(row[map.emp] == null ? '' : row[map.emp]).trim();
-      if (!rawId) { errors.noEmp++; continue; }
-      let date, time;
-      if (map.datetime) { date = attParseDate(row[map.datetime]); time = attParseTime(row[map.datetime]); }
-      else { date = attParseDate(row[map.date]); time = attParseTime(row[map.time]); }
-      if (!date) { errors.noDate++; continue; }
-      if (!time) { errors.noTime++; continue; }
-      const key = rawId + '|' + date;
-      if (!dayMap.has(key)) dayMap.set(key, { rawId, date, times: [] });
-      dayMap.get(key).times.push(time);
-    }
-    // จับคู่
-    for (const d of dayMap.values()) {
-      const times = attDedupTimes(d.times);
-      const a = attAssignPunches(times);
-      d.rec = { ...a, punchCount: times.length, rawPunches: times };
-    }
-  } else {  // paired
+  if (map.mode === 'explicit') {
     if (!map.emp) throw new Error('กรุณาเลือกคอลัมน์ "รหัสพนักงาน"');
     if (!map.pDate) throw new Error('กรุณาเลือกคอลัมน์ "วันที่"');
     for (const row of rawRows) {
@@ -18095,6 +18145,36 @@ function attProcess(rawRows, map) {
       };
       const raw = [rec.checkIn, rec.breakOut, rec.breakIn, rec.checkOut].filter(Boolean);
       dayMap.set(key, { rawId, date, rec: { ...rec, punchCount: raw.length, rawPunches: raw } });
+    }
+  } else {  // auto — รวมครั้งสแกนจาก datetime + ช่องเวลาทุกช่อง → group by emp+date → จับคู่ตามจำนวน
+    if (!map.emp) throw new Error('กรุณาเลือกคอลัมน์ "รหัสพนักงาน"');
+    if (!map.datetime && !map.date) throw new Error('เลือกคอลัมน์ "วันที่" หรือ "วันเวลารวม"');
+    if (!map.datetime && !(map.times && map.times.length)) throw new Error('เลือกอย่างน้อย 1 "ช่องเวลา"');
+    for (const row of rawRows) {
+      const rawId = String(row[map.emp] == null ? '' : row[map.emp]).trim();
+      if (!rawId) { errors.noEmp++; continue; }
+      let date; const punches = [];
+      if (map.datetime) {
+        date = attParseDate(row[map.datetime]);
+        const t = attParseTime(row[map.datetime]);
+        if (t) punches.push(t);
+      } else {
+        date = attParseDate(row[map.date]);
+      }
+      for (const col of (map.times || [])) {
+        const t = attParseTime(row[col]);
+        if (t) punches.push(t);
+      }
+      if (!date) { errors.noDate++; continue; }
+      if (!punches.length) { errors.noTime++; continue; }
+      const key = rawId + '|' + date;
+      if (!dayMap.has(key)) dayMap.set(key, { rawId, date, times: [] });
+      dayMap.get(key).times.push(...punches);
+    }
+    for (const d of dayMap.values()) {
+      const times = attDedupTimes(d.times);
+      const a = attAssignPunches(times);
+      d.rec = { ...a, punchCount: times.length, rawPunches: times };
     }
   }
 
@@ -18217,9 +18297,9 @@ function openImportAttendance() {
       // toggle mode panels
       document.querySelectorAll('input[name="attMode"]').forEach(radio => {
         radio.addEventListener('change', () => {
-          const paired = document.querySelector('input[name="attMode"]:checked').value === 'paired';
-          $('#attMapRaw').style.display = paired ? 'none' : 'block';
-          $('#attMapPaired').style.display = paired ? 'block' : 'none';
+          const explicit = document.querySelector('input[name="attMode"]:checked').value === 'explicit';
+          $('#attMapAuto').style.display = explicit ? 'none' : 'block';
+          $('#attMapExplicit').style.display = explicit ? 'block' : 'none';
         });
       });
       $('#attPreviewBtn').addEventListener('click', () => {
