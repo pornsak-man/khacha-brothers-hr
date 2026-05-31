@@ -72,9 +72,9 @@
   --success:        #166534;   /* deep emerald */
   --success-soft:   #ebfaf0;
   --success-text:   #064e1f;
-  --danger:         #c4243f;   /* refined wine red */
-  --danger-soft:    #fdf0f1;
-  --danger-text:    #7d1424;
+  --danger:         #dc2626;   /* clear true red (เดิม #c4243f wine — อมชมพู) */
+  --danger-soft:    #fef2f2;   /* warm pale red (เดิม #fdf0f1 — อมชมพู) */
+  --danger-text:    #991b1b;
   --warning:        #b87a08;   /* amber harmonized with champagne gold */
   --warning-soft:   #fbf3e1;
   --warning-text:   #5f3e08;
@@ -1947,14 +1947,14 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 }
 .badge-success { background: var(--success-soft); color: var(--success-text); border-color: rgba(21, 146, 63, 0.22); }
 .badge-warning { background: var(--warning-soft); color: var(--warning-text); border-color: rgba(201, 119, 6, 0.22); }
-.badge-danger  { background: var(--danger-soft);  color: var(--danger-text);  border-color: rgba(215, 38, 38, 0.22); }
+.badge-danger  { background: #dc2626;  color: #fff;  border-color: #dc2626; }
 .badge-info    { background: var(--info-soft);    color: var(--info-text);    border-color: rgba(30, 127, 196, 0.22); }
 .badge-neutral { background: var(--surface-2);    color: var(--text-2);       border-color: var(--border); }
 .badge-sage    { background: var(--gold-soft);    color: var(--gold-text);    border-color: rgba(196, 165, 116, 0.32); }
 .badge-gold    { background: var(--gold-soft);    color: var(--gold-text);    border-color: rgba(196, 165, 116, 0.32); }
 [data-theme="dark"] .badge-success { background: rgba(21, 146, 63, 0.16); color: #86efac; border-color: rgba(21, 146, 63, 0.30); }
 [data-theme="dark"] .badge-warning { background: rgba(201, 119, 6, 0.16); color: #fcd34d; border-color: rgba(201, 119, 6, 0.30); }
-[data-theme="dark"] .badge-danger  { background: rgba(215, 38, 38, 0.16); color: #fca5a5; border-color: rgba(215, 38, 38, 0.30); }
+[data-theme="dark"] .badge-danger  { background: #dc2626; color: #fff; border-color: #dc2626; }
 [data-theme="dark"] .badge-info    { background: rgba(30, 127, 196, 0.16); color: #93c5fd; border-color: rgba(30, 127, 196, 0.30); }
 [data-theme="dark"] .badge-sage    { background: rgba(196, 165, 116, 0.16); color: #e3d2a8; border-color: rgba(196, 165, 116, 0.32); }
 [data-theme="dark"] .badge-gold    { background: rgba(196, 165, 116, 0.16); color: #e3d2a8; border-color: rgba(196, 165, 116, 0.32); }
