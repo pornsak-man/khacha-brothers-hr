@@ -11891,10 +11891,11 @@ router.register('calendar', () => {
         return name.includes(s) || nick.includes(s) || String(r.employeeId).toLowerCase().includes(s);
       });
     }
-    // ─── Filter by branch ───
+    // ─── Filter by branch (รองรับ "__none__" = พนักงานที่ไม่ได้ระบุสาขา เช่น สำนักงานใหญ่/สายงาน) ───
     if (_swapReqUI.branch) {
       filtered = filtered.filter(r => {
         const emp = DB.getEmployee(r.employeeId);
+        if (_swapReqUI.branch === '__none__') return !emp?.branch;
         return emp?.branch === _swapReqUI.branch;
       });
     }
@@ -11913,7 +11914,10 @@ router.register('calendar', () => {
 
     // ─── Branches dropdown — ใช้สาขาทั้งหมดที่ผู้ใช้เห็น (จาก employees auto-scope) ───
     // ไม่ใช่แค่สาขาที่มีคำขอ → HR/admin filter หาสาขาที่ยังไม่มีคำขอได้
-    const branches = [...new Set(DB.getEmployees({ status: 'active' }).map(e => e.branch).filter(Boolean))].sort();
+    const _activeEmps = DB.getEmployees({ status: 'active' });
+    const branches = [...new Set(_activeEmps.map(e => e.branch).filter(Boolean))].sort();
+    // มีพนักงานที่ไม่ได้ระบุสาขา (สำนักงานใหญ่/สายงานต่างๆ) ไหม → เพิ่มตัวเลือก "ไม่ระบุสาขา" ให้ HR กรองเจอ
+    const hasNoBranchEmp = _activeEmps.some(e => !e.branch);
 
     const hasFilters = !!(s || _swapReqUI.branch || _swapReqUI.status || _swapReqUI.month);
     const MONTH_NAMES_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
@@ -12032,9 +12036,10 @@ router.register('calendar', () => {
             value="${escapeHtml(_swapReqUI.search)}"
             onkeydown="if(event.key==='Enter'){event.preventDefault();swapReqSetFilter('search', this.value);}"
             onblur="swapReqSetFilter('search', this.value)"/>
-          ${branches.length > 1 ? `<select class="sw-filter-select" onchange="swapReqSetFilter('branch', this.value)">
+          ${(branches.length > 1 || hasNoBranchEmp) ? `<select class="sw-filter-select" onchange="swapReqSetFilter('branch', this.value)">
             <option value="">— ทุกสาขา —</option>
             ${branches.map(b => `<option value="${escapeHtml(b)}" ${_swapReqUI.branch === b ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
+            ${hasNoBranchEmp ? `<option value="__none__" ${_swapReqUI.branch === '__none__' ? 'selected' : ''}>— ไม่ระบุสาขา (สำนักงานใหญ่/สายงาน) —</option>` : ''}
           </select>` : ''}
           <select class="sw-filter-select" onchange="swapReqSetFilter('status', this.value)">
             <option value="">— ทุกสถานะ —</option>
