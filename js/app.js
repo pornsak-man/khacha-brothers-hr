@@ -16438,6 +16438,7 @@ router.register('headcount', () => {
           <table class="table" style="font-size:13px">
             <thead><tr>
               <th>สถานะ</th>
+              <th>วันที่ขอ</th>
               <th>สาขา</th>
               <th>ตำแหน่ง</th>
               <th>จำนวน</th>
@@ -16452,6 +16453,7 @@ router.register('headcount', () => {
                 const canCancel = ['pending_am','pending_hr'].includes(r.status) && (DB.isHR || r.requestedBy === DB.user?.id);
                 return `<tr>
                   <td>${_hcBadgeHtml(r)}</td>
+                  <td style="white-space:nowrap;font-size:12px">${fmt.date(r.requestedAt)}</td>
                   <td><code>${escapeHtml(r.branchId)}</code></td>
                   <td>${escapeHtml(r.positionTitle)}</td>
                   <td style="text-align:center"><strong>${fmt.num(r.headcount)}</strong></td>
@@ -16483,7 +16485,7 @@ function openHeadcountForm() {
   const myBranch = DB.getEmployee(DB.profile?.employee_id)?.branch || '';
   const branches = DB.getBranchMaster ? DB.getBranchMaster({ activeOnly: true }) : [];
   // ตำแหน่งของสาขา — ตัดสายงานสำนักงาน (scope='office') ออก เหลือปฏิบัติการ + ที่ยังไม่ระบุสาย
-  const positions = (DB.getPositions ? DB.getPositions() : []).filter(p => p.scope !== 'office');
+  const positions = (DB.getPositions ? DB.getPositions() : []).filter(p => p.scope === 'operation');
   const lockBranch = (role === 'branch_manager' && myBranch);
 
   modal.open('สร้างคำขออัตรากำลัง', `
