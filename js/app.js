@@ -17614,23 +17614,23 @@ const _attState = (() => {
 })();
 
 const ATT_ANOMALY = {
-  missing_in:   { label: 'ลืมสแกนเข้า',     cls: 'badge-danger'  },
-  missing_out:  { label: 'ลืมสแกนออก',     cls: 'badge-danger'  },
-  no_punch:     { label: 'ไม่มีข้อมูล',      cls: 'badge-danger'  },
-  check_break:  { label: 'พักไม่ครบคู่',     cls: 'badge-warning' },
-  many_punches: { label: 'สแกนเกิน 4 ครั้ง', cls: 'badge-warning' }
+  missing_in:   { label: 'ลืมสแกนเข้า',     cls: 'badge-soft-danger' },
+  missing_out:  { label: 'ลืมสแกนออก',     cls: 'badge-soft-danger' },
+  no_punch:     { label: 'ไม่มีข้อมูล',      cls: 'badge-soft-danger' },
+  check_break:  { label: 'พักไม่ครบคู่',     cls: 'badge-warning'     },
+  many_punches: { label: 'สแกนเกิน 4 ครั้ง', cls: 'badge-warning'     }
 };
 
 // ผลเทียบกับตารางกะ (roster)
 const ATT_ROSTER = {
-  normal:     { label: 'ตรงเวลา',      cls: 'badge-success' },
-  late:       { label: 'สาย',          cls: 'badge-danger'  },
-  early:      { label: 'ออกก่อน',      cls: 'badge-warning' },
-  late_early: { label: 'สาย+ออกก่อน',  cls: 'badge-danger'  },
-  incomplete: { label: 'ลืมสแกน',      cls: 'badge-warning' },
-  off_worked: { label: 'ทำงานวันหยุด', cls: 'badge-info'    },
-  absent:     { label: 'ขาดงาน',       cls: 'badge-danger'  },
-  no_shift:   { label: 'นอกตาราง',     cls: ''              }
+  normal:     { label: 'ตรงเวลา',      cls: 'badge-success'     },
+  late:       { label: 'สาย',          cls: 'badge-soft-danger' },
+  early:      { label: 'ออกก่อน',      cls: 'badge-warning'     },
+  late_early: { label: 'สาย+ออกก่อน',  cls: 'badge-soft-danger' },
+  incomplete: { label: 'ลืมสแกน',      cls: 'badge-warning'     },
+  off_worked: { label: 'ทำงานวันหยุด', cls: 'badge-info'        },
+  absent:     { label: 'ขาดงาน',       cls: 'badge-soft-danger' },
+  no_shift:   { label: 'นอกตาราง',     cls: 'badge-neutral'     }
 };
 
 const _TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
@@ -17965,13 +17965,12 @@ function _attRosterCell(roster) {
   if (k === 'late') txt = `สาย ${roster.lateMin} น.`;
   else if (k === 'early') txt = `ออกก่อน ${roster.earlyMin} น.`;
   else if (k === 'late_early') txt = `สาย ${roster.lateMin}/ก่อน ${roster.earlyMin} น.`;
-  const style = meta.cls === 'badge-info' ? 'background:rgba(37,99,235,.12);color:#2563eb' : '';
-  return `<span class="badge ${meta.cls}" style="font-size:11px;${style}">${txt}</span>`;
+  return `<span class="badge ${meta.cls || 'badge-neutral'}" style="font-size:11px">${txt}</span>`;
 }
 // กะของวัน (label + ช่วงเวลา)
 function _attShiftCell(roster) {
   const sh = roster?.shift;
-  if (!sh) return '<span class="muted-2" style="font-size:11px">— ไม่มีกะ —</span>';
+  if (!sh) return '<span class="att-dash">—</span>';
   if (sh.isOff) return `<span class="muted-2" style="font-size:11px">หยุด</span>`;
   return `<div style="font-size:12px">${escapeHtml(sh.label)}</div><div class="muted-2" style="font-size:10px">${sh.start||'?'}–${sh.end||'?'}</div>`;
 }
@@ -18030,16 +18029,18 @@ router.register('attendance', () => {
       นำเข้าข้อมูลสแกนนิ้ว + เทียบกับตารางกะที่จัดไว้ → คำนวณ มาสาย / ออกก่อน / ขาดงาน อัตโนมัติในแต่ละวัน
     </div>
     <div class="card mt-4">
-      <div class="flex items-center" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <span class="badge" style="font-size:13px;padding:6px 12px">📅 ${totDays.toLocaleString()} วัน-คน</span>
-          <span class="badge badge-success" style="font-size:13px;padding:6px 12px">✓ ตรงเวลา ${cnt.normal.toLocaleString()}</span>
-          ${cnt.late ? `<span class="badge badge-danger" style="font-size:13px;padding:6px 12px">⏰ สาย ${cnt.late.toLocaleString()} (${_attFmtMinutes(lateMinTot)})</span>` : ''}
-          ${cnt.early ? `<span class="badge badge-warning" style="font-size:13px;padding:6px 12px">↩ ออกก่อน ${cnt.early.toLocaleString()}</span>` : ''}
-          ${absences.length ? `<span class="badge badge-danger" style="font-size:13px;padding:6px 12px">✕ ขาดงาน ${absences.length.toLocaleString()}</span>` : ''}
-          ${cnt.incomplete ? `<span class="badge badge-warning" style="font-size:13px;padding:6px 12px">⚠ ลืมสแกน ${cnt.incomplete.toLocaleString()}</span>` : ''}
-          ${cnt.noshift ? `<span class="badge" style="font-size:13px;padding:6px 12px">นอกตาราง ${cnt.noshift.toLocaleString()}</span>` : ''}
-          <span class="badge" style="font-size:13px;padding:6px 12px">👥 ${totEmps.toLocaleString()} คน · รวม ${_attFmtMinutes(totWorkMin)}</span>
+      <div class="flex items-center" style="justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:14px">
+        <div class="att-summary" style="flex:1 1 340px">
+          <div class="att-stat"><div class="att-stat-num">${totDays.toLocaleString()}</div><div class="att-stat-lbl">วัน-คน</div></div>
+          <div class="att-stat"><div class="att-stat-num">${totEmps.toLocaleString()}</div><div class="att-stat-lbl">พนักงาน</div></div>
+          <div class="att-stat"><div class="att-stat-num">${_attFmtMinutes(totWorkMin)}</div><div class="att-stat-lbl">ชม.ทำงานรวม</div></div>
+          <div class="att-stat-div"></div>
+          <div class="att-stat ok"><div class="att-stat-num">${cnt.normal.toLocaleString()}</div><div class="att-stat-lbl">ตรงเวลา</div></div>
+          <div class="att-stat warn"><div class="att-stat-num">${cnt.late.toLocaleString()}</div><div class="att-stat-lbl">มาสาย${cnt.late ? ` · ${_attFmtMinutes(lateMinTot)}` : ''}</div></div>
+          <div class="att-stat warn"><div class="att-stat-num">${cnt.early.toLocaleString()}</div><div class="att-stat-lbl">ออกก่อน</div></div>
+          <div class="att-stat danger"><div class="att-stat-num">${absences.length.toLocaleString()}</div><div class="att-stat-lbl">ขาดงาน</div></div>
+          ${cnt.incomplete ? `<div class="att-stat warn"><div class="att-stat-num">${cnt.incomplete.toLocaleString()}</div><div class="att-stat-lbl">ลืมสแกน</div></div>` : ''}
+          ${cnt.noshift ? `<div class="att-stat muted"><div class="att-stat-num">${cnt.noshift.toLocaleString()}</div><div class="att-stat-lbl">นอกตาราง</div></div>` : ''}
         </div>
         ${canManage ? `
           <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -18094,9 +18095,9 @@ router.register('attendance', () => {
                     ${nameCell}
                     <td style="white-space:nowrap;font-size:12px">${fmt.date(row.workDate)}</td>
                     <td>${_attShiftCell(row.roster)}</td>
-                    <td style="text-align:center"><span class="muted-2">— ไม่มีสแกน —</span></td>
-                    <td style="text-align:center">—</td><td style="text-align:center">—</td>
-                    <td style="text-align:center">—</td>
+                    <td style="text-align:center"><span class="att-dash" style="font-size:12px">ไม่มีสแกน</span></td>
+                    <td style="text-align:center"><span class="att-dash">—</span></td><td style="text-align:center"><span class="att-dash">—</span></td>
+                    <td style="text-align:center"><span class="att-dash">—</span></td>
                     <td>${_attRosterCell(row.roster)}</td>
                     ${canManage ? `<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="openAttendanceManual('${escapeHtml(row.employeeId)}','${escapeHtml(row.workDate)}')" title="เพิ่มเวลาให้วันนี้">＋</button></td>` : ''}
                   </tr>`;
@@ -18110,8 +18111,8 @@ router.register('attendance', () => {
                   <td style="white-space:nowrap;font-size:12px">${fmt.date(row.workDate)}</td>
                   <td>${_attShiftCell(ro)}</td>
                   <td style="text-align:center;font-size:12px;white-space:nowrap">${scan}</td>
-                  <td style="text-align:center">${ro.lateMin ? `<strong style="color:var(--danger)">${ro.lateMin}</strong>` : '—'}</td>
-                  <td style="text-align:center">${ro.earlyMin ? `<strong style="color:var(--warning)">${ro.earlyMin}</strong>` : '—'}</td>
+                  <td style="text-align:center">${ro.lateMin ? `<strong style="color:var(--danger)">${ro.lateMin}</strong>` : '<span class="att-dash">—</span>'}</td>
+                  <td style="text-align:center">${ro.earlyMin ? `<strong style="color:var(--warning)">${ro.earlyMin}</strong>` : '<span class="att-dash">—</span>'}</td>
                   <td style="text-align:center;white-space:nowrap">${_attFmtMinutes(row.workMinutes)}</td>
                   <td>${statusCell}${row.source==='manual' ? ' <span class="muted-2" style="font-size:10px">(มือ)</span>' : ''}</td>
                   ${canManage ? `<td style="white-space:nowrap">

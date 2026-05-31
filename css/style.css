@@ -1969,6 +1969,33 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 [data-theme="dark"] .badge-sage    { background: rgba(196, 165, 116, 0.16); color: #e3d2a8; border-color: rgba(196, 165, 116, 0.32); }
 [data-theme="dark"] .badge-gold    { background: rgba(196, 165, 116, 0.16); color: #e3d2a8; border-color: rgba(196, 165, 116, 0.32); }
 
+/* badge แดงแบบ soft (สงบกว่า badge-danger ทึบ) — ใช้ในตารางที่มีหลายแถว */
+.badge-soft-danger { background: var(--danger-soft); color: var(--danger-text); border-color: rgba(220, 38, 38, 0.22); }
+[data-theme="dark"] .badge-soft-danger { background: rgba(220, 38, 38, 0.16); color: #fca5a5; border-color: rgba(220, 38, 38, 0.30); }
+
+/* ── Attendance: แถบสรุปสะอาดตา (แทน badge สีจัด) ── */
+.att-summary {
+  display: flex; flex-wrap: wrap; align-items: stretch; gap: 2px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 6px;
+}
+.att-stat {
+  display: flex; flex-direction: column; justify-content: center; gap: 2px;
+  padding: 7px 16px; border-radius: 8px; min-width: 0;
+}
+.att-stat-num { font-size: 18px; font-weight: 700; color: var(--text); line-height: 1.15; font-variant-numeric: tabular-nums; }
+.att-stat-lbl { font-size: 11px; color: var(--text-2); white-space: nowrap; letter-spacing: 0.01em; }
+.att-stat-div { width: 1px; align-self: center; height: 28px; background: var(--border); margin: 0 6px; }
+.att-stat.ok .att-stat-num { color: var(--success-text); }
+.att-stat.warn .att-stat-num { color: var(--warning-text); }
+.att-stat.danger .att-stat-num { color: var(--danger); }
+.att-stat.muted .att-stat-num { color: var(--text-2); font-weight: 600; }
+[data-theme="dark"] .att-stat.ok .att-stat-num { color: #86efac; }
+[data-theme="dark"] .att-stat.warn .att-stat-num { color: #fcd34d; }
+[data-theme="dark"] .att-stat.danger .att-stat-num { color: #fca5a5; }
+/* ตัวคั่นจาง ๆ ในเซลล์ว่าง (ไม่มีกะ / ไม่มีค่า) */
+.att-dash { color: var(--border-strong); }
+
 /* ═════════════ FORMS ═════════════ */
 .form-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .form-group { display: flex; flex-direction: column; }
