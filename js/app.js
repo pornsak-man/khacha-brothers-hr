@@ -10134,23 +10134,24 @@ const ALLOWANCE_LABELS = {
   AllowanceOther:    'ค่าอื่นๆ'
 };
 
-const salAdjState = { search: '', year: '', changeType: '' };
+const salAdjState = { search: '', year: '', changeType: '', scope: '' };
 
 router.register('salary-adjust', () => {
   const allHistory = DB.getSalaryHistory();
 
-  // ── ตัวกรอง: ค้นหาชื่อ/รหัส · ปี · ประเภทการเปลี่ยนแปลง (ดูย้อนหลังได้ทุกปี) ──
+  // ── ตัวกรอง: ค้นหาชื่อ/รหัส · ปี · ประเภทการเปลี่ยนแปลง · สายงาน (ดูย้อนหลังได้ทุกปี) ──
   const _q = (salAdjState.search || '').trim().toLowerCase();
   const history = allHistory.filter(h => {
     if (salAdjState.year && String(h.date || '').slice(0, 4) !== salAdjState.year) return false;
     if (salAdjState.changeType && (h.changeType || 'salary') !== salAdjState.changeType) return false;
+    if (salAdjState.scope && DB.scopeOfEmployee(DB.getEmployee(h.employeeId)) !== salAdjState.scope) return false;
     if (_q) {
       const e = DB.getEmployee(h.employeeId) || {};
       if (!`${e.firstName || ''} ${e.lastName || ''} ${h.employeeId || ''}`.toLowerCase().includes(_q)) return false;
     }
     return true;
   });
-  const _hasFilter = !!(salAdjState.search || salAdjState.year || salAdjState.changeType);
+  const _hasFilter = !!(salAdjState.search || salAdjState.year || salAdjState.changeType || salAdjState.scope);
 
   const fmtChange = (h) => {
     const parts = [];
@@ -10258,6 +10259,10 @@ router.register('salary-adjust', () => {
           <option value="">— ทุกประเภท —</option>
           ${Object.entries(CHANGE_TYPE_BADGE).map(([k, v]) => `<option value="${k}" ${salAdjState.changeType === k ? 'selected' : ''}>${v.label}</option>`).join('')}
         </select>
+        ${(DB.getScopes?.() || []).length ? `<select class="sw-filter-select" onchange="setSalAdjFilter('scope', this.value)" aria-label="กรองตามสายงาน" title="กรองตามสายงาน">
+          <option value="">— ทุกสายงาน —</option>
+          ${DB.getScopes().map(s => `<option value="${escapeHtml(s.id)}" ${salAdjState.scope === s.id ? 'selected' : ''}>${escapeHtml(s.label)}</option>`).join('')}
+        </select>` : ''}
         <button class="btn btn-ghost btn-sm sw-filter-clear" onclick="clearSalAdjFilters()" style="${_hasFilter ? '' : 'display:none'}">✕ ล้างตัวกรอง</button>
       </div>
       ${history.length ? `
@@ -10297,6 +10302,7 @@ function clearSalAdjFilters() {
   salAdjState.search = '';
   salAdjState.year = '';
   salAdjState.changeType = '';
+  salAdjState.scope = '';
   router.go('salary-adjust');
 }
 
@@ -15469,7 +15475,7 @@ const ROLE_LABELS = {
 };
 
 // State + actions ของ filter ในหน้า "ผู้ใช้และสิทธิ์" (รองรับพนักงานจำนวนมาก)
-const _empAccFilter = { search: '', branch: '', role: '', accStatus: '' };
+const _empAccFilter = { search: '', branch: '', role: '', accStatus: '', scope: '' };
 function setEmpAccFilter(k, v) {
   const newVal = (v ?? '').trim();
   if (_empAccFilter[k] === newVal) return;
@@ -15481,6 +15487,7 @@ function clearEmpAccFilters() {
   _empAccFilter.branch = '';
   _empAccFilter.role = '';
   _empAccFilter.accStatus = '';
+  _empAccFilter.scope = '';
   renderEmpAccounts();
 }
 
@@ -15506,6 +15513,7 @@ async function renderEmpAccounts() {
         if (!name.includes(s) && !nick.includes(s) && !String(e.id).toLowerCase().includes(s) && !email.includes(s)) return false;
       }
       if (f.branch && e.branch !== f.branch) return false;
+      if (f.scope && DB.scopeOfEmployee(e) !== f.scope) return false;
       const p = byEmpId.get(e.id);
       const hasAcc = !!p;
       if (f.role) {
@@ -15519,7 +15527,7 @@ async function renderEmpAccounts() {
     });
 
     const branches = [...new Set(active.map(e => e.branch).filter(Boolean))].sort();
-    const hasFilters = !!(f.search || f.branch || f.role || f.accStatus);
+    const hasFilters = !!(f.search || f.branch || f.role || f.accStatus || f.scope);
     const isFiltered = hasFilters;
 
     box.innerHTML = `
@@ -15551,6 +15559,10 @@ async function renderEmpAccounts() {
         ${branches.length > 1 ? `<select class="sw-filter-select" onchange="setEmpAccFilter('branch', this.value)">
           <option value="">— ทุกสาขา —</option>
           ${branches.map(b => `<option value="${escapeHtml(b)}" ${f.branch === b ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
+        </select>` : ''}
+        ${(DB.getScopes?.() || []).length ? `<select class="sw-filter-select" onchange="setEmpAccFilter('scope', this.value)" title="กรองตามสายงาน">
+          <option value="">— ทุกสายงาน —</option>
+          ${DB.getScopes().map(sc => `<option value="${escapeHtml(sc.id)}" ${f.scope === sc.id ? 'selected' : ''}>${escapeHtml(sc.label)}</option>`).join('')}
         </select>` : ''}
         <select class="sw-filter-select" onchange="setEmpAccFilter('role', this.value)">
           <option value="">— ทุก Role —</option>
@@ -17610,7 +17622,7 @@ function updateShiftChangeBadge() {
 // ═══════════════════════════════════════════════════════════════════
 const _attState = (() => {
   const d = new Date();
-  return { year: d.getFullYear(), month: d.getMonth() + 1, branch: '', status: '', search: '', grace: 0, loaded: false, loading: false };
+  return { year: d.getFullYear(), month: d.getMonth() + 1, branch: '', scope: '', status: '', search: '', grace: 0, loaded: false, loading: false };
 })();
 
 const ATT_ANOMALY = {
@@ -17858,6 +17870,7 @@ function setAttMonth(val) {
   if (y && m) { _attState.year = y; _attState.month = m; _attState.loaded = false; attLoadAndRender(); }
 }
 function setAttBranch(v) { _attState.branch = v || ''; _attState.loaded = false; attLoadAndRender(); }
+function setAttScope(v) { _attState.scope = v || ''; if (router.current === 'attendance') router.go('attendance'); }
 function setAttStatus(v) { _attState.status = v || ''; if (router.current === 'attendance') router.go('attendance'); }
 // ค้นหารายบุคคล — กรองแถวในที่ (ไม่ re-render ทั้งหน้า → ไม่เด้ง focus, ไม่หน่วงเมื่อมีพันแถว)
 function setAttSearch(v) {
@@ -17874,7 +17887,15 @@ function setAttSearch(v) {
   const nores = document.getElementById('attNoSearch');
   if (nores) nores.style.display = (q && shown === 0) ? '' : 'none';
 }
-function clearAttFilter() { _attState.branch = ''; _attState.status = ''; _attState.search = ''; _attState.loaded = false; attLoadAndRender(); }
+function clearAttFilter() { _attState.branch = ''; _attState.scope = ''; _attState.status = ''; _attState.search = ''; _attState.loaded = false; attLoadAndRender(); }
+function attScopeOptionsHtml() {
+  const scopes = (DB.getScopes ? DB.getScopes() : []) || [];
+  if (!scopes.length) return '';
+  return `<select class="sw-filter-select" onchange="setAttScope(this.value)" aria-label="กรองตามสายงาน" title="กรองตามสายงาน">
+    <option value="">— ทุกสายงาน —</option>
+    ${scopes.map(s => `<option value="${escapeHtml(s.id)}" ${_attState.scope === s.id ? 'selected' : ''}>${escapeHtml(s.label)}</option>`).join('')}
+  </select>`;
+}
 
 function attMonthOptionsHtml() {
   const now = new Date();
@@ -17995,9 +18016,15 @@ router.register('attendance', () => {
   const canManage = DB.isHR;   // import/แก้/ลบ = HR/admin เท่านั้น
   const { from, to } = _attMonthRange(_attState.year, _attState.month);
   const idx = attBuildScheduleIndex();
-  const att = DB.getTimeAttendance({ branch: _attState.branch || null });
+  let att = DB.getTimeAttendance({ branch: _attState.branch || null });
   for (const r of att) r.roster = attRoster(r, idx);             // คำนวณเทียบกะต่อแถว
-  const absences = attFindAbsences(att, idx, from, to, _attState.branch || null);
+  let absences = attFindAbsences(att, idx, from, to, _attState.branch || null);
+  // กรองตามสายงาน (resolve ตำแหน่ง→ฝ่าย) — มีผลทั้งตาราง สรุป และขาดงาน
+  if (_attState.scope) {
+    const inScope = (id) => DB.scopeOfEmployee(DB.getEmployee(id)) === _attState.scope;
+    att = att.filter(r => inScope(r.employeeId));
+    absences = absences.filter(a => inScope(a.employeeId));
+  }
 
   // รวมบันทึกเวลา + แถวขาดงาน → เรียงวันที่ใหม่สุดก่อน
   const combined = att.concat(absences).sort((a, b) =>
@@ -18018,7 +18045,7 @@ router.register('attendance', () => {
     if (f === 'no_shift')   return k === 'no_shift';
     return true;
   });
-  const hasFilter = !!(_attState.branch || _attState.status || _attState.search);
+  const hasFilter = !!(_attState.branch || _attState.scope || _attState.status || _attState.search);
 
   // สรุป
   const cnt = { normal:0, late:0, early:0, off:0, incomplete:0, noshift:0 };
@@ -18074,6 +18101,7 @@ router.register('attendance', () => {
           placeholder="🔍 ค้นหาชื่อ / รหัสพนักงาน" aria-label="ค้นหาพนักงาน"/>
         <select class="sw-filter-select" onchange="setAttMonth(this.value)" aria-label="เลือกเดือน">${attMonthOptionsHtml()}</select>
         <select class="sw-filter-select" onchange="setAttBranch(this.value)" aria-label="กรองตามสาขา">${attBranchOptionsHtml()}</select>
+        ${attScopeOptionsHtml()}
         <select class="sw-filter-select" onchange="setAttStatus(this.value)" aria-label="กรองตามผลเทียบกะ">
           <option value="">— ทุกสถานะ —</option>
           <option value="issues" ${f==='issues'?'selected':''}>เฉพาะที่มีปัญหา</option>
@@ -18269,9 +18297,14 @@ async function attExportMonth() {
   if (typeof XLSX === 'undefined') { try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; } }
   const { from, to } = _attMonthRange(_attState.year, _attState.month);
   const idx = attBuildScheduleIndex();
-  const att = DB.getTimeAttendance({ branch: _attState.branch || null });
+  let att = DB.getTimeAttendance({ branch: _attState.branch || null });
   for (const r of att) r.roster = attRoster(r, idx);
-  const absences = attFindAbsences(att, idx, from, to, _attState.branch || null);
+  let absences = attFindAbsences(att, idx, from, to, _attState.branch || null);
+  if (_attState.scope) {
+    const inScope = (id) => DB.scopeOfEmployee(DB.getEmployee(id)) === _attState.scope;
+    att = att.filter(r => inScope(r.employeeId));
+    absences = absences.filter(a => inScope(a.employeeId));
+  }
   const combined = att.concat(absences).sort((a, b) =>
     a.workDate < b.workDate ? 1 : a.workDate > b.workDate ? -1 : String(a.employeeId).localeCompare(String(b.employeeId)));
   if (!combined.length) { toast('ไม่มีข้อมูลให้ export', 'info'); return; }
