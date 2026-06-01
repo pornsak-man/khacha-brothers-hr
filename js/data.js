@@ -1802,6 +1802,34 @@ const DB = {
     this.data.employees = this.data.employees.filter(e => e.id !== id);
     this._invalidateIndex('employees');
   },
+  // เปลี่ยนรหัสพนักงาน (Primary Key) อย่างปลอดภัย — ผ่าน RPC ที่ cascade ทุก FK
+  // + อัปเดต user_profiles + บัญชี login (auth) · admin/HR เท่านั้น
+  // ต้องรัน migration: supabase-migration-rename-employee-id.sql ก่อน
+  async renameEmployeeId(oldId, newId) {
+    if (!this.isHR) throw new Error('ต้องเป็น admin หรือ HR');
+    const o = String(oldId == null ? '' : oldId).trim();
+    const n = String(newId == null ? '' : newId).trim();
+    if (!o || !n) throw new Error('รหัสห้ามว่าง');
+    if (o === n) throw new Error('รหัสใหม่เหมือนเดิม');
+    const { data, error } = await this.client.rpc('rename_employee_id', { p_old: o, p_new: n });
+    if (error) throw error;
+    // ── อัปเดต cache ในเครื่องให้ตรงกับ DB (DB ถูกต้องแล้วจาก cascade) ──
+    const emp = this.data.employees.find(e => String(e.id) === o);
+    if (emp) emp.id = n;
+    this._invalidateIndex('employees');
+    // related cache arrays ที่อ้าง employeeId (camelCase จาก _fromDB)
+    for (const key of ['loans', 'advances', 'allowances', 'evaluations', 'salaryHistory',
+                       'leaveRequests', 'timeAttendance', 'scheduleEntries', 'calendarItems']) {
+      const arr = this.data[key];
+      if (Array.isArray(arr)) for (const row of arr) if (String(row.employeeId) === o) row.employeeId = n;
+    }
+    // user_profiles cache (employee_id snake_case)
+    if (Array.isArray(this._userProfiles)) {
+      for (const p of this._userProfiles) if (String(p.employee_id) === o) p.employee_id = n;
+    }
+    if (typeof this._clearAttCache === 'function') this._clearAttCache();
+    return data;
+  },
   nextEmployeeId() {
     // รหัสพนักงาน: ตัวเลขล้วน ไม่มี padding (เช่น "8", "121", "62002")
     const nums = this.data.employees.map(e => parseInt(String(e.id).replace(/\D/g, ''), 10)).filter(n => !isNaN(n));

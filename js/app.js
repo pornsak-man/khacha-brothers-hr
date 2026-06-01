@@ -3321,7 +3321,7 @@ async function openEmployeeForm(id = null, init = null, onSaved = null) {
       <div class="form-section">
         <h3>ข้อมูลพื้นฐาน</h3>
         <div class="form-grid">
-          <div class="form-group"><label>รหัสพนักงาน *</label><input name="id" value="${escapeHtml(emp.id)}" required ${id ? 'readonly' : ''}/></div>
+          <div class="form-group"><label>รหัสพนักงาน *</label><input name="id" value="${escapeHtml(emp.id)}" required ${id && !DB.isHR ? 'readonly' : ''}/>${id && DB.isHR ? '<div class="muted-2" style="font-size:11px;margin-top:3px;color:var(--warning,#b8860b)">⚠ แก้รหัสได้ — ระบบจะย้ายข้อมูลที่เชื่อม (เวลาเข้างาน/ตารางกะ/ฯลฯ) + บัญชี login ให้อัตโนมัติ</div>' : ''}</div>
           <div class="form-group"><label>คำนำหน้า</label><select name="title">${opt(EMP_OPTIONS.titles, emp.title)}</select></div>
           <div class="form-group"><label>ชื่อ *</label><input name="firstName" value="${escapeHtml(emp.firstName)}" required/></div>
           <div class="form-group"><label>นามสกุล</label><input name="lastName" value="${escapeHtml(emp.lastName)}"/></div>
@@ -3859,6 +3859,32 @@ async function openEmployeeForm(id = null, init = null, onSaved = null) {
       const newBranches = e.target.querySelectorAll('input[name="userBranches"]:checked');
       const newBranchesArr = Array.from(newBranches).map(i => i.value);
       delete data.userBranches;
+
+      // ── [HR/admin] เปลี่ยนรหัสพนักงาน (Primary Key) — cascade ข้อมูลที่เชื่อม + บัญชี login ──
+      if (id && DB.isHR) {
+        const newIdTrim = String(data.id || '').trim();
+        if (newIdTrim && newIdTrim !== String(id).trim()) {
+          const ok = await modal.confirm('เปลี่ยนรหัสพนักงาน',
+            `ยืนยันเปลี่ยนรหัส "${escapeHtml(id)}" → "${escapeHtml(newIdTrim)}"?\n\nระบบจะย้ายข้อมูลที่เชื่อมทั้งหมด (เวลาเข้างาน, ตารางกะ, เงินกู้, ลา, ประเมิน ฯลฯ) และอัปเดตบัญชี login ให้อัตโนมัติ`);
+          if (!ok) { btn.disabled = false; btn.textContent = 'บันทึก'; return; }
+          // กันรหัสใหม่ซ้ำ
+          const dup = await DB.checkDuplicateEmployeeId(newIdTrim);
+          if (dup && String(dup.id).trim() !== String(id).trim()) {
+            toast('รหัสใหม่ซ้ำกับพนักงานที่มีอยู่: ' + newIdTrim, 'error');
+            btn.disabled = false; btn.textContent = 'บันทึก'; return;
+          }
+          btn.textContent = 'กำลังเปลี่ยนรหัส...';
+          try {
+            await DB.renameEmployeeId(id, newIdTrim);
+            id = newIdTrim;            // ใช้รหัสใหม่กับทุก operation ที่เหลือ (รูป/บันทึก/role)
+            data.id = newIdTrim;
+            if (emp) emp.id = newIdTrim;
+          } catch (ex) {
+            toast('เปลี่ยนรหัสไม่สำเร็จ: ' + (ex.message || String(ex)), 'error');
+            btn.disabled = false; btn.textContent = 'บันทึก'; return;
+          }
+        }
+      }
 
       ['salary', 'allowancePosition', 'allowanceTravel', 'allowanceFood',
        'allowancePerDiem', 'allowanceLanguage', 'allowancePhone', 'allowanceOther'].forEach(k => data[k] = Number(data[k]));
