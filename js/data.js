@@ -1801,10 +1801,18 @@ const DB = {
     this._invalidateIndex('employees');
     return mapped;
   },
+  // ลบพนักงาน + เคลียร์บัญชี login ให้ครบ (กัน orphan login account)
+  // ผ่าน RPC delete_employee_full: ลบ auth.identities + user_profiles +
+  // auth.users (email={id}@kacha.local) + employees ในทรานแซกชันเดียว
+  // (ลบเฉพาะบัญชี @kacha.local · บัญชี admin/HR อีเมลจริงแค่ตัดลิงก์ ไม่ลบ)
+  // ต้องรัน migration: supabase-migration-delete-employee-full.sql ก่อน
   async deleteEmployee(id) {
-    const { error } = await this.client.from('employees').delete().eq('id', id);
+    if (!this.isHR) throw new Error('ต้องเป็น admin หรือ HR');
+    const { error } = await this.client.rpc('delete_employee_full', { p_employee_id: String(id) });
     if (error) throw error;
     this.data.employees = this.data.employees.filter(e => e.id !== id);
+    // บัญชี/profile ที่ผูกรหัสนี้ถูกลบ/ตัดลิงก์ใน DB แล้ว → ล้าง cache ให้ lazy reload
+    if (this._userProfiles) this._userProfiles = null;
     this._invalidateIndex('employees');
   },
   // เปลี่ยนรหัสพนักงาน (Primary Key) อย่างปลอดภัย — ผ่าน RPC ที่ cascade ทุก FK
