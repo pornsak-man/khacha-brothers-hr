@@ -20452,12 +20452,12 @@ function openShiftPicker(empId, workDate, entryId) {
         const sh = DB.getShift(shiftId);
         if (sh) {
           const timeText = sh.isOffDay ? 'OFF' : `${(sh.startTime || '').slice(0,5)}–${(sh.endTime || '').slice(0,5)}`;
-          cellEl.innerHTML = `<span class="shift-badge shift-badge-pending" style="background:${sh.color}33;color:${sh.color};border-color:${sh.color}66">
+          // ★ แสดงผลให้ "ชัดทันที" เหมือน cell จริง (ไม่จาง/ไม่กระพริบ) — save วิ่งเบื้องหลัง, revert ถ้า error
+          cellEl.innerHTML = `<span class="shift-badge" style="background:${escapeHtml(sh.color)}33;border-color:${escapeHtml(sh.color)}">
             <strong>${escapeHtml(sh.code)}</strong>
             <span class="shift-badge-time">${escapeHtml(timeText)}</span>
           </span>`;
-          // เพิ่ม class แสดงว่ากำลัง save (subtle pulse)
-          cellEl.classList.add('schedule-cell-pending');
+          cellEl.classList.toggle('schedule-cell-off', !!sh.isOffDay);
         }
       }
 
@@ -20479,9 +20479,7 @@ function openShiftPicker(empId, workDate, entryId) {
             customBreakMinutes: 0,
             customLabel: ''
           });
-          // [PERF] ลบ pending state — realtime subscription หรือ next render
-          // จะ replace cell ด้วยข้อมูลจริง (รวม totals + row summary)
-          if (cellEl) cellEl.classList.remove('schedule-cell-pending');
+          // cell แสดงผลสุดท้าย (ชัด) ไว้แล้วตั้งแต่ตอนเลือก — ไม่ต้อง replace
           // ★ Surgical update: คำนวณ row/day/grand totals ใหม่ + อัปเดตเฉพาะ DOM ส่วนนั้น
           // ไม่ re-render ทั้งหน้า → ไม่กระตุก + ผลรวมตรงทันที
           if (typeof refreshScheduleTotals === 'function') {
