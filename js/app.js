@@ -18823,17 +18823,28 @@ function openImportAttendance() {
     const batchId = (window.crypto?.randomUUID?.()) || ('b-' + Date.now() + '-' + Math.random().toString(36).slice(2));
     const btn = $('#attImpCommit'); btn.disabled = true;
     $('#attImpStep3').innerHTML = `<div class="card mt-3"><div style="margin-bottom:10px">กำลังนำเข้า <strong id="attProg">0</strong> / ${records.length.toLocaleString()}</div><div class="progress-bar"><div class="progress-fill" id="attProgFill" style="width:0%"></div></div></div>`;
-    const CHUNK = 400;
+    // [PERF] ส่งขนาน + chunk ใหญ่ → เร็วกว่าส่งทีละก้อนมาก (ซ่อน latency เครือข่าย)
+    //   records แต่ละแถว = (คน, วัน) ไม่ซ้ำกัน → upsert พร้อมกันได้ปลอดภัย ไม่ชน lock
+    const CHUNK = 1500, CONCURRENCY = 6;
     const agg = { inserted: 0, updated: 0, skipped: 0 };
-    try {
-      for (let i = 0; i < records.length; i += CHUNK) {
-        const res = await DB.importTimeAttendance(records.slice(i, i + CHUNK), batchId);
+    const chunks = [];
+    for (let i = 0; i < records.length; i += CHUNK) chunks.push(records.slice(i, i + CHUNK));
+    let done = 0, next = 0;
+    const updateProg = () => {
+      const fill = $('#attProgFill'), txt = $('#attProg');
+      if (fill) fill.style.width = (done / records.length * 100) + '%';
+      if (txt) txt.textContent = done.toLocaleString();
+    };
+    const worker = async () => {
+      while (next < chunks.length) {
+        const c = chunks[next++];
+        const res = await DB.importTimeAttendance(c, batchId);
         agg.inserted += res.inserted || 0; agg.updated += res.updated || 0; agg.skipped += res.skipped || 0;
-        const done = Math.min(i + CHUNK, records.length);
-        const fill = $('#attProgFill'), txt = $('#attProg');
-        if (fill) fill.style.width = (done / records.length * 100) + '%';
-        if (txt) txt.textContent = done.toLocaleString();
+        done += c.length; updateProg();
       }
+    };
+    try {
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, chunks.length) }, worker));
       // ตั้งเดือนที่แสดงให้ตรงกับข้อมูลที่เพิ่ง import (วันล่าสุด)
       const maxDate = records.reduce((mx, r) => r.workDate > mx ? r.workDate : mx, records[0].workDate);
       const [yy, mm] = maxDate.split('-').map(Number);
