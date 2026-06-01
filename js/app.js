@@ -3875,7 +3875,8 @@ async function openEmployeeForm(id = null, init = null, onSaved = null) {
           }
           btn.textContent = 'กำลังเปลี่ยนรหัส...';
           try {
-            await DB.renameEmployeeId(id, newIdTrim);
+            const rr = await DB.renameEmployeeId(id, newIdTrim);
+            if (rr && rr.orphans_cleaned > 0) toast(`ล้างบัญชี login เก่าที่ค้างรหัส ${newIdTrim} ออก ${rr.orphans_cleaned} รายการ`, 'info');
             id = newIdTrim;            // ใช้รหัสใหม่กับทุก operation ที่เหลือ (รูป/บันทึก/role)
             data.id = newIdTrim;
             if (emp) emp.id = newIdTrim;

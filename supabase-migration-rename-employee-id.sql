@@ -59,7 +59,10 @@ DECLARE
   v_old_email  TEXT;
   v_new_email  TEXT;
   v_uid        UUID;
-  v_login_updated BOOLEAN := false;
+  v_conflict_uid    UUID;
+  v_conflict_emp    TEXT;
+  v_login_updated   BOOLEAN := false;
+  v_orphans_cleaned INT := 0;
 BEGIN
   -- สิทธิ์: admin/HR เท่านั้น (เช็ค user ที่เรียก ไม่ใช่ owner ของ function)
   IF NOT public.is_hr_or_admin() THEN
@@ -79,20 +82,39 @@ BEGIN
     RAISE EXCEPTION 'รหัสใหม่ % ซ้ำกับพนักงานที่มีอยู่แล้ว', v_new;
   END IF;
 
+  v_old_email := lower(v_old) || '@kacha.local';
+  v_new_email := lower(v_new) || '@kacha.local';
+
+  -- 0) เก็บกวาด orphan ที่ยึดอีเมล {new}@kacha.local ไว้ (เหลือจากพนักงานเก่าที่ถูกลบ
+  --    แต่บัญชี login ไม่ถูกลบตาม) → ลบเฉพาะที่ "ไม่มีพนักงานจริงผูกอยู่" เท่านั้น (ปลอดภัย)
+  --    ถ้าอีเมลนี้ผูกกับพนักงานจริงคนอื่น → แจ้ง error ให้ชัด ไม่ลบมั่ว
+  FOR v_conflict_uid IN SELECT id FROM auth.users WHERE lower(email) = v_new_email LOOP
+    SELECT employee_id INTO v_conflict_emp
+      FROM public.user_profiles WHERE user_id = v_conflict_uid LIMIT 1;
+    -- block เฉพาะถ้าอีเมลนี้ผูกกับ "พนักงานจริงคนอื่น" (ไม่ใช่คนที่กำลัง rename เอง)
+    IF v_conflict_emp IS NOT NULL
+       AND v_conflict_emp <> v_old
+       AND EXISTS (SELECT 1 FROM public.employees WHERE id = v_conflict_emp) THEN
+      RAISE EXCEPTION 'อีเมล login % ถูกใช้โดยพนักงานรหัส % อยู่ — ต้องแก้/ลบรหัสนั้นก่อน', v_new_email, v_conflict_emp;
+    END IF;
+    BEGIN
+      DELETE FROM auth.identities WHERE user_id = v_conflict_uid;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    DELETE FROM public.user_profiles WHERE user_id = v_conflict_uid;
+    DELETE FROM auth.users WHERE id = v_conflict_uid;
+    v_orphans_cleaned := v_orphans_cleaned + 1;
+  END LOOP;
+
   -- 1) เปลี่ยน PK — cascade ไปทุก FK (จาก STEP 1) อัตโนมัติ
   UPDATE public.employees SET id = v_new WHERE id = v_old;
 
   -- 2) user_profiles.employee_id เป็น loose column (ไม่มี FK) → อัปเดตเอง
   UPDATE public.user_profiles SET employee_id = v_new WHERE employee_id = v_old;
 
-  -- 3) บัญชี login: email = {id}@kacha.local → อัปเดต auth ถ้ามีบัญชีอยู่
-  v_old_email := lower(v_old) || '@kacha.local';
-  v_new_email := lower(v_new) || '@kacha.local';
+  -- 3) บัญชี login ของพนักงานคนนี้: เปลี่ยน email → {new}@kacha.local (อีเมลว่างแล้วจากขั้น 0)
   SELECT id INTO v_uid FROM auth.users WHERE lower(email) = v_old_email LIMIT 1;
   IF v_uid IS NOT NULL THEN
-    IF EXISTS (SELECT 1 FROM auth.users WHERE lower(email) = v_new_email AND id <> v_uid) THEN
-      RAISE EXCEPTION 'อีเมล login % มีบัญชีอื่นใช้แล้ว', v_new_email;
-    END IF;
     UPDATE auth.users SET email = v_new_email WHERE id = v_uid;
     -- auth.identities (best-effort — กันพังถ้าโครงสร้าง auth ต่างเวอร์ชัน)
     BEGIN
@@ -106,7 +128,9 @@ BEGIN
     v_login_updated := true;
   END IF;
 
-  RETURN jsonb_build_object('old', v_old, 'new', v_new, 'login_updated', v_login_updated);
+  RETURN jsonb_build_object('old', v_old, 'new', v_new,
+                            'login_updated', v_login_updated,
+                            'orphans_cleaned', v_orphans_cleaned);
 END $$;
 
 GRANT EXECUTE ON FUNCTION public.rename_employee_id(TEXT, TEXT) TO authenticated;
