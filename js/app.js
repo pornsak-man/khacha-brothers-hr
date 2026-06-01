@@ -18017,7 +18017,7 @@ function updateShiftChangeBadge() {
 // ═══════════════════════════════════════════════════════════════════
 const _attState = (() => {
   const d = new Date();
-  return { year: d.getFullYear(), month: d.getMonth() + 1, branch: '', scope: '', status: '', search: '', grace: 0, view: 'daily', loaded: false, loading: false };
+  return { year: d.getFullYear(), month: d.getMonth() + 1, branch: '', scope: '', status: '', search: '', grace: 0, view: 'daily', page: 1, loaded: false, loading: false };
 })();
 // [PERF] memo ผลคำนวณ pipeline หนัก (idx/roster/absences/leave/สรุป) — สลับ view/สถานะ/ค้นหา ใช้ซ้ำได้ ไม่คำนวณใหม่
 let _attComputeCache = null;
@@ -18265,15 +18265,20 @@ async function attLoadAndRender() {
 }
 function setAttMonth(val) {
   const [y, m] = String(val).split('-').map(Number);
-  if (y && m) { _attState.year = y; _attState.month = m; _attState.loaded = false; attLoadAndRender(); }
+  if (y && m) { _attState.year = y; _attState.month = m; _attState.page = 1; _attState.loaded = false; attLoadAndRender(); }
 }
-function setAttBranch(v) { _attState.branch = v || ''; _attState.loaded = false; attLoadAndRender(); }
-function setAttScope(v) { _attState.scope = v || ''; if (router.current === 'attendance') router.go('attendance'); }
-function setAttStatus(v) { _attState.status = v || ''; if (router.current === 'attendance') router.go('attendance'); }
-function setAttView(v) { _attState.view = (v === 'summary') ? 'summary' : 'daily'; if (router.current === 'attendance') router.go('attendance'); }
-// ค้นหารายบุคคล — กรองแถวในที่ (ไม่ re-render ทั้งหน้า → ไม่เด้ง focus, ไม่หน่วงเมื่อมีพันแถว)
+function setAttBranch(v) { _attState.branch = v || ''; _attState.page = 1; _attState.loaded = false; attLoadAndRender(); }
+function setAttScope(v) { _attState.scope = v || ''; _attState.page = 1; if (router.current === 'attendance') router.go('attendance'); }
+function setAttStatus(v) { _attState.status = v || ''; _attState.page = 1; if (router.current === 'attendance') router.go('attendance'); }
+function setAttView(v) { _attState.view = (v === 'summary') ? 'summary' : 'daily'; _attState.page = 1; if (router.current === 'attendance') router.go('attendance'); }
+// ค้นหารายบุคคล — สรุปรายเดือน: re-render เฉพาะกริด (รองรับแบ่งหน้า) · รายวัน: กรองในที่ (ไม่หลุด focus)
 function setAttSearch(v) {
   _attState.search = v || '';
+  if (_attState.view === 'summary') {
+    _attState.page = 1;
+    _attRerenderAttGrid();
+    return;
+  }
   const q = _attState.search.trim().toLowerCase();
   const tbody = document.getElementById('attTbody');
   if (!tbody) return;
@@ -18467,8 +18472,10 @@ function _attGridCellTd(rec, sched, onLeave, dateStr, todayStr, weekend) {
   if (sh && sh.isOff) return `<td class="att-c${we}"><div class="att-c-off">หยุด</div></td>`;
   return `<td class="att-c${we}"></td>`;
 }
-function renderAttSummaryTable(att, absences, from, to, idx) {
-  const leaveSet = (_attComputeCache && _attComputeCache.leaveSet) || attBuildLeaveIndex(from, to);
+// [PERF] คำนวณสรุปต่อพนักงาน (byEmp) + attMap ครั้งเดียวต่อ memo — ค้นหา/เปลี่ยนหน้า ใช้ซ้ำได้
+function _attSummaryRows(att, absences, leaveSet) {
+  const C = _attComputeCache;
+  if (C && C.summaryRowsAll && C.attMap) return { rowsAll: C.summaryRowsAll, attMap: C.attMap };
   const byEmp = new Map();
   const ensure = (empId) => {
     let t = byEmp.get(empId);
@@ -18480,6 +18487,7 @@ function renderAttSummaryTable(att, absences, from, to, idx) {
     }
     return t;
   };
+  const attMap = new Map();
   for (const r of att) {
     const t = ensure(r.employeeId);
     t.recorded++;
@@ -18489,6 +18497,7 @@ function renderAttSummaryTable(att, absences, from, to, idx) {
     if (k === 'late' || k === 'late_early') { t.late++; t.lateMin += (r.roster?.lateMin || 0); }
     if (k === 'early' || k === 'late_early') t.early++;
     if (r.roster?.shift && !r.roster.shift.isOff) t.shift++;
+    attMap.set(r.employeeId + '|' + r.workDate, r);
   }
   for (const a of absences) {
     const t = ensure(a.employeeId);
@@ -18509,19 +18518,36 @@ function renderAttSummaryTable(att, absences, from, to, idx) {
     if (_attState.scope && DB.scopeOfEmployee(e) !== _attState.scope) continue;
     ensure(empId).leave = cnt;
   }
+  const rowsAll = [...byEmp.values()].sort((a, b) => String(a.empId).localeCompare(String(b.empId)));
+  if (C) { C.summaryRowsAll = rowsAll; C.attMap = attMap; }
+  return { rowsAll, attMap };
+}
 
-  let rows = [...byEmp.values()].sort((a, b) => String(a.empId).localeCompare(String(b.empId)));
+const ATT_PAGE_SIZE = 40;   // แบ่งหน้า — วาดทีละหน้า กันหน่วงเมื่อพนักงานเยอะ
+
+function renderAttSummaryTable(att, absences, from, to, idx) {
+  const leaveSet = (_attComputeCache && _attComputeCache.leaveSet) || attBuildLeaveIndex(from, to);
+  const { rowsAll, attMap } = _attSummaryRows(att, absences, leaveSet);
+
+  // กรองสถานะ + คำค้น (ทำที่ข้อมูล เพื่อให้แบ่งหน้าถูกต้อง)
   const f = _attState.status;
-  if (f) rows = rows.filter(t =>
+  let rows = f ? rowsAll.filter(t =>
     f === 'late' ? t.late > 0 : f === 'early' ? t.early > 0 : f === 'absent' ? t.absent > 0 :
-    f === 'issues' ? (t.late > 0 || t.early > 0 || t.absent > 0) : true);
+    f === 'issues' ? (t.late > 0 || t.early > 0 || t.absent > 0) : true) : rowsAll;
+  const q = (_attState.search || '').trim().toLowerCase();
+  if (q) rows = rows.filter(t => (t.name + ' ' + t.empId).toLowerCase().includes(q));
 
   if (!rows.length) {
-    return `<div class="empty-state" style="padding:32px"><div class="icon">📅</div><div>ไม่มีข้อมูลในเดือนนี้</div></div>`;
+    return `<div class="empty-state" style="padding:32px"><div class="icon">📅</div><div>${(q || f) ? 'ไม่พบพนักงานตามเงื่อนไข' : 'ไม่มีข้อมูลในเดือนนี้'}</div></div>`;
   }
+
+  // ── แบ่งหน้า ──
+  const totalPages = Math.max(1, Math.ceil(rows.length / ATT_PAGE_SIZE));
+  const page = Math.min(Math.max(1, _attState.page || 1), totalPages);
+  const startIdx = (page - 1) * ATT_PAGE_SIZE;
+  const pageRows = rows.slice(startIdx, startIdx + ATT_PAGE_SIZE);
+
   // ── สร้างกริดรายวัน: วันที่ 1 → สิ้นเดือน ──
-  const attMap = new Map();
-  for (const r of att) attMap.set(r.employeeId + '|' + r.workDate, r);
   const schedIdx = idx || attBuildScheduleIndex(from, to);
   const todayStr = tz.today();
   const WD = ['อา','จ','อ','พ','พฤ','ศ','ส'];
@@ -18531,15 +18557,16 @@ function renderAttSummaryTable(att, absences, from, to, idx) {
     const dow = new Date(_attState.year, _attState.month - 1, d).getDay();
     days.push({ d, dow, dateStr: `${_attState.year}-${String(_attState.month).padStart(2,'0')}-${String(d).padStart(2,'0')}`, weekend: dow === 0 || dow === 6 });
   }
+  // ผลรวมท้ายตาราง — จากทุกคนที่ตรงเงื่อนไข (ไม่ใช่แค่หน้านี้)
   const tot = rows.reduce((s, t) => { s.present += t.present; s.late += t.late; s.lateMin += t.lateMin; s.absent += t.absent; s.leave += t.leave; return s; }, { present:0, late:0, lateMin:0, absent:0, leave:0 });
   const C_D = '#dc2626', C_B = '#2563eb', C_G = '#16a34a', C_W = '#b87a08';
 
   const headDays = days.map(day => `<th class="${day.weekend ? 'att-we' : ''}"><div>${day.d}</div><div style="font-size:9px;font-weight:400;color:var(--text-2)">${WD[day.dow]}</div></th>`).join('');
-  const rowsHtml = rows.map(t => {
+  const rowsHtml = pageRows.map(t => {
     const cells = days.map(day => _attGridCellTd(
       attMap.get(t.empId + '|' + day.dateStr), schedIdx.get(t.empId + '|' + day.dateStr),
       leaveSet.has(t.empId + '|' + day.dateStr), day.dateStr, todayStr, day.weekend)).join('');
-    return `<tr data-search="${escapeHtml((t.name + ' ' + t.empId).toLowerCase())}">
+    return `<tr>
       <td class="att-gname"><a href="#" onclick="viewEmployee('${escapeHtml(t.empId)}');return false;">${escapeHtml(t.name || t.empId)}</a><div class="muted-2" style="font-size:10px">${escapeHtml(t.empId)}${t.branch ? ' · ' + escapeHtml(t.branch) : ''}</div></td>
       ${cells}
       <td class="att-sumcol">${_attNumCell(t.present)}</td>
@@ -18549,14 +18576,22 @@ function renderAttSummaryTable(att, absences, from, to, idx) {
     </tr>`;
   }).join('');
 
+  const showFrom = startIdx + 1, showTo = startIdx + pageRows.length;
+  const pager = totalPages > 1 ? `
+    <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:10px;font-size:13px;flex-wrap:wrap">
+      <span class="muted-2">แสดง ${showFrom.toLocaleString()}–${showTo.toLocaleString()} จาก ${rows.length.toLocaleString()} คน</span>
+      <button class="btn btn-ghost btn-sm" ${page<=1?'disabled':''} onclick="goAttPage(${page-1})">‹ ก่อนหน้า</button>
+      <span class="muted-2">หน้า ${page}/${totalPages}</span>
+      <button class="btn btn-ghost btn-sm" ${page>=totalPages?'disabled':''} onclick="goAttPage(${page+1})">ถัดไป ›</button>
+    </div>` : '';
+
   return `
-    <div class="muted-2" style="font-size:12px;margin-bottom:8px">ตารางบันทึกเวลารายวัน · ${_TH_MONTHS[_attState.month-1]} ${_attState.year+543} · ${rows.length.toLocaleString()} คน <span style="opacity:.7">(เลื่อนซ้าย–ขวาเพื่อดูทุกวัน)</span></div>
+    <div class="muted-2" style="font-size:12px;margin-bottom:8px">ตารางบันทึกเวลารายวัน · ${_TH_MONTHS[_attState.month-1]} ${_attState.year+543} · ${rows.length.toLocaleString()} คน${totalPages>1?` · หน้า ${page}/${totalPages}`:''} <span style="opacity:.7">(เลื่อนซ้าย–ขวาเพื่อดูทุกวัน)</span></div>
     <div class="table-wrap">
       <table class="table att-grid">
         <thead><tr><th class="att-gname">พนักงาน</th>${headDays}<th class="att-sumcol">มา</th><th class="att-sumcol">สาย<div style="font-size:9px;font-weight:400;color:var(--text-2)">ครั้ง/นาที</div></th><th class="att-sumcol">ขาด</th><th class="att-sumcol">ลา</th></tr></thead>
-        <tbody id="attTbody">
+        <tbody>
           ${rowsHtml}
-          <tr id="attNoSearch" style="display:none"><td colspan="${days.length + 5}" style="text-align:center;padding:24px" class="muted-2">ไม่พบพนักงานที่ค้นหา</td></tr>
         </tbody>
         <tfoot><tr style="font-weight:700">
           <td class="att-gname">รวม (${rows.length.toLocaleString()} คน)</td>
@@ -18568,11 +18603,21 @@ function renderAttSummaryTable(att, absences, from, to, idx) {
         </tr></tfoot>
       </table>
     </div>
+    ${pager}
     <div class="muted-2" style="font-size:11.5px;margin-top:8px;display:flex;gap:14px;flex-wrap:wrap">
       <span>ในช่อง: บรรทัดบน=กะ · เข้า · ออก</span><span><b style="color:${C_D}">เข้าแดง</b>=สาย</span><span><b style="color:${C_W}">ออกเหลือง</b>=ออกก่อน</span><span><b style="color:${C_D}">ข</b>=ขาด</span><span><b style="color:${C_B}">ล</b>=ลา</span><span><b style="color:var(--text-2)">หยุด</b>=วันหยุด</span>
     </div>
   `;
 }
+// re-render เฉพาะกริดสรุป (ค้นหา/เปลี่ยนหน้า) — ไม่แตะ search input → ไม่หลุด focus
+function _attRerenderAttGrid() {
+  const region = document.getElementById('attGridRegion');
+  if (!region || (typeof router !== 'undefined' && router.current !== 'attendance') || !_attComputeCache) return;
+  const C = _attComputeCache;
+  const { from, to } = _attMonthRange(_attState.year, _attState.month);
+  region.innerHTML = renderAttSummaryTable(C.att, C.absences, from, to, C.idx);
+}
+function goAttPage(n) { _attState.page = n; _attRerenderAttGrid(); }
 
 router.register('attendance', () => {
   if (!_attState.loaded && !_attState.loading) attLoadAndRender();
@@ -18644,7 +18689,7 @@ router.register('attendance', () => {
   const hasFilter = !!(_attState.branch || _attState.scope || _attState.status || _attState.search);
   const hasSchedule = (DB.data.scheduleEntries || []).length > 0;
   // หลัง re-render (เปลี่ยนเดือน/สาขา/สถานะ) → กรองคำค้นเดิมซ้ำในที่
-  window.afterRender = () => { try { setAttSearch(_attState.search); } catch (e) {} };
+  window.afterRender = () => { try { if (_attState.view !== 'summary') setAttSearch(_attState.search); } catch (e) {} };
 
   return `
     <div class="sw-page-title">บันทึกเวลาทำงาน (สแกนนิ้ว)</div>
@@ -18701,7 +18746,7 @@ router.register('attendance', () => {
         <button class="btn btn-sm ${_attState.view !== 'summary' ? 'btn-primary' : 'btn-ghost'}" onclick="setAttView('daily')">รายวัน</button>
         <button class="btn btn-sm ${_attState.view === 'summary' ? 'btn-primary' : 'btn-ghost'}" onclick="setAttView('summary')">ตารางรายเดือน</button>
       </div>
-      ${_attState.loading ? `<div class="muted-2" style="padding:24px;text-align:center">กำลังโหลดข้อมูลเดือนนี้...</div>` : (_attState.view === 'summary' ? renderAttSummaryTable(att, absences, from, to, idx) : (list.length === 0 ? `
+      ${_attState.loading ? `<div class="muted-2" style="padding:24px;text-align:center">กำลังโหลดข้อมูลเดือนนี้...</div>` : (_attState.view === 'summary' ? `<div id="attGridRegion">${renderAttSummaryTable(att, absences, from, to, idx)}</div>` : (list.length === 0 ? `
         <div class="empty-state" style="padding:32px">
           <div class="icon">🕘</div>
           <div>${hasFilter ? 'ไม่พบข้อมูลตามตัวกรอง' : 'ยังไม่มีข้อมูลเวลาในเดือนนี้'}</div>
