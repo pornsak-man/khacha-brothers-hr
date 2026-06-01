@@ -1062,10 +1062,15 @@ const DB = {
     if (eventType === 'INSERT' && newRow) {
       if (!list.find(x => x.id === newRow.id)) list.unshift(m.from(newRow));
     } else if (eventType === 'UPDATE' && newRow) {
+      // ★ ถ้า PK เปลี่ยน (เช่น rename รหัสพนักงาน 5468-B → 5468) → ลบ entry รหัสเก่าทิ้งก่อน กัน duplicate
+      if (oldRow && oldRow.id != null && String(oldRow.id) !== String(newRow.id)) {
+        const oldIdx = list.findIndex(x => x.id === oldRow.id);
+        if (oldIdx >= 0) { payload._cachedOld = list[oldIdx]; list.splice(oldIdx, 1); }
+      }
       const idx = list.findIndex(x => x.id === newRow.id);
       if (idx >= 0) {
         // เก็บค่าเดิม (mapped format) ใน payload เพื่อให้ event handler เปรียบเทียบได้
-        payload._cachedOld = list[idx];
+        if (!payload._cachedOld) payload._cachedOld = list[idx];
         list[idx] = m.from(newRow);
       } else list.unshift(m.from(newRow));
     } else if (eventType === 'DELETE' && oldRow) {

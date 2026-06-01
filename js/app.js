@@ -18019,6 +18019,8 @@ const _attState = (() => {
   const d = new Date();
   return { year: d.getFullYear(), month: d.getMonth() + 1, branch: '', scope: '', status: '', search: '', grace: 0, view: 'daily', loaded: false, loading: false };
 })();
+// [PERF] memo ผลคำนวณ pipeline หนัก (idx/roster/absences/leave/สรุป) — สลับ view/สถานะ/ค้นหา ใช้ซ้ำได้ ไม่คำนวณใหม่
+let _attComputeCache = null;
 
 const ATT_ANOMALY = {
   missing_in:   { label: 'ลืมสแกนเข้า',     cls: 'badge-soft-danger' },
@@ -18253,6 +18255,7 @@ async function attLoadAndRender() {
   try {
     await DB.loadTimeAttendance({ from, to, branch: _attState.branch || null });
     _attState.loaded = true;
+    _attComputeCache = null;   // ข้อมูลโหลดใหม่ → ล้าง memo
   } catch (ex) {
     toast('โหลดข้อมูลเวลาไม่สำเร็จ: ' + (ex.message || ex), 'error');
   } finally {
@@ -18465,7 +18468,7 @@ function _attGridCellTd(rec, sched, onLeave, dateStr, todayStr, weekend) {
   return `<td class="att-c${we}"></td>`;
 }
 function renderAttSummaryTable(att, absences, from, to, idx) {
-  const leaveSet = attBuildLeaveIndex(from, to);
+  const leaveSet = (_attComputeCache && _attComputeCache.leaveSet) || attBuildLeaveIndex(from, to);
   const byEmp = new Map();
   const ensure = (empId) => {
     let t = byEmp.get(empId);
@@ -18575,29 +18578,54 @@ router.register('attendance', () => {
   if (!_attState.loaded && !_attState.loading) attLoadAndRender();
   const canManage = DB.isHR;   // import/แก้/ลบ = HR/admin เท่านั้น
   const { from, to } = _attMonthRange(_attState.year, _attState.month);
-  const idx = attBuildScheduleIndex(from, to);
-  let att = DB.getTimeAttendance({ branch: _attState.branch || null });
-  for (const r of att) r.roster = attRoster(r, idx);             // คำนวณเทียบกะต่อแถว
-  let absences = attFindAbsences(att, idx, _attState.branch || null);
-  // กรองตามสายงาน (resolve ตำแหน่ง→ฝ่าย) — มีผลทั้งตาราง สรุป และขาดงาน
-  if (_attState.scope) {
-    const inScope = (id) => DB.scopeOfEmployee(DB.getEmployee(id)) === _attState.scope;
-    att = att.filter(r => inScope(r.employeeId));
-    absences = absences.filter(a => inScope(a.employeeId));
+  // [PERF] ลายเซ็นข้อมูลที่กระทบ "การคำนวณ" — เปลี่ยนเดือน/สาขา/สาย/อนุโลม/ขนาดข้อมูลเท่านั้นที่คำนวณใหม่
+  //   (สลับ view รายวัน↔รายเดือน / เปลี่ยนสถานะ / ค้นหา → ใช้ผลเดิม ไม่คำนวณซ้ำ → ลื่นทันที)
+  const _attSig = [_attState.year, _attState.month, _attState.branch || '', _attState.scope || '', _attState.grace,
+    (DB.data.timeAttendance || []).length, (DB.data.scheduleEntries || []).length, (DB.data.leaveRequests || []).length].join('|');
+  if (!_attComputeCache || _attComputeCache.sig !== _attSig) {
+    const idx0 = attBuildScheduleIndex(from, to);
+    let att0 = DB.getTimeAttendance({ branch: _attState.branch || null });
+    for (const r of att0) r.roster = attRoster(r, idx0);          // คำนวณเทียบกะต่อแถว
+    let absences0 = attFindAbsences(att0, idx0, _attState.branch || null);
+    // กรองตามสายงาน (resolve ตำแหน่ง→ฝ่าย) — มีผลทั้งตาราง สรุป และขาดงาน
+    if (_attState.scope) {
+      const inScope = (id) => DB.scopeOfEmployee(DB.getEmployee(id)) === _attState.scope;
+      att0 = att0.filter(r => inScope(r.employeeId));
+      absences0 = absences0.filter(a => inScope(a.employeeId));
+    }
+    // ★ วันลา (อนุมัติ) → ติดธง _leave บนแถว "ขาด" เพื่อแยกจากขาดงานจริง (ให้ตรงกับกริด/Export)
+    const leaveSet0 = attBuildLeaveIndex(from, to);
+    let leaveCount0 = 0, absentCount0 = 0;
+    for (const a of absences0) {
+      a._leave = leaveSet0.has(a.employeeId + '|' + a.workDate);
+      if (a._leave) leaveCount0++; else absentCount0++;
+    }
+    // รวมบันทึกเวลา + แถวขาดงาน → เรียงวันที่ใหม่สุดก่อน
+    const combined0 = att0.concat(absences0).sort((a, b) =>
+      a.workDate < b.workDate ? 1 : a.workDate > b.workDate ? -1 : String(a.employeeId).localeCompare(String(b.employeeId)));
+    // สรุปนับ
+    const cnt0 = { normal:0, late:0, early:0, off:0, incomplete:0, noshift:0 };
+    let lateMinTot0 = 0;
+    for (const r of att0) {
+      const k = r.roster.kind;
+      if (k === 'late') { cnt0.late++; lateMinTot0 += r.roster.lateMin; }
+      else if (k === 'late_early') { cnt0.late++; cnt0.early++; lateMinTot0 += r.roster.lateMin; }
+      else if (k === 'early') cnt0.early++;
+      else if (k === 'off_worked') cnt0.off++;
+      else if (k === 'incomplete') cnt0.incomplete++;
+      else if (k === 'no_shift') cnt0.noshift++;
+      else cnt0.normal++;
+    }
+    _attComputeCache = {
+      sig: _attSig, idx: idx0, att: att0, absences: absences0, combined: combined0, leaveSet: leaveSet0,
+      cnt: cnt0, lateMinTot: lateMinTot0, leaveCount: leaveCount0, absentCount: absentCount0,
+      totDays: att0.length, totEmps: new Set(att0.map(r => r.employeeId)).size,
+      totWorkMin: att0.reduce((s, r) => s + (r.workMinutes || 0), 0),
+    };
   }
-  // ★ วันลา (อนุมัติ) → ติดธง _leave บนแถว "ขาด" เพื่อแยกจากขาดงานจริง (ให้ตรงกับกริด/Export)
-  const _leaveSet = attBuildLeaveIndex(from, to);
-  let leaveCount = 0, absentCount = 0;
-  for (const a of absences) {
-    a._leave = _leaveSet.has(a.employeeId + '|' + a.workDate);
-    if (a._leave) leaveCount++; else absentCount++;
-  }
+  const { idx, att, absences, combined, cnt, lateMinTot, leaveCount, absentCount, totDays, totEmps, totWorkMin } = _attComputeCache;
 
-  // รวมบันทึกเวลา + แถวขาดงาน → เรียงวันที่ใหม่สุดก่อน
-  const combined = att.concat(absences).sort((a, b) =>
-    a.workDate < b.workDate ? 1 : a.workDate > b.workDate ? -1 : String(a.employeeId).localeCompare(String(b.employeeId)));
-
-  // filter ตามผลเทียบกะ
+  // filter ตามผลเทียบกะ (เบา — ทำทุก render ได้)
   const f = _attState.status;
   const kindOf = (row) => row._absent ? (row._leave ? 'leave' : 'absent') : row.roster.kind;
   const list = combined.filter(row => {
@@ -18614,23 +18642,6 @@ router.register('attendance', () => {
     return true;
   });
   const hasFilter = !!(_attState.branch || _attState.scope || _attState.status || _attState.search);
-
-  // สรุป
-  const cnt = { normal:0, late:0, early:0, off:0, incomplete:0, noshift:0 };
-  let lateMinTot = 0;
-  for (const r of att) {
-    const k = r.roster.kind;
-    if (k === 'late') { cnt.late++; lateMinTot += r.roster.lateMin; }
-    else if (k === 'late_early') { cnt.late++; cnt.early++; lateMinTot += r.roster.lateMin; }
-    else if (k === 'early') cnt.early++;
-    else if (k === 'off_worked') cnt.off++;
-    else if (k === 'incomplete') cnt.incomplete++;
-    else if (k === 'no_shift') cnt.noshift++;
-    else cnt.normal++;
-  }
-  const totDays = att.length;
-  const totEmps = new Set(att.map(r => r.employeeId)).size;
-  const totWorkMin = att.reduce((s, r) => s + (r.workMinutes || 0), 0);
   const hasSchedule = (DB.data.scheduleEntries || []).length > 0;
   // หลัง re-render (เปลี่ยนเดือน/สาขา/สถานะ) → กรองคำค้นเดิมซ้ำในที่
   window.afterRender = () => { try { setAttSearch(_attState.search); } catch (e) {} };
