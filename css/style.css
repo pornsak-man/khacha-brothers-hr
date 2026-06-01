@@ -5932,3 +5932,68 @@ label.form-label {
 .empty-state-cta {
   margin-top: var(--space-5);
 }
+
+/* ═══════════════════════════════════════════════════════════
+   ORG HEALTH CHECK (ตรวจสุขภาพโครงสร้างองค์กร)
+   ═══════════════════════════════════════════════════════════ */
+.org-health-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.org-stat {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: var(--surface-2, rgba(148,163,184,0.04));
+  text-align: center;
+}
+.org-stat-num { font-size: 26px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.org-stat-lbl { font-size: 12px; color: var(--text-2); margin-top: 4px; }
+.org-stat.is-bad  { border-color: rgba(220,38,38,0.45);  background: rgba(220,38,38,0.06); }
+.org-stat.is-bad  .org-stat-num { color: #dc2626; }
+.org-stat.is-warn { border-color: rgba(202,138,4,0.45);  background: rgba(202,138,4,0.06); }
+.org-stat.is-warn .org-stat-num { color: #b8860b; }
+
+.org-health-card { border-left: 4px solid var(--border); }
+.org-health-card.sev-critical { border-left-color: #dc2626; }
+.org-health-card.sev-warning  { border-left-color: #ca8a04; }
+.org-health-card.sev-info     { border-left-color: #3b82f6; }
+.org-health-title { font-size: 15px; font-weight: 650; display: flex; align-items: center; flex-wrap: wrap; }
+.org-health-desc  { font-size: 12.5px; margin-top: 5px; line-height: 1.55; }
+.org-health-fix   {
+  font-size: 12.5px;
+  margin: 10px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--surface-2, rgba(59,130,246,0.06));
+  color: var(--text-1);
+}
+
+.org-health-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.org-health-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-2);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.org-health-table td { padding: 7px 10px; border-bottom: 1px solid var(--border-soft, rgba(148,163,184,0.12)); vertical-align: top; }
+.org-health-table tbody tr[onclick]:hover { background: var(--surface-hover, rgba(59,130,246,0.06)); }
+
+.org-passed { display: flex; flex-wrap: wrap; gap: 7px; }
+.org-pass-chip {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(22,163,74,0.10);
+  color: #16a34a;
+  border: 1px solid rgba(22,163,74,0.22);
+}
+@media (max-width: 720px) {
+  .org-health-summary { grid-template-columns: repeat(2, 1fr); }
+}

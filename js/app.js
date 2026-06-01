@@ -15373,6 +15373,367 @@ async function openDeleteRoleModal(roleId) {
   });
 }
 
+// ═══════════════════════════════════════════════════════════
+//  PAGE: ORG HEALTH CHECK (ตรวจสุขภาพโครงสร้างองค์กร)
+//  ตรวจว่าพนักงานถูกจัด "สายงาน/สาขา/ฝ่าย/ตำแหน่ง/สิทธิ์" ถูกต้อง
+//  — ป้องกันปัญหาแบบรหัส 5457 (บัญชีไม่มีสาขา เด้งไปเห็นสาขาอื่น)
+// ═══════════════════════════════════════════════════════════
+
+// pure function — รับ array ดิบ คืนผลตรวจ (unit-test ได้โดยไม่พึ่ง DB/login)
+function computeOrgHealth(opts) {
+  opts = opts || {};
+  const employees   = opts.employees   || [];
+  const departments = opts.departments || [];
+  const positions   = opts.positions   || [];
+  const scopes      = opts.scopes      || [];
+  const branches    = opts.branches    || [];
+  const profiles    = (opts.profiles   || []).filter(p => p && p.employee_id);
+  const isResigned  = opts.isResigned  || (e => !!e && e.status === 'resigned');
+
+  // role ที่ข้ามการตรวจ "ไม่มีสาขา": AM/OM/admin/hr ดูแลผ่าน managed_branches เป็นปกติ
+  //   · branch_manager แยกไปตรวจเฉพาะใน bm_no_branch (กันแสดงซ้ำ)
+  const NO_BRANCH_SKIP = new Set(['area_manager', 'operation_manager', 'admin', 'hr', 'branch_manager']);
+
+  const posById    = new Map(positions.map(p => [p.id, p]));
+  const deptById   = new Map(departments.map(d => [d.id, d]));
+  const scopeById  = new Map(scopes.map(s => [s.id, s]));
+  const branchById = new Map(branches.map(b => [b.id, b]));
+  const empById    = new Map(employees.map(e => [String(e.id), e]));
+  const profByEmp  = new Map(profiles.map(p => [String(p.employee_id), p]));
+
+  const scopeOf = (e) => {
+    const p = e.position ? posById.get(e.position) : null;
+    if (p && p.scope) return p.scope;
+    const d = e.department ? deptById.get(e.department) : null;
+    if (d && d.scope) return d.scope;
+    return null;
+  };
+  const scopeValid = (id) => scopeById.has(id) && scopeById.get(id).active !== false;
+  const nameOf  = (e) => (`${e && e.firstName || ''} ${e && e.lastName || ''}`).trim() || '(ไม่มีชื่อ)';
+  const deptNm  = (id) => (deptById.get(id) && deptById.get(id).name) || id || '—';
+  const posNm   = (id) => (posById.get(id) && posById.get(id).name) || id || '—';
+  const scopeLb = (id) => id ? ((scopeById.get(id) && scopeById.get(id).label) || id) : '(ไม่มีสายงาน)';
+  const roleOf  = (id) => (profByEmp.get(String(id)) && profByEmp.get(String(id)).role) || null;
+  const active  = employees.filter(e => !isResigned(e));
+  const branchesOfProfile = (p) => {
+    if (Array.isArray(p.managed_branches) && p.managed_branches.length) return p.managed_branches.filter(Boolean);
+    const e = empById.get(String(p.employee_id));
+    return (e && e.branch) ? [e.branch] : [];
+  };
+
+  const checks = [];
+  const add = (severity, id, title, desc, fix, rows) => checks.push({ severity, id, title, desc, fix, count: rows.length, rows });
+
+  // ─── A. สาขา (branch) ───
+  add('critical', 'emp_no_branch_op',
+    'พนักงานปฏิบัติการไม่มีสาขา',
+    'พนักงานสายปฏิบัติการที่ยังทำงานแต่ช่อง "สาขา" ว่าง — จัดตารางงานไม่ได้ และหน้าตารางจะเด้งไปสาขาอื่น (ต้นเหตุเคสรหัส 5457)',
+    'เปิดทะเบียนพนักงาน → ตั้ง "สาขา" ให้ถูกต้อง',
+    active.filter(e => !e.branch && scopeOf(e) === 'operation' && !NO_BRANCH_SKIP.has(roleOf(e.id)))
+      .map(e => ({ type:'emp', id:e.id, name:nameOf(e), detail:`ฝ่าย: ${deptNm(e.department)} · ตำแหน่ง: ${posNm(e.position)}` })));
+
+  add('warning', 'emp_no_branch_other',
+    'พนักงานไม่มีสาขา (สายอื่น)',
+    'พนักงานสายงานอื่น (สำนักงาน/scm/ยังไม่ระบุสาย) ที่ไม่มีสาขา — ถ้าเป็นพนักงานประจำสาขาควรตั้งสาขา (ถ้าเป็นสำนักงานใหญ่ที่ไม่ผูกสาขาจริงๆ ปล่อยได้ โค้ดใหม่ไม่เด้งไปสาขาอื่นแล้ว)',
+    'ตรวจว่าควรมีสาขาไหม ถ้าใช่ให้ตั้งในทะเบียนพนักงาน',
+    active.filter(e => !e.branch && scopeOf(e) !== 'operation' && !NO_BRANCH_SKIP.has(roleOf(e.id)))
+      .map(e => ({ type:'emp', id:e.id, name:nameOf(e), detail:`สายงาน: ${scopeLb(scopeOf(e))} · ฝ่าย: ${deptNm(e.department)}` })));
+
+  add('critical', 'emp_branch_orphan',
+    'พนักงานอ้างอิงสาขาที่ไม่มีอยู่จริง',
+    'ช่อง "สาขา" ของพนักงานชี้ไปสาขาที่ถูกลบหรือเปลี่ยนรหัสแล้ว',
+    'ตั้งสาขาใหม่ให้ถูก หรือเพิ่มสาขานั้นกลับเข้าระบบ',
+    active.filter(e => e.branch && !branchById.has(e.branch))
+      .map(e => ({ type:'emp', id:e.id, name:nameOf(e), detail:`สาขาที่อ้าง: "${e.branch}" (ไม่มีในระบบ)` })));
+
+  add('warning', 'emp_branch_inactive',
+    'พนักงานอยู่สาขาที่ปิดใช้งาน',
+    'พนักงานยังผูกกับสาขาที่ถูกตั้งเป็น inactive',
+    'ย้ายพนักงานไปสาขาที่ใช้งาน หรือเปิดสาขานั้นกลับ',
+    active.filter(e => e.branch && branchById.get(e.branch) && branchById.get(e.branch).active === false)
+      .map(e => ({ type:'emp', id:e.id, name:nameOf(e), detail:`สาขา: ${e.branch} (ปิดใช้งาน)` })));
+
+  // ─── B. สายงาน (scope) ───
+  add('critical', 'emp_no_scope',
+    'พนักงานไม่มีสายงาน',
+    'ทั้ง "ตำแหน่ง" และ "ฝ่าย" ของพนักงานไม่ได้ตั้งสายงาน → พนักงานจะหายไปจากทุกหน้าที่กรองด้วยสายงาน',
+    'ตั้งสายงานที่ "ตำแหน่ง" หรือ "ฝ่าย" ของพนักงาน',
+    active.filter(e => !scopeOf(e))
+      .map(e => ({ type:'emp', id:e.id, name:nameOf(e), detail:`ฝ่าย: ${deptNm(e.department)} · ตำแหน่ง: ${posNm(e.position)}` })));
+
+  add('warning', 'emp_scope_mismatch',
+    'ตำแหน่งกับฝ่าย คนละสายงาน',
+    'ตำแหน่งและฝ่ายตั้งสายงานไว้ไม่ตรงกัน — ระบบยึดตาม "ตำแหน่ง" ซึ่งอาจไม่ใช่สายที่ตั้งใจ',
+    'ตรวจว่าตำแหน่งหรือฝ่ายตั้งสายงานผิด แล้วแก้ให้ตรงกัน',
+    active.filter(e => {
+      const p = posById.get(e.position), d = deptById.get(e.department);
+      return p && p.scope && d && d.scope && p.scope !== d.scope;
+    }).map(e => {
+      const p = posById.get(e.position), d = deptById.get(e.department);
+      return { type:'emp', id:e.id, name:nameOf(e), detail:`ตำแหน่ง=${scopeLb(p.scope)} แต่ฝ่าย=${scopeLb(d.scope)} → ใช้ตามตำแหน่ง` };
+    }));
+
+  add('warning', 'emp_scope_orphan',
+    'อ้างอิงสายงานที่ถูกลบ/ปิดใช้งาน',
+    'สายงานที่ resolve ได้ชี้ไป scope ที่ไม่มีอยู่หรือถูกปิดใช้งานแล้ว',
+    'ตั้งสายงานใหม่ หรือเปิด scope นั้นกลับ',
+    active.filter(e => { const s = scopeOf(e); return s && !scopeValid(s); })
+      .map(e => ({ type:'emp', id:e.id, name:nameOf(e), detail:`สายงานที่อ้าง: "${scopeOf(e)}" (ไม่มี/ปิด)` })));
+
+  add('warning', 'pos_no_scope',
+    'ตำแหน่งยังไม่ตั้งสายงาน',
+    'ตำแหน่งที่มีพนักงานใช้อยู่แต่ยังไม่ได้ตั้งสายงาน (พนักงานจะ fallback ไปใช้สายของฝ่ายแทน)',
+    'ไปหน้า "ตำแหน่ง" ตั้งสายงานให้ตำแหน่งนี้',
+    positions.filter(p => !p.scope && active.some(e => e.position === p.id))
+      .map(p => ({ type:'pos', id:p.id, name:p.name || p.id, detail:`มีพนักงานใช้ ${active.filter(e => e.position === p.id).length} คน` })));
+
+  add('info', 'dept_no_scope',
+    'ฝ่ายยังไม่ตั้งสายงาน',
+    'ฝ่ายที่มีพนักงานอยู่แต่ยังไม่ได้ตั้งสายงาน (มีผลเฉพาะพนักงานที่ตำแหน่งก็ไม่มีสายงาน)',
+    'ไปหน้า "ฝ่าย/แผนก" ตั้งสายงานให้ฝ่ายนี้',
+    departments.filter(d => !d.scope && active.some(e => e.department === d.id))
+      .map(d => ({ type:'dept', id:d.id, name:d.name || d.id, detail:`มีพนักงาน ${active.filter(e => e.department === d.id).length} คน` })));
+
+  // ─── C. ฝ่าย/ตำแหน่ง (referential) ───
+  add('critical', 'emp_dept_orphan',
+    'พนักงานอ้างอิงฝ่ายที่ไม่มีอยู่',
+    'ช่อง "ฝ่าย" ของพนักงานชี้ไปฝ่ายที่ถูกลบแล้ว',
+    'ตั้งฝ่ายใหม่ให้ถูก',
+    active.filter(e => e.department && !deptById.has(e.department))
+      .map(e => ({ type:'emp', id:e.id, name:nameOf(e), detail:`ฝ่ายที่อ้าง: "${e.department}"` })));
+
+  add('critical', 'emp_pos_orphan',
+    'พนักงานอ้างอิงตำแหน่งที่ไม่มีอยู่',
+    'ช่อง "ตำแหน่ง" ของพนักงานชี้ไปตำแหน่งที่ถูกลบแล้ว',
+    'ตั้งตำแหน่งใหม่ให้ถูก',
+    active.filter(e => e.position && !posById.has(e.position))
+      .map(e => ({ type:'emp', id:e.id, name:nameOf(e), detail:`ตำแหน่งที่อ้าง: "${e.position}"` })));
+
+  add('warning', 'emp_no_dept',
+    'พนักงานไม่มีฝ่าย',
+    'พนักงานที่ยังทำงานแต่ไม่ได้ระบุฝ่าย',
+    'ตั้ง "ฝ่าย" ให้พนักงาน',
+    active.filter(e => !e.department)
+      .map(e => ({ type:'emp', id:e.id, name:nameOf(e), detail:`ตำแหน่ง: ${posNm(e.position)}` })));
+
+  add('warning', 'emp_no_pos',
+    'พนักงานไม่มีตำแหน่ง',
+    'พนักงานที่ยังทำงานแต่ไม่ได้ระบุตำแหน่ง',
+    'ตั้ง "ตำแหน่ง" ให้พนักงาน',
+    active.filter(e => !e.position)
+      .map(e => ({ type:'emp', id:e.id, name:nameOf(e), detail:`ฝ่าย: ${deptNm(e.department)}` })));
+
+  // ─── D. role / ผู้จัดตาราง / ผู้อนุมัติ ───
+  add('critical', 'bm_no_branch',
+    'ผู้จัดการสาขา ไม่ผูกสาขาใดเลย',
+    'บัญชี role=ผู้จัดการสาขา ที่ไม่มีทั้ง "สาขาที่ดูแล" และ "สาขาประจำ" — จะไม่ขึ้นเป็นผู้จัดตารางของสาขาใดเลย',
+    'ตั้ง "สาขาที่ดูแล" (managed_branches) หรือสาขาประจำให้บัญชีนี้',
+    profiles.filter(p => p.role === 'branch_manager').filter(p => {
+      const e = empById.get(String(p.employee_id)); if (!e || isResigned(e)) return false;
+      return branchesOfProfile(p).length === 0;
+    }).map(p => ({ type:'emp', id:p.employee_id, name:nameOf(empById.get(String(p.employee_id))), detail:'ไม่มีสาขาที่ดูแล/สาขาประจำ' })));
+
+  add('warning', 'bm_scope_mismatch',
+    'ผู้จัดตาราง คนละสายกับลูกน้อง',
+    'ผู้จัดการสาขา (ผู้จัดตาราง) เป็นคนละสายงานกับพนักงานปฏิบัติการในสาขาที่ดูแล — พนักงานจะเห็นผู้จัดตารางต่างสาย (กรณี 5457↔5281)',
+    'พิจารณาตั้งผู้จัดการสาขาที่เป็นสายปฏิบัติการ หรือยืนยันว่าตั้งใจ',
+    (() => {
+      const rows = [];
+      for (const p of profiles.filter(p => p.role === 'branch_manager')) {
+        const e = empById.get(String(p.employee_id)); if (!e || isResigned(e)) continue;
+        const bmScope = scopeOf(e);
+        if (bmScope === 'operation') continue;
+        const opBranches = branchesOfProfile(p).filter(b => active.some(x => x.branch === b && scopeOf(x) === 'operation'));
+        if (opBranches.length) rows.push({ type:'emp', id:p.employee_id, name:nameOf(e), detail:`ผจก.สาย ${scopeLb(bmScope)} ดูแลสาขา ${opBranches.join(', ')} ที่มีพนง.ปฏิบัติการ` });
+      }
+      return rows;
+    })());
+
+  add('warning', 'am_no_managed',
+    'ผู้จัดการเขต ไม่ได้ตั้งสาขาที่ดูแล',
+    'บัญชี role=ผู้จัดการเขต ที่ไม่มี "สาขาที่ดูแล" (managed_branches) — จะอนุมัติตารางสาขาไม่ได้ (ระบบ fallback ไป HR)',
+    'ตั้ง "สาขาที่ดูแล" ให้บัญชีผู้จัดการเขต',
+    profiles.filter(p => p.role === 'area_manager').filter(p => {
+      const e = empById.get(String(p.employee_id)); if (!e || isResigned(e)) return false;
+      return !(Array.isArray(p.managed_branches) && p.managed_branches.length);
+    }).map(p => ({ type:'emp', id:p.employee_id, name:nameOf(empById.get(String(p.employee_id))), detail:'ไม่มีสาขาที่ดูแล' })));
+
+  add('warning', 'branch_dup_bm',
+    'สาขามีผู้จัดตารางหลายคน',
+    'มีผู้จัดการสาขามากกว่า 1 คนผูกกับสาขาเดียวกัน — หน้าตารางจะขึ้นผู้จัดตารางหลายชื่อ',
+    'กำหนดผู้จัดการสาขาหลักเพียงคนเดียวต่อสาขา',
+    (() => {
+      const byBranch = new Map();
+      for (const p of profiles.filter(p => p.role === 'branch_manager')) {
+        const e = empById.get(String(p.employee_id)); if (!e || isResigned(e)) continue;
+        for (const b of branchesOfProfile(p)) { if (!byBranch.has(b)) byBranch.set(b, []); byBranch.get(b).push(p.employee_id); }
+      }
+      const rows = [];
+      for (const [b, ids] of byBranch) if (ids.length > 1) rows.push({ type:'branch', id:b, name:`สาขา ${b}`, detail:`ผู้จัดตาราง ${ids.length} คน: ${ids.join(', ')}` });
+      return rows;
+    })());
+
+  add('warning', 'branch_no_bm',
+    'สาขามีพนักงานปฏิบัติการแต่ไม่มีผู้จัดตาราง',
+    'สาขาที่มีพนักงานสายปฏิบัติการแต่ไม่มีผู้จัดการสาขา — ไม่มีใครจัด/ส่งตารางให้',
+    'ตั้งผู้จัดการสาขา (role + สาขาที่ดูแล) ให้สาขานี้',
+    (() => {
+      const bmBranches = new Set();
+      for (const p of profiles.filter(p => p.role === 'branch_manager')) {
+        const e = empById.get(String(p.employee_id)); if (!e || isResigned(e)) continue;
+        for (const b of branchesOfProfile(p)) bmBranches.add(b);
+      }
+      const opByBranch = new Map();
+      for (const e of active) if (e.branch && scopeOf(e) === 'operation') opByBranch.set(e.branch, (opByBranch.get(e.branch) || 0) + 1);
+      const rows = [];
+      for (const [b, n] of opByBranch) if (!bmBranches.has(b) && branchById.has(b) && branchById.get(b).active !== false) rows.push({ type:'branch', id:b, name:`สาขา ${b}`, detail:`มีพนง.ปฏิบัติการ ${n} คน แต่ยังไม่มีผู้จัดตาราง` });
+      return rows;
+    })());
+
+  add('warning', 'profile_orphan',
+    'บัญชีสิทธิ์ผูกพนักงานที่ไม่มี/ลาออกแล้ว',
+    'บัญชี login ที่มี role จัดการ (ไม่ใช่ผู้ดูทั่วไป) แต่ผูกกับพนักงานที่ถูกลบหรือพ้นสภาพแล้ว — ความเสี่ยงด้านสิทธิ์',
+    'ถอนสิทธิ์/ปิดบัญชี หรือย้าย role ให้พนักงานที่ยังทำงาน',
+    profiles.filter(p => p.role && !['viewer', 'branch_staff'].includes(p.role)).filter(p => {
+      const e = empById.get(String(p.employee_id));
+      return !e || isResigned(e);
+    }).map(p => { const e = empById.get(String(p.employee_id)); return { type: e ? 'emp' : 'none', id:p.employee_id, name: e ? nameOf(e) : '(ไม่พบพนักงาน)', detail:`role: ${p.role}${e ? ' · ลาออกแล้ว' : ' · ไม่มีในระบบ'}` }; }));
+
+  add('info', 'managed_stale',
+    'สาขาที่ดูแล อ้างถึงสาขาที่ถูกลบ',
+    'รายการ "สาขาที่ดูแล" (managed_branches) มีรหัสสาขาที่ไม่มีอยู่ในระบบแล้ว',
+    'แก้รายการสาขาที่ดูแลให้เหลือเฉพาะสาขาที่มีจริง',
+    (() => {
+      const rows = [];
+      for (const p of profiles.filter(p => Array.isArray(p.managed_branches) && p.managed_branches.length)) {
+        const e = empById.get(String(p.employee_id)); if (!e || isResigned(e)) continue;
+        const stale = p.managed_branches.filter(b => b && !branchById.has(b));
+        if (stale.length) rows.push({ type:'emp', id:p.employee_id, name:nameOf(e), detail:`สาขาที่ไม่มีอยู่: ${stale.join(', ')}` });
+      }
+      return rows;
+    })());
+
+  // สรุป + เรียงตามความรุนแรง
+  const order = { critical: 0, warning: 1, info: 2 };
+  checks.sort((a, b) => order[a.severity] - order[b.severity]);
+  const sumBy = (sev) => checks.filter(c => c.severity === sev).reduce((s, c) => s + c.count, 0);
+  const summary = {
+    critical: sumBy('critical'), warning: sumBy('warning'), info: sumBy('info'),
+    activeEmployees: active.length, checksRun: checks.length,
+  };
+  summary.totalProblems = summary.critical + summary.warning + summary.info;
+  return { summary, checks };
+}
+
+const ORG_SEV = {
+  critical: { icon:'🔴', cls:'badge-danger' },
+  warning:  { icon:'🟡', cls:'badge-warning' },
+  info:     { icon:'🔵', cls:'badge' },
+};
+
+function renderOrgHealthRows(check) {
+  const cap = 60;
+  const shown = check.rows.slice(0, cap);
+  const more = check.rows.length - shown.length;
+  const body = shown.map(r => {
+    const clickable = (r.type === 'emp');
+    const attr = clickable ? ` onclick="viewEmployee('${escapeHtml(String(r.id))}')" style="cursor:pointer" title="เปิดประวัติพนักงาน"` : '';
+    return `<tr${attr}>
+      <td style="font-variant-numeric:tabular-nums;white-space:nowrap">${escapeHtml(String(r.id || '—'))}</td>
+      <td>${escapeHtml(r.name || '')}</td>
+      <td class="muted-2">${escapeHtml(r.detail || '')}</td>
+    </tr>`;
+  }).join('');
+  return `<div style="overflow:auto"><table class="org-health-table">
+    <thead><tr><th>รหัส</th><th>ชื่อ / รายการ</th><th>รายละเอียด</th></tr></thead>
+    <tbody>${body}</tbody>
+  </table></div>${more > 0 ? `<div class="muted-2" style="margin-top:8px;font-size:12px">…และอีก ${more} รายการ</div>` : ''}`;
+}
+
+function renderOrgHealth(result) {
+  const { summary, checks } = result;
+  const problems = checks.filter(c => c.count > 0);
+  const passed   = checks.filter(c => c.count === 0);
+  const allClear = summary.totalProblems === 0;
+
+  return `
+    <div class="sw-page-header">
+      <div>
+        <div class="sw-page-title">ตรวจสุขภาพโครงสร้างองค์กร</div>
+        <div class="sw-page-subtitle">ตรวจว่าพนักงานถูกจัดสายงาน/สาขา/ฝ่าย/ตำแหน่ง/สิทธิ์ครบถูกต้อง — ป้องกันปัญหาแบบรหัส 5457</div>
+      </div>
+      <div class="sw-page-actions">
+        <button class="btn btn-secondary" onclick="refreshOrgHealth()">🔄 ตรวจใหม่</button>
+      </div>
+    </div>
+
+    <div class="sw-chart-card">
+      <div class="org-health-summary">
+        <div class="org-stat ${summary.critical ? 'is-bad' : ''}"><div class="org-stat-num">${summary.critical}</div><div class="org-stat-lbl">🔴 ต้องแก้ด่วน</div></div>
+        <div class="org-stat ${summary.warning ? 'is-warn' : ''}"><div class="org-stat-num">${summary.warning}</div><div class="org-stat-lbl">🟡 ควรตรวจสอบ</div></div>
+        <div class="org-stat"><div class="org-stat-num">${summary.info}</div><div class="org-stat-lbl">🔵 เพิ่มเติม</div></div>
+        <div class="org-stat"><div class="org-stat-num">${summary.activeEmployees}</div><div class="org-stat-lbl">พนักงานที่ตรวจ</div></div>
+      </div>
+    </div>
+
+    ${allClear ? `
+      <div class="sw-chart-card" style="margin-top:14px">
+        <div class="empty-state" style="padding:48px 20px">
+          <div style="font-size:52px">✅</div>
+          <div class="title" style="margin-top:10px">โครงสร้างองค์กรเรียบร้อยดี</div>
+          <div class="hint" style="margin-top:6px">ตรวจ ${summary.checksRun} หัวข้อแล้ว ไม่พบปัญหา — พนักงานทุกคนถูกจัดสายงาน/สาขา/ฝ่าย/ตำแหน่งครบถ้วน</div>
+        </div>
+      </div>
+    ` : problems.map(c => `
+      <div class="sw-chart-card org-health-card sev-${c.severity}" style="margin-top:14px">
+        <div class="org-health-title">${ORG_SEV[c.severity].icon} ${escapeHtml(c.title)} <span class="badge ${ORG_SEV[c.severity].cls}" style="margin-left:6px">${c.count}</span></div>
+        <div class="org-health-desc muted-2">${escapeHtml(c.desc)}</div>
+        <div class="org-health-fix">💡 วิธีแก้: ${escapeHtml(c.fix)}</div>
+        ${renderOrgHealthRows(c)}
+      </div>
+    `).join('')}
+
+    ${passed.length ? `
+      <div class="sw-chart-card" style="margin-top:14px">
+        <div class="org-health-title" style="font-size:14px;margin-bottom:10px">✓ ผ่านการตรวจ (${passed.length} หัวข้อ)</div>
+        <div class="org-passed">${passed.map(c => `<span class="org-pass-chip">✓ ${escapeHtml(c.title)}</span>`).join('')}</div>
+      </div>
+    ` : ''}
+
+    <div class="muted-2" style="margin-top:14px;font-size:12px;line-height:1.7">
+      หมายเหตุ: แตะแถวพนักงานเพื่อเปิดประวัติและแก้ไขได้ทันที · ตรวจจากข้อมูลที่โหลดอยู่ (อัปเดตสด) — กด "ตรวจใหม่" เพื่อดึงบัญชีสิทธิ์ล่าสุด
+    </div>
+  `;
+}
+
+function refreshOrgHealth() {
+  if (DB.refetchUserProfiles) {
+    DB.refetchUserProfiles().then(() => router.go('org-health')).catch(() => router.go('org-health'));
+  } else {
+    router.go('org-health');
+  }
+}
+
+router.register('org-health', () => {
+  if (!DB.isHR) {
+    return `<div class="sw-chart-card"><div class="empty-state" style="padding:80px 20px"><div style="font-size:48px;margin-bottom:14px;opacity:0.4">🔒</div><div class="title" style="font-size:17px;font-weight:600">ไม่มีสิทธิ์เข้าถึง</div><div class="hint" style="margin-top:6px">หน้านี้สำหรับ HR/admin เท่านั้น</div></div></div>`;
+  }
+  if (!DB._userProfiles) {
+    DB.refetchUserProfiles().then(() => router.go('org-health')).catch(() => {});
+    return `<div class="sw-chart-card"><div class="empty-state" style="padding:60px 20px"><div class="title">กำลังโหลดข้อมูลบัญชีสิทธิ์…</div></div></div>`;
+  }
+  const result = computeOrgHealth({
+    employees: DB.data.employees,
+    departments: DB.data.departments,
+    positions: DB.data.positionLevels,
+    scopes: DB.data.positionScopes,
+    branches: DB.data.branches,
+    profiles: DB._userProfiles || [],
+    isResigned: (e) => DB.empStatus(e) === 'resigned',
+  });
+  return renderOrgHealth(result);
+});
+
 router.register('settings', () => {
   const c = DB.data.company;
   return `
