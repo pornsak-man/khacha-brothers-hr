@@ -18430,6 +18430,12 @@ function _attNumCell(n, color) {
   if (!n) return '<span class="att-dash">—</span>';
   return color ? `<strong style="color:${color}">${n}</strong>` : String(n);
 }
+// เซลล์ "มาสาย" — แสดงจำนวนครั้ง (เด่น) + จำนวนนาทีรวม (บรรทัดล่าง ตัวเล็ก)
+function _attLateCell(count, minutes, color) {
+  if (!count) return '<span class="att-dash">—</span>';
+  return `<strong style="color:${color}">${count}</strong>`
+    + `<div style="font-size:9.5px;font-weight:400;color:${color};opacity:.85;line-height:1.15">${_attFmtMinutes(minutes)}</div>`;
+}
 // ย่อช่วงเวลากะ: 08:00-17:00 → 08-17 · 09:30-18:30 → 09:30-18:30
 function _attShiftShort(sh) {
   if (!sh || !sh.start) return '';
@@ -18466,7 +18472,7 @@ function renderAttSummaryTable(att, absences, from, to, idx) {
     if (!t) {
       const e = DB.getEmployee(empId);
       t = { empId, name: e ? `${e.firstName||''} ${e.lastName||''}`.trim() : empId, branch: e?.branch || '',
-            shift: 0, recorded: 0, present: 0, late: 0, early: 0, absent: 0, leave: 0, workMin: 0 };
+            shift: 0, recorded: 0, present: 0, late: 0, lateMin: 0, early: 0, absent: 0, leave: 0, workMin: 0 };
       byEmp.set(empId, t);
     }
     return t;
@@ -18477,7 +18483,7 @@ function renderAttSummaryTable(att, absences, from, to, idx) {
     if (r.workMinutes) t.workMin += r.workMinutes;
     if (r.checkIn && r.checkOut) t.present++;
     const k = r.roster?.kind;
-    if (k === 'late' || k === 'late_early') t.late++;
+    if (k === 'late' || k === 'late_early') { t.late++; t.lateMin += (r.roster?.lateMin || 0); }
     if (k === 'early' || k === 'late_early') t.early++;
     if (r.roster?.shift && !r.roster.shift.isOff) t.shift++;
   }
@@ -18522,7 +18528,7 @@ function renderAttSummaryTable(att, absences, from, to, idx) {
     const dow = new Date(_attState.year, _attState.month - 1, d).getDay();
     days.push({ d, dow, dateStr: `${_attState.year}-${String(_attState.month).padStart(2,'0')}-${String(d).padStart(2,'0')}`, weekend: dow === 0 || dow === 6 });
   }
-  const tot = rows.reduce((s, t) => { s.present += t.present; s.late += t.late; s.absent += t.absent; s.leave += t.leave; return s; }, { present:0, late:0, absent:0, leave:0 });
+  const tot = rows.reduce((s, t) => { s.present += t.present; s.late += t.late; s.lateMin += t.lateMin; s.absent += t.absent; s.leave += t.leave; return s; }, { present:0, late:0, lateMin:0, absent:0, leave:0 });
   const C_D = '#dc2626', C_B = '#2563eb', C_G = '#16a34a', C_W = '#b87a08';
 
   const headDays = days.map(day => `<th class="${day.weekend ? 'att-we' : ''}"><div>${day.d}</div><div style="font-size:9px;font-weight:400;color:var(--text-2)">${WD[day.dow]}</div></th>`).join('');
@@ -18534,7 +18540,7 @@ function renderAttSummaryTable(att, absences, from, to, idx) {
       <td class="att-gname"><a href="#" onclick="viewEmployee('${escapeHtml(t.empId)}');return false;">${escapeHtml(t.name || t.empId)}</a><div class="muted-2" style="font-size:10px">${escapeHtml(t.empId)}${t.branch ? ' · ' + escapeHtml(t.branch) : ''}</div></td>
       ${cells}
       <td class="att-sumcol">${_attNumCell(t.present)}</td>
-      <td class="att-sumcol">${_attNumCell(t.late, C_D)}</td>
+      <td class="att-sumcol">${_attLateCell(t.late, t.lateMin, C_D)}</td>
       <td class="att-sumcol">${_attNumCell(t.absent, C_D)}</td>
       <td class="att-sumcol">${_attNumCell(t.leave, C_B)}</td>
     </tr>`;
@@ -18544,7 +18550,7 @@ function renderAttSummaryTable(att, absences, from, to, idx) {
     <div class="muted-2" style="font-size:12px;margin-bottom:8px">ตารางบันทึกเวลารายวัน · ${_TH_MONTHS[_attState.month-1]} ${_attState.year+543} · ${rows.length.toLocaleString()} คน <span style="opacity:.7">(เลื่อนซ้าย–ขวาเพื่อดูทุกวัน)</span></div>
     <div class="table-wrap">
       <table class="table att-grid">
-        <thead><tr><th class="att-gname">พนักงาน</th>${headDays}<th class="att-sumcol">มา</th><th class="att-sumcol">สาย</th><th class="att-sumcol">ขาด</th><th class="att-sumcol">ลา</th></tr></thead>
+        <thead><tr><th class="att-gname">พนักงาน</th>${headDays}<th class="att-sumcol">มา</th><th class="att-sumcol">สาย<div style="font-size:9px;font-weight:400;color:var(--text-2)">ครั้ง/นาที</div></th><th class="att-sumcol">ขาด</th><th class="att-sumcol">ลา</th></tr></thead>
         <tbody id="attTbody">
           ${rowsHtml}
           <tr id="attNoSearch" style="display:none"><td colspan="${days.length + 5}" style="text-align:center;padding:24px" class="muted-2">ไม่พบพนักงานที่ค้นหา</td></tr>
@@ -18553,7 +18559,7 @@ function renderAttSummaryTable(att, absences, from, to, idx) {
           <td class="att-gname">รวม (${rows.length.toLocaleString()} คน)</td>
           <td colspan="${days.length}"></td>
           <td class="att-sumcol">${tot.present.toLocaleString()}</td>
-          <td class="att-sumcol" style="color:${C_D}">${tot.late.toLocaleString()}</td>
+          <td class="att-sumcol" style="color:${C_D}">${tot.late ? `${tot.late.toLocaleString()}<div style="font-size:9.5px;font-weight:600;opacity:.85;line-height:1.15">${_attFmtMinutes(tot.lateMin)}</div>` : '0'}</td>
           <td class="att-sumcol" style="color:${C_D}">${tot.absent.toLocaleString()}</td>
           <td class="att-sumcol" style="color:${C_B}">${tot.leave.toLocaleString()}</td>
         </tr></tfoot>
