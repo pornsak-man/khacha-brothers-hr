@@ -762,14 +762,14 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
 }
 .nav-label {
-  font-size: 10px; text-transform: uppercase; letter-spacing: 1.6px;
-  color: rgba(255,255,255,0.28); padding: 0 14px; margin-bottom: 10px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+  color: var(--sidebar-text-2); padding: 0 14px; margin-bottom: 10px;
   font-weight: 700;
   cursor: pointer; user-select: none;
   display: flex; align-items: center; justify-content: space-between;
   transition: color 0.15s var(--ease-out);
 }
-.nav-label:hover { color: rgba(255,255,255,0.55); }
+.nav-label:hover { color: var(--sidebar-text); }
 /* chevron ย่อ/ขยายหมวด */
 .nav-label::after {
   content: ''; width: 6px; height: 6px; flex: none; margin-right: 2px;
