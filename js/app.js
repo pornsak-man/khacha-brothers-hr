@@ -20568,6 +20568,24 @@ window.addEventListener('popstate', () => {
 document.addEventListener('DOMContentLoaded', async () => {
   // UI wiring (works without auth)
   $$('.nav-item').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); router.go(a.dataset.page); }));
+  // ─── Accordion เมนู — คลิกหัวข้อหมวดเพื่อย่อ/ขยาย (จำสถานะใน localStorage) ───
+  (() => {
+    const KEY = 'kb_nav_collapsed';
+    let collapsed;
+    try { collapsed = new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch (e) { collapsed = new Set(); }
+    const save = () => { try { localStorage.setItem(KEY, JSON.stringify([...collapsed])); } catch (e) {} };
+    $$('.sidebar-nav .nav-group').forEach(group => {
+      const label = group.querySelector('.nav-label');
+      if (!label) return;
+      const key = label.textContent.trim();
+      if (collapsed.has(key)) group.classList.add('collapsed');
+      label.addEventListener('click', () => {
+        const isCollapsed = group.classList.toggle('collapsed');
+        if (isCollapsed) collapsed.add(key); else collapsed.delete(key);
+        save();
+      });
+    });
+  })();
   // Sidebar toggle — hamburger ที่ topbar = toggle หลัก (แสดงตลอดทั้ง PC/mobile)
   //   PC:     toggle class 'sidebar-hidden' บน .app + จำสถานะใน localStorage
   //   Mobile: toggle class 'open' บน sidebar (off-canvas)
