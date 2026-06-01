@@ -18021,6 +18021,7 @@ const _attState = (() => {
 })();
 // [PERF] memo ผลคำนวณ pipeline หนัก (idx/roster/absences/leave/สรุป) — สลับ view/สถานะ/ค้นหา ใช้ซ้ำได้ ไม่คำนวณใหม่
 let _attComputeCache = null;
+let _attSearchTimer = null;   // debounce การค้นหา (กัน re-render ทุกตัวอักษร)
 
 const ATT_ANOMALY = {
   missing_in:   { label: 'ลืมสแกนเข้า',     cls: 'badge-soft-danger' },
@@ -18275,7 +18276,9 @@ function setAttView(v) { _attState.view = (v === 'summary') ? 'summary' : 'daily
 function setAttSearch(v) {
   _attState.search = v || '';
   _attState.page = 1;
-  _attRerenderAttGrid();   // re-render เฉพาะกริด (ทั้งรายวัน/รายเดือน) — search input อยู่นอก region → ไม่หลุด focus
+  // debounce — re-render หลังหยุดพิมพ์ ~160ms (กันหน่วงตอนพิมพ์เร็ว) · search input อยู่นอก region → ไม่หลุด focus
+  if (_attSearchTimer) clearTimeout(_attSearchTimer);
+  _attSearchTimer = setTimeout(() => { _attSearchTimer = null; _attRerenderAttGrid(); }, 160);
 }
 function clearAttFilter() { _attState.branch = ''; _attState.scope = ''; _attState.status = ''; _attState.search = ''; _attState.loaded = false; attLoadAndRender(); }
 function attScopeOptionsHtml() {
@@ -18617,13 +18620,9 @@ function renderAttDailyTable() {
     if (f === 'no_shift')   return k === 'no_shift';
     return true;
   });
-  // กรองคำค้น (ชื่อ/รหัส)
+  // กรองคำค้น (ชื่อ/รหัส) — ใช้ search key ที่คำนวณไว้แล้ว (ไม่เรียก getEmployee ซ้ำ)
   const q = (_attState.search || '').trim().toLowerCase();
-  if (q) list = list.filter(row => {
-    const e = DB.getEmployee(row.employeeId);
-    const nm = row.employeeName || (e ? `${e.firstName||''} ${e.lastName||''}`.trim() : row.employeeId);
-    return `${nm} ${row.employeeId}`.toLowerCase().includes(q);
-  });
+  if (q) list = list.filter(row => (row._sk || String(row.employeeId).toLowerCase()).includes(q));
   const hasFilter = !!(_attState.branch || _attState.scope || _attState.status || _attState.search);
   if (!list.length) {
     return `<div class="empty-state" style="padding:32px"><div class="icon">🕘</div>
@@ -18740,6 +18739,12 @@ router.register('attendance', () => {
     // รวมบันทึกเวลา + แถวขาดงาน → เรียงวันที่ใหม่สุดก่อน
     const combined0 = att0.concat(absences0).sort((a, b) =>
       a.workDate < b.workDate ? 1 : a.workDate > b.workDate ? -1 : String(a.employeeId).localeCompare(String(b.employeeId)));
+    // [PERF] คำนวณ search key (ชื่อ+รหัส) ล่วงหน้า 1 ครั้ง → ค้นหาไม่ต้องเรียก getEmployee ทุกตัวอักษร
+    for (const r of combined0) {
+      const e = DB.getEmployee(r.employeeId);
+      const nm = r.employeeName || (e ? `${e.firstName||''} ${e.lastName||''}`.trim() : r.employeeId);
+      r._sk = `${nm} ${r.employeeId}`.toLowerCase();
+    }
     // สรุปนับ
     const cnt0 = { normal:0, late:0, early:0, off:0, incomplete:0, noshift:0 };
     let lateMinTot0 = 0;
