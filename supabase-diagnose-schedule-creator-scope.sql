@@ -74,3 +74,33 @@ WITH bm_b AS (
 )
 SELECT branch AS สาขา, count(*) AS จำนวนผจก, array_agg(bm_id) AS รหัสผจก
 FROM bm_b GROUP BY branch HAVING count(*) > 1 ORDER BY count(*) DESC;
+
+
+-- ════════ Q4. หา "พนักงานแบบ 5457" ทั้งระบบ ════════
+-- พนักงานที่สายงานตัวเอง "ไม่ใช่ operation" (office / ยังไม่ระบุสาย / สายอื่น)
+-- แต่ branch อยู่สาขาที่มี ผจก.สาขา (ตารางกะ operation) → เปิดหน้าตารางจะเห็น
+-- ผจก.สาขา (operation) เป็น "ผู้จัดตาราง" ทั้งที่คนละสาย (เหมือนเคส 5457)
+WITH bm_branch AS (
+  SELECT DISTINCT unnest(CASE WHEN up.managed_branches IS NOT NULL AND array_length(up.managed_branches,1) > 0
+                              THEN up.managed_branches ELSE ARRAY[e.branch] END) AS branch
+  FROM public.user_profiles up
+  JOIN public.employees e ON e.id = up.employee_id
+  WHERE up.role = 'branch_manager' AND coalesce(e.status,'active') <> 'resigned'
+)
+SELECT e.id                              AS รหัส,
+       btrim(coalesce(e.first_name,'')||' '||coalesce(e.last_name,'')) AS ชื่อ,
+       e.branch                          AS สาขา,
+       COALESCE(pl.scope, d.scope)       AS สายงาน,
+       e.position                        AS รหัสตำแหน่ง,
+       e.position_title                  AS ตำแหน่ง,
+       up.role                           AS role_login
+FROM public.employees e
+LEFT JOIN public.position_levels pl ON pl.id = e.position
+LEFT JOIN public.departments     d  ON d.id = e.department
+LEFT JOIN public.user_profiles   up ON up.employee_id = e.id
+WHERE coalesce(e.status,'active') <> 'resigned'
+  AND e.branch IN (SELECT branch FROM bm_branch)
+  AND COALESCE(pl.scope, d.scope) IS DISTINCT FROM 'operation'   -- สายตัวเองไม่ใช่ operation
+ORDER BY e.branch, (COALESCE(pl.scope, d.scope) IS NULL) DESC, e.id;
+-- ถ้าผลว่าง = ไม่มีเคสอื่น (5457 อาจเป็นรายเดียว) · ถ้ามีหลายแถว = เคสแบบเดียวกันที่เหลือ
+-- คอลัมน์ "สายงาน" ว่าง (NULL) = พนักงานยังไม่ถูกตั้งสาย (ตำแหน่ง/ฝ่ายไม่มี scope) → ควรไปตั้งให้ถูก
