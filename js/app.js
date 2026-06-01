@@ -18184,6 +18184,13 @@ router.register('attendance', () => {
     att = att.filter(r => inScope(r.employeeId));
     absences = absences.filter(a => inScope(a.employeeId));
   }
+  // ★ วันลา (อนุมัติ) → ติดธง _leave บนแถว "ขาด" เพื่อแยกจากขาดงานจริง (ให้ตรงกับกริด/Export)
+  const _leaveSet = attBuildLeaveIndex(from, to);
+  let leaveCount = 0, absentCount = 0;
+  for (const a of absences) {
+    a._leave = _leaveSet.has(a.employeeId + '|' + a.workDate);
+    if (a._leave) leaveCount++; else absentCount++;
+  }
 
   // รวมบันทึกเวลา + แถวขาดงาน → เรียงวันที่ใหม่สุดก่อน
   const combined = att.concat(absences).sort((a, b) =>
@@ -18191,7 +18198,7 @@ router.register('attendance', () => {
 
   // filter ตามผลเทียบกะ
   const f = _attState.status;
-  const kindOf = (row) => row._absent ? 'absent' : row.roster.kind;
+  const kindOf = (row) => row._absent ? (row._leave ? 'leave' : 'absent') : row.roster.kind;
   const list = combined.filter(row => {
     if (!f) return true;
     const k = kindOf(row);
@@ -18199,6 +18206,7 @@ router.register('attendance', () => {
     if (f === 'late')       return k === 'late' || k === 'late_early';
     if (f === 'early')      return k === 'early' || k === 'late_early';
     if (f === 'absent')     return k === 'absent';
+    if (f === 'leave')      return k === 'leave';
     if (f === 'incomplete') return k === 'incomplete';
     if (f === 'off_worked') return k === 'off_worked';
     if (f === 'no_shift')   return k === 'no_shift';
@@ -18241,7 +18249,8 @@ router.register('attendance', () => {
           <div class="att-stat ok"><div class="att-stat-num">${cnt.normal.toLocaleString()}</div><div class="att-stat-lbl">ตรงเวลา</div></div>
           <div class="att-stat warn"><div class="att-stat-num">${cnt.late.toLocaleString()}</div><div class="att-stat-lbl">มาสาย${cnt.late ? ` · ${_attFmtMinutes(lateMinTot)}` : ''}</div></div>
           <div class="att-stat warn"><div class="att-stat-num">${cnt.early.toLocaleString()}</div><div class="att-stat-lbl">ออกก่อน</div></div>
-          <div class="att-stat danger"><div class="att-stat-num">${absences.length.toLocaleString()}</div><div class="att-stat-lbl">ขาดงาน</div></div>
+          <div class="att-stat danger"><div class="att-stat-num">${absentCount.toLocaleString()}</div><div class="att-stat-lbl">ขาดงาน</div></div>
+          ${leaveCount ? `<div class="att-stat"><div class="att-stat-num" style="color:#2563eb">${leaveCount.toLocaleString()}</div><div class="att-stat-lbl">ลา</div></div>` : ''}
           ${cnt.incomplete ? `<div class="att-stat warn"><div class="att-stat-num">${cnt.incomplete.toLocaleString()}</div><div class="att-stat-lbl">ลืมสแกน</div></div>` : ''}
           ${cnt.noshift ? `<div class="att-stat muted"><div class="att-stat-num">${cnt.noshift.toLocaleString()}</div><div class="att-stat-lbl">นอกตาราง</div></div>` : ''}
         </div>
@@ -18267,6 +18276,7 @@ router.register('attendance', () => {
           <option value="late" ${f==='late'?'selected':''}>มาสาย</option>
           <option value="early" ${f==='early'?'selected':''}>ออกก่อน</option>
           <option value="absent" ${f==='absent'?'selected':''}>ขาดงาน</option>
+          <option value="leave" ${f==='leave'?'selected':''}>ลา</option>
           <option value="incomplete" ${f==='incomplete'?'selected':''}>ลืมสแกน</option>
           <option value="off_worked" ${f==='off_worked'?'selected':''}>ทำงานวันหยุด</option>
           <option value="no_shift" ${f==='no_shift'?'selected':''}>นอกตาราง</option>
@@ -18303,14 +18313,15 @@ router.register('attendance', () => {
                 const nameCell = `<td><a href="#" onclick="viewEmployee('${escapeHtml(row.employeeId)}');return false;">${escapeHtml(nm || row.employeeId)}</a>
                       <div class="muted-2" style="font-size:11px">${escapeHtml(row.employeeId)}${row.branchId ? ' · '+escapeHtml(row.branchId) : ''}</div></td>`;
                 if (row._absent) {
-                  return `<tr data-search="${srch}" style="background:rgba(220,38,38,.05)">
+                  const lv = row._leave;
+                  return `<tr data-search="${srch}" style="background:${lv ? 'rgba(37,99,235,.05)' : 'rgba(220,38,38,.05)'}">
                     ${nameCell}
                     <td style="white-space:nowrap;font-size:12px">${fmt.date(row.workDate)}</td>
                     <td>${_attShiftCell(row.roster)}</td>
-                    <td style="text-align:center"><span class="att-dash" style="font-size:12px">ไม่มีสแกน</span></td>
+                    <td style="text-align:center"><span class="att-dash" style="font-size:12px">${lv ? 'ลา' : 'ไม่มีสแกน'}</span></td>
                     <td style="text-align:center"><span class="att-dash">—</span></td><td style="text-align:center"><span class="att-dash">—</span></td>
                     <td style="text-align:center"><span class="att-dash">—</span></td>
-                    <td>${_attRosterCell(row.roster)}</td>
+                    <td>${lv ? '<span class="badge badge-info" style="font-size:11px">ลา</span>' : _attRosterCell(row.roster)}</td>
                     ${canManage ? `<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="openAttendanceManual('${escapeHtml(row.employeeId)}','${escapeHtml(row.workDate)}')" title="เพิ่มเวลาให้วันนี้">＋</button></td>` : ''}
                   </tr>`;
                 }
@@ -18455,11 +18466,12 @@ function openAttendanceManual(empId = '', workDate = '') {
   });
 }
 
-// ─── Export เดือนปัจจุบันเป็น Excel ───
+// ─── Export เดือนปัจจุบันเป็น Excel (ตรงกับตัวกรอง/ค้นหาบนจอ) ───
 async function attExportMonth() {
   if (typeof XLSX === 'undefined') { try { await loadXLSX(); } catch (e) { toast(e.message, 'error'); return; } }
   const { from, to } = _attMonthRange(_attState.year, _attState.month);
   const idx = attBuildScheduleIndex(from, to);
+  const leaveSet = attBuildLeaveIndex(from, to);          // ★ รู้ว่าวันไหนลา (กันนับเป็นขาด)
   let att = DB.getTimeAttendance({ branch: _attState.branch || null });
   for (const r of att) r.roster = attRoster(r, idx);
   let absences = attFindAbsences(att, idx, _attState.branch || null);
@@ -18468,31 +18480,61 @@ async function attExportMonth() {
     att = att.filter(r => inScope(r.employeeId));
     absences = absences.filter(a => inScope(a.employeeId));
   }
-  const combined = att.concat(absences).sort((a, b) =>
-    a.workDate < b.workDate ? 1 : a.workDate > b.workDate ? -1 : String(a.employeeId).localeCompare(String(b.employeeId)));
+  let combined = att.concat(absences);
+  const isLeave = (row) => row._absent && leaveSet.has(row.employeeId + '|' + row.workDate);
+  // ★ ใช้ตัวกรองสถานะเดียวกับมุมมองรายวัน
+  const f = _attState.status;
+  if (f) {
+    const kindOf = (row) => row._absent ? (isLeave(row) ? 'leave' : 'absent') : row.roster.kind;
+    combined = combined.filter(row => {
+      const k = kindOf(row);
+      if (f === 'issues')     return ['late','early','late_early','incomplete','absent'].includes(k) || (!row._absent && row.anomaly);
+      if (f === 'late')       return k === 'late' || k === 'late_early';
+      if (f === 'early')      return k === 'early' || k === 'late_early';
+      if (f === 'absent')     return k === 'absent';
+      if (f === 'incomplete') return k === 'incomplete';
+      if (f === 'off_worked') return k === 'off_worked';
+      if (f === 'no_shift')   return k === 'no_shift';
+      return true;
+    });
+  }
+  // ★ ใช้คำค้นหาเดียวกับช่องค้นหา
+  const q = (_attState.search || '').trim().toLowerCase();
+  if (q) combined = combined.filter(r => {
+    const e = DB.getEmployee(r.employeeId);
+    const nm = r.employeeName || (e ? `${e.firstName||''} ${e.lastName||''}`.trim() : '');
+    return `${nm} ${r.employeeId}`.toLowerCase().includes(q);
+  });
+  // เรียงตามคน แล้วตามวัน (เหมาะกับรายงาน/เงินเดือน)
+  combined.sort((a, b) => String(a.employeeId).localeCompare(String(b.employeeId)) || a.workDate.localeCompare(b.workDate));
   if (!combined.length) { toast('ไม่มีข้อมูลให้ export', 'info'); return; }
+
+  const hm = (t) => t ? String(t).slice(0, 5) : '';
   const kindLabel = (row) => {
-    const k = row._absent ? 'absent' : row.roster.kind;
-    if (k === 'no_shift' && !row._absent && row.anomaly) return ATT_ANOMALY[row.anomaly]?.label || k;
+    if (row._absent) return isLeave(row) ? 'ลา' : 'ขาดงาน';
+    const k = row.roster.kind;
+    if (k === 'no_shift' && row.anomaly) return ATT_ANOMALY[row.anomaly]?.label || k;
     return ATT_ROSTER[k]?.label || k;
   };
   const rows = combined.map(r => {
     const sh = r.roster?.shift;
     return {
       'รหัสพนักงาน': r.employeeId, 'ชื่อ': r.employeeName, 'สาขา': r.branchId, 'วันที่': r.workDate,
-      'กะ': sh ? sh.label : '', 'เวลากะ': sh && sh.start ? `${sh.start}-${sh.end}` : '',
-      'เข้า': r._absent ? '' : (r.checkIn || ''), 'พักออก': r._absent ? '' : (r.breakOut || ''),
-      'พักเข้า': r._absent ? '' : (r.breakIn || ''), 'ออก': r._absent ? '' : (r.checkOut || ''),
+      'กะ': sh ? sh.label : '', 'เวลากะ': sh && sh.start ? `${hm(sh.start)}-${hm(sh.end)}` : '',
+      'เข้า': r._absent ? '' : hm(r.checkIn), 'พักออก': r._absent ? '' : hm(r.breakOut),
+      'พักเข้า': r._absent ? '' : hm(r.breakIn), 'ออก': r._absent ? '' : hm(r.checkOut),
       'สาย(นาที)': r.roster?.lateMin || 0, 'ออกก่อน(นาที)': r.roster?.earlyMin || 0,
       'ชม.ทำงาน(นาที)': r._absent ? '' : (r.workMinutes ?? ''),
       'ผลเทียบกะ': kindLabel(r), 'หมายเหตุ': r.note || ''
     };
   });
   const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = Object.keys(rows[0]).map(k => ({ wch: Math.max(k.length + 1, 9) }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'บันทึกเวลา');
-  XLSX.writeFile(wb, `เวลาทำงาน-${_attState.year}-${String(_attState.month).padStart(2,'0')}.xlsx`);
-  toast('ดาวน์โหลดแล้ว', 'success');
+  const tag = (_attState.branch ? '-' + _attState.branch : '') + (_attState.scope ? '-' + _attState.scope : '');
+  XLSX.writeFile(wb, `เวลาทำงาน-${_attState.year}-${String(_attState.month).padStart(2,'0')}${tag}.xlsx`);
+  toast(`ดาวน์โหลดแล้ว (${rows.length.toLocaleString()} แถว)`, 'success');
 }
 
 // ═══════════════ IMPORT MODAL ═══════════════
