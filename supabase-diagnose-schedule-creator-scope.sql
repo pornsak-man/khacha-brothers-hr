@@ -104,3 +104,31 @@ WHERE coalesce(e.status,'active') <> 'resigned'
 ORDER BY e.branch, (COALESCE(pl.scope, d.scope) IS NULL) DESC, e.id;
 -- ถ้าผลว่าง = ไม่มีเคสอื่น (5457 อาจเป็นรายเดียว) · ถ้ามีหลายแถว = เคสแบบเดียวกันที่เหลือ
 -- คอลัมน์ "สายงาน" ว่าง (NULL) = พนักงานยังไม่ถูกตั้งสาย (ตำแหน่ง/ฝ่ายไม่มี scope) → ควรไปตั้งให้ถูก
+
+
+-- ════════ Q5. ★ ต้นเหตุที่แท้จริงของเคส 5457 — "บัญชีที่ไม่มีสาขา (branch ว่าง)" ════════
+-- สรุปจากการวินิจฉัย: 5457 ไม่ได้เป็น ผจก.สาขา — แต่เป็นพนักงานทั่วไป (branch_staff)
+--   ที่ "branch = NULL" (ไม่มีสาขา) + สายงาน scm  →  โค้ดเดิมหน้าตารางงาน fallback ไป
+--   "สาขาแรกตามตัวอักษร (GE)" จึงเห็นตาราง GE + ผู้จัดตาราง GE (5281) ทั้งที่คนละสาย
+--   ★ Q4 ด้านบนหาไม่เจอ เพราะกรอง branch IN (สาขาที่มี BM) — แต่ 5457 branch = NULL เลยหลุด
+--   → Q5 นี้คือ query ที่ถูกต้องสำหรับหา "เคสแบบ 5457 ทั้งระบบ"
+-- (โค้ดได้แก้แล้ว: บัญชีไม่มีสาขาจะแสดง "ยังไม่ได้กำหนดสาขา" แทนการเด้งไป GE
+--   แต่ควรไล่ตั้งสาขาให้ถูกในทะเบียนด้วย เพื่อให้ใช้งานหน้าอื่นได้ครบ)
+SELECT e.id                                AS รหัส,
+       btrim(coalesce(e.first_name,'')||' '||coalesce(e.last_name,'')) AS ชื่อ,
+       e.branch                            AS สาขา,
+       e.department                        AS ฝ่าย,
+       COALESCE(pl.scope, d.scope)         AS สายงาน,
+       coalesce(up.role,'(ไม่มี login)')   AS role,
+       e.status                            AS สถานะ
+FROM public.employees e
+LEFT JOIN public.position_levels pl ON pl.id = e.position
+LEFT JOIN public.departments     d  ON d.id = e.department
+LEFT JOIN public.user_profiles   up ON up.employee_id = e.id
+WHERE coalesce(e.status,'active') <> 'resigned'
+  AND (e.branch IS NULL OR e.branch = '')
+  -- AM/OM/admin/hr ไม่มีสาขาประจำเป็นเรื่อง "ปกติ" (ดูแลผ่าน managed_branches) → ตัดออก
+  AND coalesce(up.role,'') NOT IN ('area_manager','operation_manager','admin','hr')
+ORDER BY สายงาน NULLS FIRST, e.id;
+-- ทุกแถวที่ได้ = บัญชีที่ "ไม่มีสาขา" แบบเดียวกับ 5457 → ไปตั้งสาขาให้ถูกในทะเบียนพนักงาน
+--   (ถ้าเป็นสาย scm/office ที่ไม่ผูกสาขาจริงๆ ปล่อยไว้ก็ได้ โค้ดใหม่จะไม่เด้งไปสาขาอื่นแล้ว)

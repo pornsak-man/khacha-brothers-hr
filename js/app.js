@@ -16193,12 +16193,19 @@ function initScheduleStateIfNeeded() {
   // — reset state ที่ค้างจาก session เก่า เพื่อไม่ให้ render summary ที่ไม่มีทางออก
   if (_scheduleState.branchId === '__all__') _scheduleState.branchId = null;
   if (!_scheduleState.branchId) {
-    if (DB.role === 'branch_manager' || DB.role === 'area_manager' || DB.role === 'branch_staff' || DB.role === 'viewer') {
-      _scheduleState.branchId = DB._myBranch();
-    }
-    if (!_scheduleState.branchId) {
+    const role = DB.role;
+    if (role === 'admin' || role === 'hr' || role === 'operation_manager') {
+      // เห็นทุกสาขา → default = สาขาแรก
       const branches = (DB.data.branches || []).filter(b => b.active);
       _scheduleState.branchId = branches[0]?.id || null;
+    } else if (role === 'area_manager') {
+      // ผจก.เขต → สาขาตัวเอง ไม่มีก็ใช้สาขาแรกที่ดูแล (managed_branches)
+      _scheduleState.branchId = DB._myBranch() || (DB.scopedBranches() || [])[0] || null;
+    } else {
+      // branch_manager / branch_staff / viewer → "สาขาของตัวเองเท่านั้น"
+      // ★ ถ้า branch ว่าง (เช่น รหัส 5457 ที่ไม่มีสาขา) → คง null อย่า fallback ไป branches[0]
+      //   เพราะจะเด้งไปเห็นตาราง+ผู้จัดตารางของสาขาที่ไม่เกี่ยวกับตัวเอง (สาขาแรกตามตัวอักษร = GE)
+      _scheduleState.branchId = DB._myBranch() || null;
     }
   }
 }
@@ -18995,7 +19002,13 @@ router.register('schedule', () => {
     </div>
 
     <div id="scheduleGridWrap">${
-      branchId === '__all__'
+      !branchId
+        ? `<div class="sw-chart-card"><div class="empty-state">
+            ${icon('calendar', { size: 48 })}
+            <div class="title">ยังไม่ได้กำหนดสาขาให้บัญชีนี้</div>
+            <div class="hint" style="margin-top:6px">บัญชีของคุณยังไม่ถูกผูกกับสาขาในทะเบียนพนักงาน จึงยังไม่มีตารางงานให้แสดง — กรุณาติดต่อ HR/admin เพื่อกำหนดสาขา</div>
+          </div></div>`
+        : branchId === '__all__'
         ? renderScheduleAllBranchesSummary(weekStart, branchOptions)
         : hideUnapproved
         ? `<div class="sw-chart-card"><div class="empty-state">
@@ -19042,12 +19055,15 @@ router.register('schedule-monthly', () => {
   if (!_monthlyState.year) _monthlyState.year = today.getFullYear();
   if (!_monthlyState.month) _monthlyState.month = today.getMonth() + 1;
   if (!_monthlyState.branchId) {
-    if (DB.role === 'branch_manager' || DB.role === 'branch_staff' || DB.role === 'viewer') {
-      _monthlyState.branchId = DB._myBranch() || null;
-    }
-    if (!_monthlyState.branchId) {
+    const role = DB.role;
+    if (role === 'admin' || role === 'hr' || role === 'operation_manager') {
       const branches = (DB.data.branches || []).filter(b => b.active);
       _monthlyState.branchId = branches[0]?.id || null;
+    } else if (role === 'area_manager') {
+      _monthlyState.branchId = DB._myBranch() || (DB.scopedBranches() || [])[0] || null;
+    } else {
+      // branch_manager / branch_staff / viewer → สาขาตัวเองเท่านั้น, ว่าง = null (กันเด้งไปสาขาอื่น)
+      _monthlyState.branchId = DB._myBranch() || null;
     }
   }
   const { year, month, branchId } = _monthlyState;
@@ -19071,9 +19087,10 @@ router.register('schedule-monthly', () => {
   const dayLabels = ['อา','จ','อ','พ','พฤ','ศ','ส'];
 
   // employees ใน branch (active) + helper (พนักงานข้ามสาขาที่มี entry ในเดือน)
-  const empsInBranch = (DB.data.employees || []).filter(e =>
+  // ★ branchId ว่าง (บัญชีไม่มีสาขา เช่น 5457) → ไม่แสดงพนักงาน (กันเด้งไปเห็นสาขาอื่น/พนักงาน branch=null)
+  const empsInBranch = branchId ? (DB.data.employees || []).filter(e =>
     e.branch === branchId && DB.empStatus(e) !== 'resigned'
-  );
+  ) : [];
   const weekIdsOfBranch = new Set(
     (DB.data.scheduleWeeks || []).filter(w => w.branchId === branchId).map(w => w.id)
   );
@@ -19227,7 +19244,8 @@ router.register('schedule-monthly', () => {
       <div class="sw-chart-card" style="margin-top:14px">
         <div class="empty-state">
           ${icon('users', { size: 48 })}
-          <div class="title">ไม่มีพนักงานในสาขานี้</div>
+          <div class="title">${branchId ? 'ไม่มีพนักงานในสาขานี้' : 'ยังไม่ได้กำหนดสาขาให้บัญชีนี้'}</div>
+          ${branchId ? '' : '<div class="hint" style="margin-top:6px">บัญชีของคุณยังไม่ถูกผูกกับสาขา — กรุณาติดต่อ HR/admin</div>'}
         </div>
       </div>
     ` : `
